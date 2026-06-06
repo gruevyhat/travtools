@@ -50,6 +50,11 @@ export interface Skill {
   level: number;
 }
 
+export interface PsionicTalent {
+  name: string;
+  level: number;
+}
+
 export interface Character {
   id: string;
   name: string;
@@ -59,10 +64,12 @@ export interface Character {
   int_stat: number | null;
   edu: number | null;
   soc: number | null;
+  psi: number | null;
   career: string | null;
   rank: string | null;
   homeworld: string | null;
   skills: Skill[];
+  psionic_talents: PsionicTalent[];
   notes: string | null;
   created_at: string;
 }

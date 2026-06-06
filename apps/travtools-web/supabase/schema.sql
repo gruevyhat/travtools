@@ -58,10 +58,12 @@ create table if not exists characters (
   int_stat integer,
   edu integer,
   soc integer,
+  psi integer,                                          -- PSI characteristic (null if untested/none)
   career text,
   rank text,
   homeworld text,
-  skills jsonb not null default '[]'::jsonb,
+  skills jsonb not null default '[]'::jsonb,            -- [{name, level}]
+  psionic_talents jsonb not null default '[]'::jsonb,   -- [{name, level}]
   notes text,
   created_at timestamptz not null default now()
 );

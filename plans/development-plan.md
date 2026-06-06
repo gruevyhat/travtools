@@ -69,34 +69,93 @@ Questions to answer:
 
 ## Milestone 1 — Party Roster
 
-**Goal:** The Party Roster is production-ready: players can import from CSV, add/edit manually, view UPPs and skills clearly, and all clients sync in real time. This is the first feature polished end-to-end.
+**Goal:** The Party Roster is production-ready: players can import from CSV, add/edit manually, view characteristics + skills + psionic talents clearly, roll skill checks live, and all clients sync in real time.
 
 ### Why first
 
-Character data is referenced constantly during play — UPP modifiers, skill levels, careers. It's the feature players need before they sit down, so it must be solid before the first real session.
+Character data is referenced constantly during play — UPP modifiers, skill levels, psionic talents. It's the feature players need before they sit down, so it must be solid before the first real session.
+
+### Character sheet analysis findings (docs/characters/)
+
+Four player characters were analyzed from XLSX spreadsheets before implementation:
+
+| Player | Character | UPP | Psionics |
+|--------|-----------|-----|---------|
+| Eric   | Zlata Gusova | 678CCB | none |
+| Graham | (unnamed) | 97B84+ | Awareness-1, Telepathy-0, Teleportation-0 |
+| Jesse  | (unnamed) | 468AA9 | Awareness-1, Clairvoyance-2, Telekinesis-0, Telepathy-0 |
+| Will   | (unnamed) | 97C996 | none |
+
+Key findings:
+- **PSI is a 7th characteristic** (separate from UPP) with its own DM; governs psionic checks
+- **5 psionic disciplines**: Awareness, Clairvoyance, Telekinesis, Telepathy, Teleportation — each stored with a level
+- **Each skill has a governing characteristic** (e.g. Medic→EDU, Gun Combat→DEX) which must be added to the roll total
+- House-rule stats (CHR, MOR, LCK) are inconsistently named across sheets — not persisted for now; players can add them to notes
+- Trained skills are level ≥ 0; untrained is -3 (shown as "--" in spreadsheet) — only show trained in the UI
+
+### Data model changes
+
+Schema migration (added to `characters` table):
+```sql
+ALTER TABLE characters ADD COLUMN IF NOT EXISTS psi integer;
+ALTER TABLE characters ADD COLUMN IF NOT EXISTS psionic_talents jsonb NOT NULL DEFAULT '[]'::jsonb;
+```
+
+New TypeScript types:
+```typescript
+interface PsionicTalent { name: string; level: number; }
+// Character gains: psi: number | null, psionic_talents: PsionicTalent[]
+```
 
 ### Tasks
 
+**Schema & types**
+- [x] Apply Supabase migration: add `psi` (integer) and `psionic_talents` (jsonb) columns
+- [x] Update `Character` interface and `EMPTY` form default
+
 **Correctness**
-- [ ] Create a test CSV with 4 characters covering: full UPPs, skills with varying levels, missing optional columns, quoted fields with internal commas
+- [ ] Create a test CSV with 4 characters covering: full UPPs, skills with varying levels, PSI, psionic talents, missing optional columns
 - [ ] Verify UPP hex display: values ≥10 render as A–F (e.g. 10→A, 15→F)
-- [ ] Verify skills parse correctly: `Pilot-2, Navigation-1, Gun Combat (slug)-1`
+- [ ] Verify skills parse correctly: `Pilot-2, Navigation-1, Gun Combat (Slug)-1`
 - [ ] Verify manual add/edit/delete round-trips correctly
 - [ ] Two browser tabs: character added in one appears in the other within ~1s
 - [ ] Error case: importing a malformed CSV surfaces a useful error, not a crash
 
-**UX improvements**
-- [ ] Add a downloadable CSV template so players know the expected column format
-- [ ] Show a per-character total skill count in the collapsed card header
-- [ ] Skill display: sort alphabetically within the expanded card
-- [ ] Manual entry: UPP inputs validate 0–15 only; show the hex equivalent live as you type
+**Character card redesign**
+- [x] Show characteristic DM for each stat (+/-N format) derived from value
+- [x] Show PSI stat and DM in the characteristics grid when PSI > 0
+- [x] Show only trained skills (level ≥ 0), sorted alphabetically
+- [x] Psionic talents section: show only when character has psionic talents
+- [x] Roll button on each skill: opens inline roll panel (2D6 + char DM + skill level vs difficulty)
+- [x] Roll button on each psionic talent: 2D6 + PSI DM + talent level vs difficulty
 
-**Tests (TDD — write before implementing UX improvements)**
-- [ ] `parseCSV()` — happy path, missing optional columns, quoted commas, empty lines
-- [ ] `parseSkillsCSV()` — skill names with spaces, level 0, malformed entries
-- [ ] `upp()` — boundary values (0, 9, 10, 15)
-- [ ] `toHex()` — 0→'0', 9→'9', 10→'A', 15→'F'
-- [ ] `CharCard` — renders name, UPP string, skill count; expands on click; shows all skills
+**Dice roller (inline per character card)**
+- [x] Pre-populate governing characteristic for each skill (hardcoded map: Admin→EDU, Recon→INT, etc.)
+- [x] Player can change governing characteristic from default in the roll panel
+- [x] Difficulty selector: Routine 6+ / Average 8+ / Difficult 10+ / Very Difficult 12+ / Formidable 14+
+- [x] Show dice breakdown: `[d1] + [d2] = sum  + char DM + skill level = total`
+- [x] Show effect: `SUCCESS/FAILURE · Effect +N`
+
+**UX improvements**
+- [x] Add a downloadable CSV template so players know the expected column format
+- [x] Show a per-character total trained-skill count in the collapsed card header
+- [x] Manual entry: UPP inputs validate 0–15; show the hex equivalent live as you type
+- [x] Add PSI field and PsionicTalents field to manual entry form
+
+**CSV format (updated)**
+```
+Name,STR,DEX,END,INT,EDU,SOC,PSI,Career,Rank,Homeworld,Skills,PsionicTalents,Notes
+```
+Skills and PsionicTalents: `SkillName-Level` comma-separated (e.g. `Awareness-1,Telepathy-0`)
+
+**Tests (write before implementing)**
+- [x] `toHex()` — 0→'0', 9→'9', 10→'A', 15→'F'
+- [x] `upp()` — boundary values (0, 9, 10, 15); PSI not included in UPP string
+- [x] `statDM()` — verify DM table: 0→-3, 1→-2, 3→-1, 6→0, 9→1, 12→2, 15→3
+- [x] `skillChar()` — exact match, parent-skill fallback, unknown→null
+- [x] `parseSkillsCSV()` — skill names with spaces, level 0, malformed entries
+- [x] `parseCSV()` — happy path, PSI column, PsionicTalents column, missing optional cols, quoted commas
+- [x] `CharCard` — renders name, UPP string, trained skill count; expands on click; shows skill chips; shows psionics section if psionic talents present
 
 ### Milestone 1 Retrospective
 
@@ -105,8 +164,8 @@ Character data is referenced constantly during play — UPP modifiers, skill lev
 Questions to answer:
 - Is the CSV import format intuitive without the template?
 - Did the realtime sync work reliably? Any race conditions on bulk CSV import?
-- What did players actually want on a character card that isn't there?
-- Are the UPP hex values readable at a glance, or should we add decimal sub-labels?
+- Does the dice roller feel satisfying at the table? Any UX friction?
+- Is the governing characteristic ever wrong and need manual override?
 
 ---
 
