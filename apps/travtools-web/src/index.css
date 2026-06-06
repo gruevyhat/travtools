@@ -1,0 +1,131 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    background-color: #080c14;
+    color: #8ba4b0;
+    font-family: 'Share Tech Mono', monospace;
+  }
+
+  /* Thin amber scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #0e1420;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #8a6810;
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #d4a017;
+  }
+}
+
+@layer components {
+  /* CRT scan-line overlay */
+  .scanlines::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 0, 0, 0.04) 2px,
+      rgba(0, 0, 0, 0.04) 4px
+    );
+    z-index: 9999;
+  }
+
+  .panel {
+    @apply bg-panel border border-steel rounded-sm;
+  }
+
+  .panel-header {
+    @apply px-4 py-2 border-b border-steel text-amber font-mono text-xs tracking-widest uppercase;
+  }
+
+  .btn {
+    @apply px-3 py-1.5 text-xs font-mono tracking-wider border transition-colors duration-150 cursor-pointer;
+  }
+
+  .btn-amber {
+    @apply btn border-amber-dim text-amber hover:bg-amber hover:text-void;
+  }
+
+  .btn-steel {
+    @apply btn border-steel text-body hover:border-amber hover:text-amber;
+  }
+
+  .btn-danger {
+    @apply btn border-alert/50 text-alert hover:bg-alert hover:text-white;
+  }
+
+  .input {
+    @apply bg-void border border-steel text-bright font-mono text-sm px-3 py-1.5 w-full
+           placeholder:text-body/40 focus:outline-none focus:border-amber transition-colors;
+  }
+
+  .select {
+    @apply input appearance-none cursor-pointer;
+  }
+
+  .label {
+    @apply text-xs text-body tracking-wider uppercase;
+  }
+
+  .table-row {
+    @apply border-b border-steel/50 hover:bg-steel/20 transition-colors;
+  }
+
+  .table-cell {
+    @apply px-3 py-2 text-sm font-mono text-bright;
+  }
+
+  .table-header {
+    @apply px-3 py-2 text-xs font-mono text-amber tracking-widest uppercase text-left;
+  }
+
+  .tag-active {
+    @apply text-safe border-safe/40 bg-safe/10;
+  }
+
+  .tag-completed {
+    @apply text-cyan-trav border-cyan-trav/40 bg-cyan-trav/10;
+  }
+
+  .tag-cancelled {
+    @apply text-alert border-alert/40 bg-alert/10;
+  }
+
+  .status-tag {
+    @apply text-xs px-2 py-0.5 border font-mono;
+  }
+
+  /* Amber text glow */
+  .glow-amber {
+    text-shadow: 0 0 8px rgba(212, 160, 23, 0.6);
+  }
+
+  .glow-cyan {
+    text-shadow: 0 0 8px rgba(31, 184, 205, 0.6);
+  }
+}
