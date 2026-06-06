@@ -151,9 +151,15 @@ Questions to answer:
 
 ### Tasks
 
+**PDF extraction (do first)**
+- [ ] Read deck plan legend (p.189) — reference for icon meanings when auditing SVGs
+- [ ] Read Type-S Scout/Courier deck plan (p.191): 2 decks. Deck 2 (main): Bridge (1), Workshop (2), 4 staterooms, probe drone bay, airlock, iris valves, fuel/drives. Deck 1 (upper): Cargo Bay (3). Turret external. Confirm SVG matches this layout.
+- [ ] Read Type-A Free Trader deck plan (p.195): 2 decks. Deck 1 (main): Bridge (1), Cargo Bay (2), 20 low berths, drives/fuel. Deck 2 (upper): 10 staterooms + common area. Confirm SVG matches this layout.
+- [ ] Note: additional canonical ships exist in the 2022 book — Type-J Seeker (p.193), Type-A2 Far Trader (p.197), Type-K Safari Ship (p.199) — candidates for a third canonical option in M3 UX task
+
 **Correctness**
-- [ ] Audit Type-S Scout/Courier SVG against the 2022 Core Rulebook deck plan
-- [ ] Audit Type-A Free Trader/Beowulf SVG against the 2022 Core Rulebook deck plan
+- [ ] Audit Type-S Scout/Courier SVG against deck plan (p.191): verify room labels, deck count, fuel/drive placement, turret position
+- [ ] Audit Type-A Free Trader SVG against deck plan (p.195): verify room labels, low berth count (20), stateroom deck separation
 - [ ] Test: upload a custom image, place 3 annotations, verify they persist after page reload
 - [ ] Test: remove an annotation; verify removal syncs to a second tab
 - [ ] Decide and implement: should canonical ships support annotations? (Recommendation: yes — useful for marking cabin assignments, damage, etc.)
@@ -162,7 +168,7 @@ Questions to answer:
 **UX improvements**
 - [ ] Annotation tooltip: hovering an annotation dot shows the label without cluttering the view; clicking selects it for deletion
 - [ ] Ship notes field: freeform text below the schematic for crew manifest, mortgage balance, etc.
-- [ ] Add a third canonical ship if a commonly-used Traveller vessel is missing from the 2022 book
+- [ ] Add a third canonical ship: Type-K Safari Ship (p.198–199) is the most distinctive option — 200t, unique wide-hull shape, trophy lounge, multi-environment spaces
 
 **Tests (TDD — write before UX improvements)**
 - [ ] `handleImageClick()` position calculation: click at known pixel → expected x/y percentage
@@ -238,11 +244,17 @@ Questions to answer:
 
 ### Tasks
 
+**PDF extraction (do first)**
+- [ ] Read Trade Goods table (p.244–245): D66 table with 18 entries (D66 11–36 confirmed on p.244; remainder on p.245). Columns: D66, Type, Availability, Tons, Base Price, Purchase DM, Sale DM, Examples. Transcribe all rows into `src/data/tradeGoods.ts` as a typed array.
+- [ ] Note trade goods structure: `{ d66: number, type: string, availability: string, tons: string, basePrice: number, purchaseDM: string, saleDM: string, examples: string }[]`
+- [ ] Read Modified Price table (p.243): roll result → purchase % and sale % — useful for a future price calculator feature; record in a comment in `tradeGoods.ts` for now
+
+**Implementation**
 - [ ] Scaffold `DiceRoller` component and route
 - [ ] Implement roll logic with boon/bane; unit test all edge cases
 - [ ] Realtime roll broadcast via Supabase `channel.send()` (ephemeral, no DB write needed)
 - [ ] Scaffold `QuickRef` drawer component
-- [ ] Extract trade goods table from rulebook PDF into `src/data/tradeGoods.ts`
+- [ ] Transcribe trade goods table from p.244–245 into `src/data/tradeGoods.ts`
 - [ ] Write tests: roll distribution, modifier application, boon/bane logic
 
 ### Milestone 5 Retrospective
