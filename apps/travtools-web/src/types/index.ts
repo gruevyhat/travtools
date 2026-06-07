@@ -308,6 +308,8 @@ export interface SessionJournalEntry {
   updated_at: string;
 }
 
+export type RangeBand = 'adjacent' | 'close' | 'short' | 'medium' | 'long' | 'very-long' | 'distant';
+
 export interface CombatCombatant {
   id: string; // character id or generated id for NPCs
   name: string;
@@ -316,6 +318,10 @@ export interface CombatCombatant {
   minorActionUsed: boolean;
   significantActionUsed: boolean;
   isNPC: boolean;
+  rangeBand: RangeBand;
+  // NPC-only health — PCs are read live from the characters table
+  npcHitsMax: number | null;
+  npcHitsCur: number | null;
 }
 
 export interface CombatState {

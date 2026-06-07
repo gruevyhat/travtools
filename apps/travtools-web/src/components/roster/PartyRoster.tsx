@@ -1697,7 +1697,17 @@ export default function PartyRoster() {
   const [editing, setEditing] = useState<string | null>(null);
   const [skillsRaw, setSkillsRaw] = useState('');
   const [talentsRaw, setTalentsRaw] = useState('');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(() => {
+    try { return localStorage.getItem('travtools-roster-selected-id'); } catch { return null; }
+  });
+  function selectChar(id: string | null) {
+    setSelectedId(id);
+    try {
+      if (id) localStorage.setItem('travtools-roster-selected-id', id);
+      else localStorage.removeItem('travtools-roster-selected-id');
+    } catch { /* ignore */ }
+  }
+
   const [uploadingPortraitId, setUploadingPortraitId] = useState<string | null>(null);
   const [rosterError, setRosterError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -1719,6 +1729,14 @@ export default function PartyRoster() {
       .subscribe();
     return () => { client.removeChannel(channel); };
   }, [client, loadChars]);
+
+  // Clear stale selectedId after first successful char load
+  useEffect(() => {
+    if (chars.length > 0 && selectedId && !chars.find(c => c.id === selectedId)) {
+      selectChar(null);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chars]);
 
   async function saveChar(e: React.FormEvent) {
     e.preventDefault();
@@ -1744,7 +1762,7 @@ export default function PartyRoster() {
       } as Character;
 
       setChars(prev => sortCharacters(prev.map(c => c.id === editingId ? optimistic : c)));
-      setSelectedId(editingId);
+      selectChar(editingId);
       setEditing(null);
       setForm(EMPTY); setSkillsRaw(''); setTalentsRaw(''); setShowForm(false);
 
@@ -1770,7 +1788,7 @@ export default function PartyRoster() {
       if (data) {
         const inserted = data as Character;
         setChars(prev => sortCharacters([...prev, inserted]));
-        setSelectedId(inserted.id);
+        selectChar(inserted.id);
       }
     }
     setForm(EMPTY); setSkillsRaw(''); setTalentsRaw(''); setShowForm(false);
@@ -1780,7 +1798,7 @@ export default function PartyRoster() {
     if (!client || !confirm('Remove this character?')) return;
     const previous = chars.find(c => c.id === id);
     setChars(prev => prev.filter(c => c.id !== id));
-    if (selectedId === id) setSelectedId(null);
+    if (selectedId === id) selectChar(null);
     const { error } = await client.from('characters').delete().eq('id', id);
     if (error) {
       setRosterError(`Character could not be deleted: ${error.message}`);
@@ -1893,7 +1911,7 @@ export default function PartyRoster() {
     if (data) {
       const inserted = data as Character;
       setChars(prev => sortCharacters([...prev, inserted]));
-      setSelectedId(inserted.id);
+      selectChar(inserted.id);
     }
   }
 
@@ -1921,7 +1939,7 @@ export default function PartyRoster() {
     }
     if (data) {
       setChars(prev => sortCharacters(prev.map(c => c.id === targetId ? data as Character : c)));
-      setSelectedId(targetId);
+      selectChar(targetId);
     }
   }
 
@@ -2770,7 +2788,7 @@ export default function PartyRoster() {
               <Download size={12} /> EXPORT CSV
             </button>
             <button
-              onClick={() => { setForm(EMPTY); setSkillsRaw(''); setTalentsRaw(''); setEditing(null); setShowForm(true); setSelectedId(null); }}
+              onClick={() => { setForm(EMPTY); setSkillsRaw(''); setTalentsRaw(''); setEditing(null); setShowForm(true); selectChar(null); }}
               className="btn-amber w-full flex items-center justify-center gap-1 text-xs">
               <Plus size={12} /> ADD CHARACTER
             </button>
@@ -2780,7 +2798,7 @@ export default function PartyRoster() {
             {chars.map(char => (
               <CharSidebarRow key={char.id} char={char}
                 selected={selectedId === char.id && !showForm}
-                onSelect={id => { setSelectedId(id); setShowForm(false); }}
+                onSelect={id => { selectChar(id); setShowForm(false); }}
               />
             ))}
             {chars.length === 0 && (
