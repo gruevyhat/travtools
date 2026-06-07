@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `travtools` is a tooling project for the Traveller tabletop RPG (2022 Core Rulebook edition). The reference rulebook is at `docs/Traveller 2022 Core Rulebook 20-02-2026.pdf`.
 
+Travtools is an unofficial fan tool for a private campaign. It is not affiliated with, sponsored by, or endorsed by Mongoose Publishing. Core Rulebook front matter credits include Classic Traveller by Marc Miller, Mongoose Traveller development by Matthew Sprange, and original core mechanics by Gareth Hanrahan. The Core Rulebook copyright notice is: `Traveller ©2026 Mongoose Publishing Ltd. All rights reserved.`
+
 ## Repository Structure
 
 - `apps/travtools-web/` — React/Vite SPA (the main group companion app)

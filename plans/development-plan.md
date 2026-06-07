@@ -10,12 +10,15 @@ The app is live on GitHub Pages at `https://gruevyhat.github.io/travtools/` and 
 
 The core app now has a landing dashboard, roster, ships, trade ledger, inventory manager, roll log, and global tools drawer. The four local character XLSX files under `docs/characters/` have been imported into Supabase with the current parser. Character portraits are stored as data URLs; the `ship-schematics` Storage bucket remains relevant only for custom ship schematic uploads.
 
+Travtools is an unofficial fan tool for a private campaign. It is not affiliated with, sponsored by, or endorsed by Mongoose Publishing. Core Rulebook front matter credits include Classic Traveller by Marc Miller, Mongoose Traveller development by Matthew Sprange, and original core mechanics by Gareth Hanrahan. The Core Rulebook copyright notice is: `Traveller ©2026 Mongoose Publishing Ltd. All rights reserved.`
+
 ### Design Imperatives
 
 1. Runnable as a GitHub Pages static site (no server-side rendering, no SSR)
 2. Traveller aesthetic: void `#080C14`, amber `#D4A017`, cyan `#1FB8CD`, `Share Tech Mono` font, CRT scan-lines
 3. Real-time sync across all players at the table via Supabase realtime
 4. TDD: new logic ships with tests; untested legacy logic gets covered before modification
+5. Every public-facing app surface should preserve the unofficial fan-tool notice and copyright/trademark disclaimer
 
 ---
 

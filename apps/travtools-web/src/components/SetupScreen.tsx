@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useSupabase } from '../lib/supabaseContext';
+import FanNotice from './legal/FanNotice';
 
 export default function SetupScreen() {
   const { configure } = useSupabase();
@@ -77,6 +78,10 @@ export default function SetupScreen() {
 
           <div className="text-body/40 text-xs text-center">
             Credentials stored in browser localStorage. Not sent to any third party.
+          </div>
+
+          <div className="border-t border-steel/40 pt-3 text-center">
+            <FanNotice compact />
           </div>
         </div>
       </div>

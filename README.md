@@ -8,6 +8,14 @@ Live app:
 
 https://gruevyhat.github.io/travtools/
 
+## Fan Tool Notice
+
+Travtools is an unofficial, non-commercial fan tool for a private Traveller tabletop campaign. It is not affiliated with, sponsored by, or endorsed by Mongoose Publishing.
+
+Core Rulebook front matter credits include Classic Traveller by Marc Miller, Mongoose Traveller development by Matthew Sprange, and original core mechanics by Gareth Hanrahan.
+
+Copyright notice from the Core Rulebook: `Traveller ©2026 Mongoose Publishing Ltd. All rights reserved.` Traveller is identified in the rulebook as a registered trademark of Mongoose Publishing Ltd.
+
 ## Current Features
 
 - **Landing dashboard** — first screen with live counts, module launch buttons, latest roll summary, and Traveller ship-plan visual treatment.

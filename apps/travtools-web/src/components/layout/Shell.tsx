@@ -3,6 +3,7 @@ import { NavLink, Outlet, Link } from 'react-router-dom';
 import { Dices, Ship, TrendingUp, Package, Users, ScrollText, Wifi, WifiOff, Settings } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
 import GlobalToolsDrawer from '../tools/GlobalToolsDrawer';
+import FanNotice from '../legal/FanNotice';
 
 const IMPERIAL_OFFSET = 1_000_000; // rough offset to 57th century Imperial years
 function imperialDate() {
@@ -118,6 +119,10 @@ export default function Shell() {
       <main className="flex-1 overflow-auto">
         <Outlet />
       </main>
+
+      <footer className="border-t border-steel/40 bg-panel/70 flex-shrink-0">
+        <FanNotice />
+      </footer>
 
       <GlobalToolsDrawer open={toolsOpen} onClose={() => setToolsOpen(false)} />
     </div>
