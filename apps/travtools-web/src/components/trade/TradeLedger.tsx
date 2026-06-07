@@ -27,6 +27,19 @@ function profit(deal: TradeDeal): number | null {
   return (deal.sell_price - deal.buy_price) * deal.quantity;
 }
 
+function sortDeals(deals: TradeDeal[]): TradeDeal[] {
+  return [...deals].sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
+
+function Field({ name, children }: { name: string; children: React.ReactNode }) {
+  return (
+    <label className="space-y-1 block">
+      <span className="label block">{name}</span>
+      {children}
+    </label>
+  );
+}
+
 export default function TradeLedger() {
   const { client } = useSupabase();
   const [deals, setDeals] = useState<TradeDeal[]>([]);
@@ -57,10 +70,36 @@ export default function TradeLedger() {
     e.preventDefault();
     if (!client) return;
     if (editing) {
-      await client.from('trade_deals').update({ ...form, updated_at: new Date().toISOString() }).eq('id', editing);
+      const editingId = editing;
+      const previous = deals.find(d => d.id === editingId);
+      const updated_at = new Date().toISOString();
+      const payload = { ...form, updated_at };
+      const optimistic = {
+        ...(previous ?? { id: editingId, created_at: updated_at }),
+        ...payload,
+      } as TradeDeal;
+
+      setDeals(prev => sortDeals(prev.map(d => d.id === editingId ? optimistic : d)));
       setEditing(null);
+      setForm(EMPTY);
+      setShowForm(false);
+
+      const { data, error } = await client.from('trade_deals').update(payload).eq('id', editingId).select().single();
+      if (error) {
+        console.error('Trade deal update failed:', error);
+        if (previous) setDeals(prev => sortDeals(prev.map(d => d.id === editingId ? previous : d)));
+        loadDeals();
+        return;
+      }
+      if (data) setDeals(prev => sortDeals(prev.map(d => d.id === editingId ? data as TradeDeal : d)));
+      return;
     } else {
-      await client.from('trade_deals').insert(form);
+      const { data, error } = await client.from('trade_deals').insert(form).select().single();
+      if (error) {
+        console.error('Trade deal insert failed:', error);
+        return;
+      }
+      if (data) setDeals(prev => sortDeals([data as TradeDeal, ...prev]));
     }
     setForm(EMPTY);
     setShowForm(false);
@@ -68,23 +107,54 @@ export default function TradeLedger() {
 
   async function deleteDeal(id: string) {
     if (!client || !confirm('Delete this deal?')) return;
-    await client.from('trade_deals').delete().eq('id', id);
+    const previous = deals.find(d => d.id === id);
+    setDeals(prev => prev.filter(d => d.id !== id));
+    const { error } = await client.from('trade_deals').delete().eq('id', id);
+    if (error) {
+      console.error('Trade deal delete failed:', error);
+      if (previous) setDeals(prev => sortDeals([...prev, previous]));
+      loadDeals();
+    }
   }
 
   async function completeDeal(id: string) {
     if (!client || !sellPrice) return;
-    await client.from('trade_deals').update({
+    const previous = deals.find(d => d.id === id);
+    const updated_at = new Date().toISOString();
+    const patch = {
       status: 'completed',
       sell_price: parseFloat(sellPrice),
-      updated_at: new Date().toISOString(),
-    }).eq('id', id);
+      updated_at,
+    } satisfies Partial<TradeDeal>;
+
+    setDeals(prev => sortDeals(prev.map(d => d.id === id ? { ...d, ...patch } : d)));
     setCompletingId(null);
     setSellPrice('');
+
+    const { data, error } = await client.from('trade_deals').update(patch).eq('id', id).select().single();
+    if (error) {
+      console.error('Trade deal completion failed:', error);
+      if (previous) setDeals(prev => sortDeals(prev.map(d => d.id === id ? previous : d)));
+      loadDeals();
+      return;
+    }
+    if (data) setDeals(prev => sortDeals(prev.map(d => d.id === id ? data as TradeDeal : d)));
   }
 
   async function cancelDeal(id: string) {
     if (!client) return;
-    await client.from('trade_deals').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', id);
+    const previous = deals.find(d => d.id === id);
+    const patch = { status: 'cancelled', updated_at: new Date().toISOString() } satisfies Partial<TradeDeal>;
+
+    setDeals(prev => sortDeals(prev.map(d => d.id === id ? { ...d, ...patch } : d)));
+    const { data, error } = await client.from('trade_deals').update(patch).eq('id', id).select().single();
+    if (error) {
+      console.error('Trade deal cancellation failed:', error);
+      if (previous) setDeals(prev => sortDeals(prev.map(d => d.id === id ? previous : d)));
+      loadDeals();
+      return;
+    }
+    if (data) setDeals(prev => sortDeals(prev.map(d => d.id === id ? data as TradeDeal : d)));
   }
 
   function startEdit(deal: TradeDeal) {
@@ -104,13 +174,6 @@ export default function TradeLedger() {
   const activeValue = deals
     .filter(d => d.status === 'active' && d.buy_price !== null)
     .reduce((sum, d) => sum + (d.buy_price! * d.quantity), 0);
-
-  const F = ({ name, children }: { name: string; children: React.ReactNode }) => (
-    <div className="space-y-1">
-      <label className="label">{name}</label>
-      {children}
-    </div>
-  );
 
   return (
     <div className="p-4 space-y-4 h-full overflow-auto">
@@ -155,34 +218,34 @@ export default function TradeLedger() {
           <div className="col-span-2 panel-header -mx-4 -mt-4 mb-1">
             {editing ? 'EDIT DEAL' : 'NEW TRADE DEAL'}
           </div>
-          <F name="Item / Cargo">
+          <Field name="Item / Cargo">
             <input className="input" required value={form.item} onChange={e => setForm({ ...form, item: e.target.value })} />
-          </F>
-          <F name="Quantity">
+          </Field>
+          <Field name="Quantity">
             <input className="input" type="number" min={1} value={form.quantity} onChange={e => setForm({ ...form, quantity: parseInt(e.target.value) || 1 })} />
-          </F>
-          <F name="Buy Price (Cr/unit)">
+          </Field>
+          <Field name="Buy Price (Cr/unit)">
             <input className="input" type="number" step="0.01" value={form.buy_price ?? ''} onChange={e => setForm({ ...form, buy_price: e.target.value ? parseFloat(e.target.value) : null })} />
-          </F>
-          <F name="Sell Price (Cr/unit)">
+          </Field>
+          <Field name="Sell Price (Cr/unit)">
             <input className="input" type="number" step="0.01" value={form.sell_price ?? ''} onChange={e => setForm({ ...form, sell_price: e.target.value ? parseFloat(e.target.value) : null })} />
-          </F>
-          <F name="World Bought">
+          </Field>
+          <Field name="World Bought">
             <input className="input" value={form.world_bought ?? ''} onChange={e => setForm({ ...form, world_bought: e.target.value || null })} />
-          </F>
-          <F name="World Sold">
+          </Field>
+          <Field name="World Sold">
             <input className="input" value={form.world_sold ?? ''} onChange={e => setForm({ ...form, world_sold: e.target.value || null })} />
-          </F>
-          <F name="Status">
+          </Field>
+          <Field name="Status">
             <select className="select" value={form.status} onChange={e => setForm({ ...form, status: e.target.value as TradeDeal['status'] })}>
               <option value="active">Active</option>
               <option value="completed">Completed</option>
               <option value="cancelled">Cancelled</option>
             </select>
-          </F>
-          <F name="Notes">
+          </Field>
+          <Field name="Notes">
             <input className="input" value={form.notes ?? ''} onChange={e => setForm({ ...form, notes: e.target.value || null })} />
-          </F>
+          </Field>
           <div className="col-span-2 flex gap-2 justify-end">
             <button type="button" onClick={() => setShowForm(false)} className="btn-steel">CANCEL</button>
             <button type="submit" className="btn-amber">{editing ? 'UPDATE' : 'SAVE'}</button>

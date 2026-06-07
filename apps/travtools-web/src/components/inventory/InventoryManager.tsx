@@ -18,6 +18,19 @@ const EMPTY: ItemForm = {
 
 const CATEGORIES = ['Weapon', 'Armour', 'Equipment', 'Medicine', 'Cargo', 'Electronics', 'Survival', 'Other'];
 
+function sortItems(items: InventoryItem[]): InventoryItem[] {
+  return [...items].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function Field({ name, children }: { name: string; children: React.ReactNode }) {
+  return (
+    <label className="space-y-1 block">
+      <span className="label block">{name}</span>
+      {children}
+    </label>
+  );
+}
+
 export default function InventoryManager() {
   const { client } = useSupabase();
   const [items, setItems] = useState<InventoryItem[]>([]);
@@ -47,10 +60,34 @@ export default function InventoryManager() {
     e.preventDefault();
     if (!client) return;
     if (editing) {
-      await client.from('inventory_items').update(form).eq('id', editing);
+      const editingId = editing;
+      const previous = items.find(i => i.id === editingId);
+      const optimistic = {
+        ...(previous ?? { id: editingId, created_at: new Date().toISOString() }),
+        ...form,
+      } as InventoryItem;
+
+      setItems(prev => sortItems(prev.map(i => i.id === editingId ? optimistic : i)));
       setEditing(null);
+      setForm(EMPTY);
+      setShowForm(false);
+
+      const { data, error } = await client.from('inventory_items').update(form).eq('id', editingId).select().single();
+      if (error) {
+        console.error('Inventory item update failed:', error);
+        if (previous) setItems(prev => sortItems(prev.map(i => i.id === editingId ? previous : i)));
+        loadItems();
+        return;
+      }
+      if (data) setItems(prev => sortItems(prev.map(i => i.id === editingId ? data as InventoryItem : i)));
+      return;
     } else {
-      await client.from('inventory_items').insert(form);
+      const { data, error } = await client.from('inventory_items').insert(form).select().single();
+      if (error) {
+        console.error('Inventory item insert failed:', error);
+        return;
+      }
+      if (data) setItems(prev => sortItems([data as InventoryItem, ...prev]));
     }
     setForm(EMPTY);
     setShowForm(false);
@@ -58,7 +95,14 @@ export default function InventoryManager() {
 
   async function deleteItem(id: string) {
     if (!client || !confirm('Delete this item?')) return;
-    await client.from('inventory_items').delete().eq('id', id);
+    const previous = items.find(i => i.id === id);
+    setItems(prev => prev.filter(i => i.id !== id));
+    const { error } = await client.from('inventory_items').delete().eq('id', id);
+    if (error) {
+      console.error('Inventory item delete failed:', error);
+      if (previous) setItems(prev => sortItems([...prev, previous]));
+      loadItems();
+    }
   }
 
   function startEdit(item: InventoryItem) {
@@ -81,13 +125,6 @@ export default function InventoryManager() {
 
   const totalWeight = visible.reduce((s, i) => s + (i.weight_kg ?? 0) * i.quantity, 0);
   const totalValue = visible.reduce((s, i) => s + (i.value_cr ?? 0) * i.quantity, 0);
-
-  const F = ({ name, children }: { name: string; children: React.ReactNode }) => (
-    <div className="space-y-1">
-      <label className="label">{name}</label>
-      {children}
-    </div>
-  );
 
   return (
     <div className="p-4 space-y-4 h-full overflow-auto">
@@ -130,33 +167,33 @@ export default function InventoryManager() {
           <div className="col-span-2 panel-header -mx-4 -mt-4 mb-1">
             {editing ? 'EDIT ITEM' : 'NEW INVENTORY ITEM'}
           </div>
-          <F name="Item Name">
+          <Field name="Item Name">
             <input className="input" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
-          </F>
-          <F name="Category">
+          </Field>
+          <Field name="Category">
             <select className="select" value={form.category ?? ''} onChange={e => setForm({ ...form, category: e.target.value || null })}>
               <option value="">— None —</option>
               {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
-          </F>
-          <F name="Quantity">
+          </Field>
+          <Field name="Quantity">
             <input className="input" type="number" min={0} value={form.quantity} onChange={e => setForm({ ...form, quantity: parseInt(e.target.value) || 0 })} />
-          </F>
-          <F name="Weight (kg each)">
+          </Field>
+          <Field name="Weight (kg each)">
             <input className="input" type="number" step="0.001" value={form.weight_kg ?? ''} onChange={e => setForm({ ...form, weight_kg: e.target.value ? parseFloat(e.target.value) : null })} />
-          </F>
-          <F name="Value (Cr each)">
+          </Field>
+          <Field name="Value (Cr each)">
             <input className="input" type="number" step="0.01" value={form.value_cr ?? ''} onChange={e => setForm({ ...form, value_cr: e.target.value ? parseFloat(e.target.value) : null })} />
-          </F>
-          <F name="Owner">
+          </Field>
+          <Field name="Owner">
             <input className="input" value={form.owner ?? ''} onChange={e => setForm({ ...form, owner: e.target.value || null })} />
-          </F>
-          <F name="Location">
+          </Field>
+          <Field name="Location">
             <input className="input" value={form.location ?? ''} onChange={e => setForm({ ...form, location: e.target.value || null })} />
-          </F>
-          <F name="Notes">
+          </Field>
+          <Field name="Notes">
             <input className="input" value={form.notes ?? ''} onChange={e => setForm({ ...form, notes: e.target.value || null })} />
-          </F>
+          </Field>
           <div className="col-span-2 flex gap-2 justify-end">
             <button type="button" onClick={() => setShowForm(false)} className="btn-steel">CANCEL</button>
             <button type="submit" className="btn-amber">{editing ? 'UPDATE' : 'SAVE'}</button>

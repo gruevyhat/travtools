@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { Plus, Upload, ChevronDown, ChevronUp, X, Minus } from 'lucide-react';
+import { Plus, Upload, ChevronDown, ChevronUp, X, Minus, Settings, Pencil, Trash2 } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
-import { Character, Weapon } from '../../types';
+import { AttributeMods, Character, Weapon } from '../../types';
 import {
   toHex, upp, statDM, skillChar, parseSkillsCSV, parseTalentsCSV,
   STAT_LABELS, CharStat, parseDamageExpr,
@@ -13,10 +13,20 @@ import { parseXLSXCharacter } from '../../lib/parseXLSX';
 type CharForm = Omit<Character, 'id' | 'created_at'>;
 
 const EMPTY: CharForm = {
-  name: '', player: null,
+  name: '', player: null, portrait_url: null,
   str: null, dex: null, end_stat: null, int_stat: null, edu: null, soc: null,
   psi: null, chr: null, mor: null, lck: null,
   str_cur: null, dex_cur: null, end_cur: null, psi_cur: null,
+  temp_mods: {},
+  profile_details: {},
+  homeworld_details: {},
+  lifepath: [],
+  armour: [],
+  augments: [],
+  personal_equipment: [],
+  finances: {},
+  contacts: [],
+  background: {},
   career: null, rank: null, homeworld: null,
   skills: [], psionic_talents: [],
   weapons: [{ name: 'Unarmed', skill: 'Melee (Unarmed)', range: 'Melee', damage: '1D+STR DM', traits: '' }],
@@ -25,6 +35,12 @@ const EMPTY: CharForm = {
 
 const CORE_STATS: CharStat[] = ['str', 'dex', 'end_stat', 'int_stat', 'edu', 'soc'];
 const EXTRA_STATS: CharStat[] = ['chr', 'mor', 'lck'];
+const ALL_STATS: CharStat[] = [...CORE_STATS, 'psi', ...EXTRA_STATS];
+const CORE_STAT_FIELDS: Array<keyof CharForm> = ['str', 'dex', 'end_stat', 'int_stat', 'edu', 'soc'];
+const TEMP_MOD_MIN = -15;
+const TEMP_MOD_MAX = 15;
+const PORTRAIT_WIDTH = 360;
+const PORTRAIT_HEIGHT = 480;
 
 const DIFFICULTIES = [
   { label: 'Routine', target: 6 },
@@ -40,9 +56,93 @@ function fmtDM(n: number): string {
   return n >= 0 ? `+${n}` : String(n);
 }
 
+function parseIntegerInput(raw: string): number {
+  const trimmed = raw.trim();
+  if (trimmed === '' || trimmed === '+' || trimmed === '-') return 0;
+  const value = parseInt(trimmed, 10);
+  return Number.isNaN(value) ? 0 : value;
+}
+
+function clamp(n: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, n));
+}
+
+function effectiveStatValue(base: number | null, tempMod: number): number | null {
+  if (base === null) return null;
+  return Math.max(0, base + tempMod);
+}
+
+function normalizeTempMods(raw: AttributeMods | null | undefined): Partial<Record<CharStat, number>> {
+  if (!raw || typeof raw !== 'object') return {};
+  return ALL_STATS.reduce<Partial<Record<CharStat, number>>>((mods, key) => {
+    const value = raw[key];
+    if (typeof value === 'number' && Number.isFinite(value) && value !== 0) {
+      mods[key] = clamp(Math.trunc(value), TEMP_MOD_MIN, TEMP_MOD_MAX);
+    }
+    return mods;
+  }, {});
+}
+
+async function portraitFileToDataUrl(file: File): Promise<string> {
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('Could not read portrait image.'));
+      img.src = objectUrl;
+    });
+
+    const canvas = document.createElement('canvas');
+    canvas.width = PORTRAIT_WIDTH;
+    canvas.height = PORTRAIT_HEIGHT;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Could not prepare portrait image.');
+
+    const sourceRatio = image.naturalWidth / image.naturalHeight;
+    const targetRatio = PORTRAIT_WIDTH / PORTRAIT_HEIGHT;
+    let sx = 0;
+    let sy = 0;
+    let sw = image.naturalWidth;
+    let sh = image.naturalHeight;
+
+    if (sourceRatio > targetRatio) {
+      sw = image.naturalHeight * targetRatio;
+      sx = (image.naturalWidth - sw) / 2;
+    } else {
+      sh = image.naturalWidth / targetRatio;
+      sy = (image.naturalHeight - sh) / 2;
+    }
+
+    ctx.drawImage(image, sx, sy, sw, sh, 0, 0, PORTRAIT_WIDTH, PORTRAIT_HEIGHT);
+    return canvas.toDataURL('image/jpeg', 0.82);
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+function Field({
+  name,
+  children,
+}: {
+  name: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="space-y-1 block">
+      <span className="label block">{name}</span>
+      {children}
+    </label>
+  );
+}
+
 function charDisplayName(char: Character): string {
   if (char.name && char.name !== 'Unknown') return char.name;
   return char.player ? `<<${char.player}>>` : 'Unknown';
+}
+
+function sortCharacters(characters: Character[]): Character[] {
+  return [...characters].sort((a, b) => charDisplayName(a).localeCompare(charDisplayName(b)));
 }
 
 function physicalStatus(char: Character): { label: string; color: string } {
@@ -59,6 +159,199 @@ function physicalStatus(char: Character): { label: string; color: string } {
   return { label: 'HEALTHY', color: 'text-safe' };
 }
 
+function CharacterActionsMenu({
+  onEdit,
+  onDelete,
+}: {
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  function runAction(action: () => void) {
+    setOpen(false);
+    action();
+  }
+
+  return (
+    <div
+      className="relative inline-flex"
+      onClick={e => e.stopPropagation()}
+      onKeyDown={e => { if (e.key === 'Escape') setOpen(false); }}
+    >
+      <button
+        type="button"
+        title="Character actions"
+        aria-label="Character actions"
+        aria-expanded={open}
+        onClick={() => setOpen(v => !v)}
+        className="w-6 h-6 border border-steel/50 text-body/50 hover:border-amber/70 hover:text-amber transition-colors flex items-center justify-center"
+      >
+        <Settings size={13} />
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full z-30 mt-1 min-w-28 border border-steel bg-panel shadow-xl">
+          <button
+            type="button"
+            onClick={() => runAction(onEdit)}
+            className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-mono text-body hover:bg-steel/30 hover:text-amber"
+          >
+            <Pencil size={12} /> EDIT
+          </button>
+          <button
+            type="button"
+            onClick={() => runAction(onDelete)}
+            className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-mono text-alert/80 hover:bg-alert/10 hover:text-alert"
+          >
+            <Trash2 size={12} /> DELETE
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CharacterPortrait({
+  char,
+  size = 'lg',
+  editable = false,
+  uploading = false,
+  onUpload,
+}: {
+  char: Character;
+  size?: 'sm' | 'lg';
+  editable?: boolean;
+  uploading?: boolean;
+  onUpload?: (file: File) => void;
+}) {
+  const src = char.portrait_url?.trim() ?? '';
+  const [failed, setFailed] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
+
+  const boxClass = size === 'sm' ? 'w-12 h-16' : 'w-24 h-32';
+  const textClass = size === 'sm' ? 'text-[8px]' : 'text-[10px]';
+  const iconSize = size === 'sm' ? 9 : 12;
+
+  function chooseFile(e: React.MouseEvent<HTMLButtonElement>) {
+    e.stopPropagation();
+    if (!editable || uploading) return;
+    fileRef.current?.click();
+  }
+
+  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    e.stopPropagation();
+    const file = e.target.files?.[0];
+    if (file && onUpload) onUpload(file);
+    e.target.value = '';
+  }
+
+  const frame = (
+    <>
+      {src && !failed ? (
+        <img
+          src={src}
+          alt={`${charDisplayName(char)} portrait`}
+          onError={() => setFailed(true)}
+          className="w-full h-full object-cover"
+        />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center bg-steel/10">
+          <span className={`${textClass} font-mono text-body/25`}>PORTRAIT</span>
+        </div>
+      )}
+      {editable && (
+        <div className="absolute right-1 bottom-1 w-5 h-5 border border-steel/70 bg-panel/90 text-amber flex items-center justify-center">
+          <Upload size={iconSize} />
+        </div>
+      )}
+      {uploading && (
+        <div className="absolute inset-0 bg-void/80 flex items-center justify-center">
+          <span className={`${textClass} font-mono text-amber`}>UPLOADING</span>
+        </div>
+      )}
+    </>
+  );
+
+  return (
+    <div
+      aria-label={`${charDisplayName(char)} portrait`}
+      className={`${boxClass} relative flex-shrink-0 border border-steel/60 bg-void/60 overflow-hidden flex items-center justify-center`}
+    >
+      {editable ? (
+        <>
+          <button
+            type="button"
+            title="Upload portrait"
+            aria-label={`Upload ${charDisplayName(char)} portrait`}
+            aria-busy={uploading}
+            onClick={chooseFile}
+            className="relative w-full h-full text-left group"
+          >
+            {frame}
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            aria-label={`Portrait file for ${charDisplayName(char)}`}
+            className="hidden"
+            onClick={e => e.stopPropagation()}
+            onChange={handleFile}
+          />
+        </>
+      ) : (
+        frame
+      )}
+    </div>
+  );
+}
+
+function DetailSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="border-t border-steel/50 pt-3">
+      <div className="label mb-2">{title}</div>
+      {children}
+    </div>
+  );
+}
+
+function hasValue(value: unknown): boolean {
+  if (value === null || value === undefined) return false;
+  if (typeof value === 'string') return value.trim() !== '';
+  if (typeof value === 'number') return true;
+  if (typeof value === 'boolean') return true;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === 'object') return Object.values(value).some(hasValue);
+  return false;
+}
+
+function entriesWithValues(record: object | null | undefined): Array<[string, unknown]> {
+  if (!record) return [];
+  return Object.entries(record as Record<string, unknown>).filter(([, value]) => hasValue(value));
+}
+
+function fmtCr(value: number | null | undefined): string {
+  if (value === null || value === undefined) return '—';
+  return `Cr ${value.toLocaleString()}`;
+}
+
+function boolMark(value: boolean | null | undefined): string {
+  if (value === true) return 'Y';
+  if (value === false) return 'N';
+  return '—';
+}
+
 // ─── Roll Modal ───────────────────────────────────────────────────────────────
 
 interface RollTarget {
@@ -71,7 +364,7 @@ interface RollTarget {
 
 interface AttackResult {
   d1: number; d2: number;
-  charDM: number; skillLevel: number;
+  charDM: number; skillLevel: number; bonusDM: number;
   total: number; effect: number;
 }
 
@@ -86,13 +379,15 @@ interface DamageResult {
 function RollModal({
   char,
   target: initialTarget,
+  statValues,
   onClose,
   onSave,
 }: {
   char: Character;
   target: RollTarget;
+  statValues: Partial<Record<CharStat, number | null>>;
   onClose: () => void;
-  onSave: (result: { d1: number; d2: number; charDM: number; skillLevel: number; total: number }, difficulty: number, label: string) => void;
+  onSave: (result: { d1: number; d2: number; charDM: number; skillLevel: number; bonusDM: number; total: number }, difficulty: number, label: string) => void;
 }) {
   const isWeapon = !!initialTarget.weapon;
   const isMelee = isWeapon && initialTarget.weapon!.range === 'Melee';
@@ -102,15 +397,22 @@ function RollModal({
   const [charKey, setCharKey] = useState<CharStat | null>(defaultCharKey);
   const [difficulty, setDifficulty] = useState<number>(8);
   const [label, setLabel] = useState(initialTarget.label);
-  const [skillLevel, setSkillLevel] = useState(initialTarget.skillLevel);
+  const [skillLevelInput, setSkillLevelInput] = useState(String(initialTarget.skillLevel));
+  const [bonusDMInput, setBonusDMInput] = useState('');
   const [attackResult, setAttackResult] = useState<AttackResult | null>(null);
   const [damageResult, setDamageResult] = useState<DamageResult | null>(null);
   const [saved, setSaved] = useState(false);
   const isCustom = initialTarget.label === '';
 
-  const charDM = charKey !== null ? statDM(char[charKey] as number | null) : 0;
-  const allStats: CharStat[] = [...CORE_STATS, 'psi', ...EXTRA_STATS];
-  const availableStats = allStats.filter(k => char[k] !== null);
+  function statValue(key: CharStat): number | null {
+    if (Object.prototype.hasOwnProperty.call(statValues, key)) return statValues[key] ?? null;
+    return char[key] as number | null;
+  }
+
+  const charDM = charKey !== null ? statDM(statValue(charKey)) : 0;
+  const skillLevel = parseIntegerInput(skillLevelInput);
+  const bonusDM = parseIntegerInput(bonusDMInput);
+  const availableStats = ALL_STATS.filter(k => statValue(k) !== null);
   const attackHit = attackResult !== null && attackResult.total >= difficulty;
 
   useEffect(() => {
@@ -122,20 +424,20 @@ function RollModal({
   function rollAttack() {
     const d1 = Math.ceil(Math.random() * 6);
     const d2 = Math.ceil(Math.random() * 6);
-    const total = d1 + d2 + charDM + skillLevel;
+    const total = d1 + d2 + charDM + skillLevel + bonusDM;
     const effect = total - difficulty;
-    const r: AttackResult = { d1, d2, charDM, skillLevel, total, effect };
+    const r: AttackResult = { d1, d2, charDM, skillLevel, bonusDM, total, effect };
     setAttackResult(r);
     setDamageResult(null);
     setSaved(false);
-    onSave({ d1, d2, charDM, skillLevel, total }, difficulty, label || 'Custom');
+    onSave({ d1, d2, charDM, skillLevel, bonusDM, total }, difficulty, label || 'Custom');
     setSaved(true);
   }
 
   function rollDamage() {
     if (!attackResult || !attackHit || !initialTarget.weapon) return;
     const { dice, constant } = parseDamageExpr(initialTarget.weapon.damage);
-    const strDMVal = isMelee ? statDM(char.str) : 0;
+    const strDMVal = isMelee ? statDM(statValue('str')) : 0;
     const effect = attackResult.effect;
     const rolls = Array.from({ length: Math.max(1, dice) }, () => Math.ceil(Math.random() * 6));
     const base = rolls.reduce((s, r) => s + r, 0);
@@ -177,7 +479,7 @@ function RollModal({
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <div className="space-y-1">
               <label className="label">{isWeapon ? 'Attack Characteristic' : 'Characteristic'}</label>
               <select className="select text-xs" value={charKey ?? ''}
@@ -185,17 +487,24 @@ function RollModal({
                 <option value="">— none —</option>
                 {availableStats.map(k => (
                   <option key={k} value={k}>
-                    {STAT_LABELS[k]} {toHex(char[k] as number | null)} ({fmtDM(statDM(char[k] as number | null))})
+                    {STAT_LABELS[k]} {toHex(statValue(k))} ({fmtDM(statDM(statValue(k)))})
                   </option>
                 ))}
               </select>
             </div>
             <div className="space-y-1">
               <label className="label">Skill Level</label>
-              <input className="input text-xs" type="number" min={-3} max={6}
-                value={skillLevel}
+              <input className="input text-xs" type="text" inputMode="numeric" pattern="[+-]?[0-9]*"
+                value={skillLevelInput}
                 readOnly={!isCustom}
-                onChange={e => setSkillLevel(parseInt(e.target.value) || 0)} />
+                onChange={e => setSkillLevelInput(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <label className="label" htmlFor="roll-bonus-dm">+DM</label>
+              <input id="roll-bonus-dm" className="input text-xs" type="text" inputMode="numeric" pattern="[+-]?[0-9]*"
+                placeholder="0"
+                value={bonusDMInput}
+                onChange={e => setBonusDMInput(e.target.value)} />
             </div>
           </div>
 
@@ -224,7 +533,8 @@ function RollModal({
           <div className="text-xs text-body/50 font-mono">
             Char DM: <span className="text-cyan-trav">{fmtDM(charDM)}</span>
             {' · '}Skill: <span className="text-cyan-trav">{fmtDM(skillLevel)}</span>
-            {' · '}Expected: <span className="text-body/40">{7 + charDM + skillLevel}+</span>
+            {' · '}+DM: <span className="text-cyan-trav">{fmtDM(bonusDM)}</span>
+            {' · '}Expected: <span className="text-body/40">{7 + charDM + skillLevel + bonusDM}+</span>
           </div>
 
           <button onClick={rollAttack} className="btn-amber w-full text-center text-sm">
@@ -237,8 +547,9 @@ function RollModal({
                 <span className="inline-flex items-center justify-center w-9 h-9 border border-amber text-amber font-bold text-lg">{attackResult.d1}</span>
                 <span className="text-body">+</span>
                 <span className="inline-flex items-center justify-center w-9 h-9 border border-amber text-amber font-bold text-lg">{attackResult.d2}</span>
-                {charDM !== 0 && <><span className="text-body">+</span><span className="text-cyan-trav text-xs">{charKey && STAT_LABELS[charKey]} {fmtDM(attackResult.charDM)}</span></>}
+                {attackResult.charDM !== 0 && <><span className="text-body">+</span><span className="text-cyan-trav text-xs">{charKey && STAT_LABELS[charKey]} {fmtDM(attackResult.charDM)}</span></>}
                 {skillLevel !== 0 && <><span className="text-body">+</span><span className="text-cyan-trav text-xs">Skill {fmtDM(attackResult.skillLevel)}</span></>}
+                {attackResult.bonusDM !== 0 && <><span className="text-body">+</span><span className="text-cyan-trav text-xs">+DM {fmtDM(attackResult.bonusDM)}</span></>}
                 <span className="text-body">=</span>
                 <span className={`text-2xl font-bold ${success ? 'text-safe glow-cyan' : 'text-alert'}`}>{attackResult.total}</span>
               </div>
@@ -254,7 +565,7 @@ function RollModal({
                   <div className="text-xs text-body/60 font-mono">
                     Damage: <span className="text-amber">{initialTarget.weapon!.damage}</span>
                     {' + Effect'} {fmtDM(effect)}
-                    {isMelee && <span className="text-body/50"> + STR DM {fmtDM(statDM(char.str))}</span>}
+                    {isMelee && <span className="text-body/50"> + STR DM {fmtDM(statDM(statValue('str')))}</span>}
                   </div>
                   <button onClick={rollDamage} className="btn-steel w-full text-center text-xs">
                     ROLL DAMAGE
@@ -310,12 +621,10 @@ const PHYS_FIELDS = [
 ];
 
 function CharDetailContent({
-  char, onEdit, onDelete, onRollSave, onStatAdjust,
+  char, onRollSave, onStatAdjust,
 }: {
   char: Character;
-  onEdit: () => void;
-  onDelete: () => void;
-  onRollSave: (charName: string, result: { d1: number; d2: number; charDM: number; skillLevel: number; total: number }, checkLabel: string, difficulty: number) => void;
+  onRollSave: (charName: string, result: { d1: number; d2: number; charDM: number; skillLevel: number; bonusDM: number; total: number }, checkLabel: string, difficulty: number) => void;
   onStatAdjust: (id: string, patch: Partial<Character>) => void;
 }) {
   const [rollTarget, setRollTarget] = useState<RollTarget | null>(null);
@@ -335,8 +644,12 @@ function CharDetailContent({
   const isDamaged = endCur < endMax || strCur < strMax || dexCur < dexMax;
   const isPsiSpent = char.psi !== null && char.psi > 0 && psiCur < psiMax;
 
+  const tempMods = normalizeTempMods(char.temp_mods);
+  const hasTempMods = Object.keys(tempMods).length > 0;
+
   const [trackingHealth, setTrackingHealth] = useState(() => isDamaged);
   const [trackingPsi, setTrackingPsi] = useState(() => isPsiSpent);
+  const [trackingTempMods, setTrackingTempMods] = useState(() => hasTempMods);
 
   const displayName = charDisplayName(char);
   const trainedSkills = char.skills
@@ -346,6 +659,47 @@ function CharDetailContent({
   const extraStats = EXTRA_STATS.filter(k => char[k] !== null);
   const allDisplayStats: CharStat[] = [...CORE_STATS, ...(char.psi !== null ? ['psi' as CharStat] : []), ...extraStats];
   const status = physicalStatus(char);
+  const profileDetails = char.profile_details ?? {};
+  const homeworldDetails = char.homeworld_details ?? {};
+  const lifepath = char.lifepath ?? [];
+  const armour = char.armour ?? [];
+  const augments = char.augments ?? [];
+  const personalEquipment = char.personal_equipment ?? [];
+  const finances = char.finances ?? {};
+  const contacts = char.contacts ?? [];
+  const background = char.background ?? {};
+  const profileRows = [
+    ['SPECIES', profileDetails.species],
+    ['AGE', profileDetails.age],
+    ['GENDER', profileDetails.gender],
+    ['HEIGHT', profileDetails.height],
+    ['WEIGHT', profileDetails.weight],
+    ['APPEARANCE', profileDetails.appearance],
+  ].filter(([, value]) => hasValue(value));
+  const homeworldRows = [
+    ['WORLD', homeworldDetails.name ?? char.homeworld],
+    ['SECTOR', homeworldDetails.sector],
+    ['SUBSECTOR', homeworldDetails.subsector],
+    ['HEX', homeworldDetails.location],
+    ['UWP', homeworldDetails.uwp],
+    ['BASES', homeworldDetails.bases],
+    ['TRADE', homeworldDetails.trade_codes],
+    ['TRAVEL', homeworldDetails.travel_zone],
+    ['GAS GIANT', homeworldDetails.gas_giant],
+  ].filter(([, value]) => hasValue(value));
+  const financeRows = [
+    ['CASH', finances.cash_on_hand],
+    ['PENSION/YR', finances.yearly_pension],
+    ['SALARY/MO', finances.monthly_salary],
+    ['SHIP OPS/MO', finances.ship_operating_costs],
+    ['DEBT PMT/MO', finances.monthly_debt_payments],
+    ['LIVING/MO', finances.monthly_living_cost],
+    ['TOTAL DEBT', finances.total_debts],
+  ].filter(([, value]) => hasValue(value));
+  const backgroundRows: Array<[string, string]> = entriesWithValues(background).map(([key, value]) => [
+    String(key).replace(/_/g, ' ').toUpperCase(),
+    String(value),
+  ]);
 
   function curVal(key: CharStat): number | null {
     if (trackingHealth) {
@@ -356,6 +710,19 @@ function CharDetailContent({
     if (trackingPsi && key === 'psi') return psiCur;
     return char[key] as number | null;
   }
+
+  function tempMod(key: CharStat): number {
+    return tempMods[key] ?? 0;
+  }
+
+  function effectiveVal(key: CharStat): number | null {
+    return effectiveStatValue(curVal(key), tempMod(key));
+  }
+
+  const effectiveStatValues = ALL_STATS.reduce<Partial<Record<CharStat, number | null>>>((values, key) => {
+    values[key] = effectiveVal(key);
+    return values;
+  }, {});
 
   function openSkillRoll(skillName: string, skillLvl: number) {
     setRollTarget({ label: skillName, skillLevel: skillLvl, charKey: skillChar(skillName), isPsionic: false });
@@ -377,7 +744,7 @@ function CharDetailContent({
     setRollTarget({ label: '', skillLevel: 0, charKey: null, isPsionic: false });
   }
 
-  function handleRollSave(result: { d1: number; d2: number; charDM: number; skillLevel: number; total: number }, difficulty: number, label: string) {
+  function handleRollSave(result: { d1: number; d2: number; charDM: number; skillLevel: number; bonusDM: number; total: number }, difficulty: number, label: string) {
     onRollSave(displayName, result, label, difficulty);
   }
 
@@ -385,6 +752,19 @@ function CharDetailContent({
     const cur = (char[field] as number | null) ?? max;
     const next = Math.max(0, Math.min(max, cur + delta));
     onStatAdjust(char.id, { [field]: next });
+  }
+
+  function adjustTempMod(key: CharStat, delta: number) {
+    if (curVal(key) === null) return;
+    const nextMods = { ...tempMods };
+    const next = clamp((nextMods[key] ?? 0) + delta, TEMP_MOD_MIN, TEMP_MOD_MAX);
+    if (next === 0) delete nextMods[key];
+    else nextMods[key] = next;
+    onStatAdjust(char.id, { temp_mods: nextMods });
+  }
+
+  function resetTempMods() {
+    onStatAdjust(char.id, { temp_mods: {} });
   }
 
   function toggleHealth() {
@@ -437,7 +817,13 @@ function CharDetailContent({
   return (
     <>
       {rollTarget && (
-        <RollModal char={char} target={rollTarget} onClose={() => setRollTarget(null)} onSave={handleRollSave} />
+        <RollModal
+          char={char}
+          target={rollTarget}
+          statValues={effectiveStatValues}
+          onClose={() => setRollTarget(null)}
+          onSave={handleRollSave}
+        />
       )}
 
       <div className="space-y-4">
@@ -446,6 +832,14 @@ function CharDetailContent({
           <div className="flex items-center justify-between mb-2">
             <div className="label">CHARACTERISTICS</div>
             <div className="flex gap-1.5">
+              <button onClick={() => setTrackingTempMods(v => !v)}
+                className={`text-[10px] font-mono px-2 py-0.5 border transition-colors ${
+                  trackingTempMods
+                    ? 'border-safe/60 text-safe hover:border-steel hover:text-body/60'
+                    : 'border-steel/40 text-body/40 hover:border-safe/50 hover:text-safe/70'
+                }`}>
+                {trackingTempMods ? 'HIDE MODS' : 'TEMP MODS'}
+              </button>
               {hasPsionics && psiMax > 0 && (
                 <button onClick={togglePsi}
                   className={`text-[10px] font-mono px-2 py-0.5 border transition-colors ${
@@ -471,41 +865,103 @@ function CharDetailContent({
             {allDisplayStats.map(key => {
               const baseVal = char[key] as number | null;
               const cv = curVal(key);
+              const ev = effectiveVal(key);
+              const mod = tempMod(key);
               const isPhys = key === 'str' || key === 'dex' || key === 'end_stat';
               const isPsiStat = key === 'psi';
               const isExtra = EXTRA_STATS.includes(key);
               const isTracked = (isPhys && trackingHealth) || (isPsiStat && trackingPsi);
-              const isReduced = isTracked && cv !== null && baseVal !== null && cv < baseVal;
-              const isZero = isTracked && cv === 0;
-              const dm = statDM(cv);
+              const isReduced = (isTracked && cv !== null && baseVal !== null && cv < baseVal) || mod < 0;
+              const isBoosted = mod > 0 && !isReduced;
+              const isZero = ev === 0;
+              const dm = statDM(ev);
 
               const borderClass = isZero
                 ? 'border-alert'
                 : isReduced
                   ? 'border-amber'
+                  : isBoosted ? 'border-safe/60 hover:border-safe'
                   : isPsiStat ? 'border-cyan-dim/60 hover:border-cyan-trav/60'
                   : isExtra ? 'border-steel/30 hover:border-amber/50'
                   : 'border-steel/40 hover:border-amber/60';
 
               const labelClass = isZero ? 'text-alert' : isReduced ? 'text-amber' :
+                isBoosted ? 'text-safe' :
                 isPsiStat ? 'text-cyan-trav/70' : isExtra ? 'text-body/50' : 'text-body';
 
               const valClass = isZero ? 'text-alert' : isReduced ? 'text-amber' :
+                isBoosted ? 'text-safe' :
                 isPsiStat ? 'text-cyan-trav' : isExtra ? 'text-amber/70' : 'text-amber';
 
               return (
-                <button key={key} onClick={() => openStatRoll(key)}
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => openStatRoll(key)}
+                  aria-label={`Roll ${STAT_LABELS[key]} check`}
                   title={`Roll ${STAT_LABELS[key]} check`}
-                  className={`text-center border transition-colors py-1.5 px-2.5 group min-w-[3.5rem] ${borderClass}`}>
+                  className={`text-center border transition-colors py-1.5 px-2.5 group min-w-[4rem] ${borderClass}`}
+                >
                   <div className={`text-xs ${labelClass} group-hover:text-amber/80`}>{STAT_LABELS[key]}</div>
                   <div className={`font-mono text-base font-bold ${valClass}`}>
-                    {isTracked ? `${cv}/${baseVal}` : toHex(baseVal)}
+                    {toHex(ev)}
                   </div>
+                  {isTracked && (
+                    <div className="text-[10px] text-body/35 font-mono leading-tight">
+                      {toHex(cv)}/{toHex(baseVal)}
+                    </div>
+                  )}
                   <div className="text-xs text-body/40">{fmtDM(dm)}</div>
                 </button>
               );
             })}
           </div>
+
+          {/* Temporary modifier controls */}
+          {trackingTempMods && (
+            <div className="mt-3 space-y-2 border-t border-steel/40 pt-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="label text-safe/80">TEMP MODIFIERS</div>
+                {hasTempMods && (
+                  <button onClick={resetTempMods}
+                    className="text-[10px] font-mono px-2 py-0.5 border border-steel/40 text-body/40 hover:border-amber/60 hover:text-amber transition-colors">
+                    RESET
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {allDisplayStats.map(key => {
+                  const mod = tempMod(key);
+                  return (
+                    <div key={key} className="flex items-center border border-steel/40 font-mono text-[10px]">
+                      <span className="w-9 px-1.5 py-1 text-body/50 text-center">{STAT_LABELS[key]}</span>
+                      <button
+                        type="button"
+                        aria-label={`Decrease ${STAT_LABELS[key]} temporary modifier`}
+                        disabled={curVal(key) === null || mod <= TEMP_MOD_MIN}
+                        onClick={() => adjustTempMod(key, -1)}
+                        className="w-6 h-6 border-l border-steel/30 flex items-center justify-center text-body/40 hover:text-amber hover:bg-steel/20 disabled:opacity-20 disabled:cursor-not-allowed"
+                      >
+                        <Minus size={8} />
+                      </button>
+                      <span className={`w-8 text-center ${mod > 0 ? 'text-safe' : mod < 0 ? 'text-amber' : 'text-body/30'}`}>
+                        {fmtDM(mod)}
+                      </span>
+                      <button
+                        type="button"
+                        aria-label={`Increase ${STAT_LABELS[key]} temporary modifier`}
+                        disabled={curVal(key) === null || mod >= TEMP_MOD_MAX}
+                        onClick={() => adjustTempMod(key, 1)}
+                        className="w-6 h-6 border-l border-steel/30 flex items-center justify-center text-body/40 hover:text-safe hover:bg-steel/20 disabled:opacity-20 disabled:cursor-not-allowed"
+                      >
+                        <Plus size={8} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Health tracking controls */}
           {trackingHealth && (
@@ -591,6 +1047,147 @@ function CharDetailContent({
           )}
         </div>
 
+        {profileRows.length > 0 && (
+          <DetailSection title="PROFILE">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-xs font-mono">
+              {profileRows.map(([label, value]) => (
+                <div key={label} className="min-w-0">
+                  <span className="text-body/35">{label}</span>
+                  <span className="text-body/70 ml-2 break-words">{String(value)}</span>
+                </div>
+              ))}
+            </div>
+          </DetailSection>
+        )}
+
+        {homeworldRows.length > 0 && (
+          <DetailSection title="HOMEWORLD">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-xs font-mono">
+              {homeworldRows.map(([label, value]) => (
+                <div key={label} className="min-w-0">
+                  <span className="text-body/35">{label}</span>
+                  <span className="text-cyan-trav/80 ml-2 break-words">{String(value)}</span>
+                </div>
+              ))}
+            </div>
+          </DetailSection>
+        )}
+
+        {lifepath.length > 0 && (
+          <DetailSection title="LIFEPATH">
+            <div className="space-y-1.5">
+              {lifepath.map((term, i) => (
+                <div key={`${term.term ?? i}-${term.career ?? i}`} className="text-xs font-mono border border-steel/35 px-2 py-1.5">
+                  <div className="flex flex-wrap gap-x-2 gap-y-1">
+                    <span className="text-amber">TERM {term.term ?? i + 1}</span>
+                    {term.career && <span className="text-bright">{term.career}</span>}
+                    {term.assignment && <span className="text-body/55">{term.assignment}</span>}
+                    {term.rank && <span className="text-cyan-trav/80">RANK {term.rank}</span>}
+                    <span className="text-body/35">
+                      SURV {boolMark(term.survived)} / COM {boolMark(term.commissioned)} / ADV {boolMark(term.advanced)}
+                    </span>
+                  </div>
+                  {term.notes && <div className="text-body/65 mt-1 whitespace-pre-wrap">{term.notes}</div>}
+                </div>
+              ))}
+            </div>
+          </DetailSection>
+        )}
+
+        {armour.length > 0 && (
+          <DetailSection title="ARMOUR">
+            <div className="space-y-1">
+              {armour.map((item, i) => (
+                <div key={`${item.name}-${i}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-mono border border-steel/35 px-2 py-1">
+                  <span className={item.worn ? 'text-safe' : 'text-body/35'}>{item.worn ? 'WORN' : 'STOWED'}</span>
+                  <span className="text-bright">{item.name}</span>
+                  {item.protection !== null && <span className="text-amber">PROT {item.protection}</span>}
+                  {item.radiation !== null && <span className="text-cyan-trav/70">RAD {item.radiation}</span>}
+                  {item.required_skill && <span className="text-body/45">REQ {item.required_skill}</span>}
+                </div>
+              ))}
+            </div>
+          </DetailSection>
+        )}
+
+        {augments.length > 0 && (
+          <DetailSection title="AUGMENTS">
+            <div className="space-y-1">
+              {augments.map((augment, i) => (
+                <div key={`${augment.name}-${i}`} className="text-xs font-mono border border-steel/35 px-2 py-1">
+                  <span className="text-bright">{augment.name}</span>
+                  {augment.tech_level !== null && <span className="text-body/45 ml-2">TL {augment.tech_level}</span>}
+                  {augment.cost !== null && <span className="text-amber/80 ml-2">{fmtCr(augment.cost)}</span>}
+                  {augment.notes && <div className="text-body/60 mt-0.5">{augment.notes}</div>}
+                </div>
+              ))}
+            </div>
+          </DetailSection>
+        )}
+
+        {personalEquipment.length > 0 && (
+          <DetailSection title="EQUIPMENT">
+            <div className="space-y-1">
+              {personalEquipment.map((item, i) => (
+                <div key={`${item.name}-${i}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-mono border border-steel/35 px-2 py-1">
+                  <span className="text-bright">{item.name}</span>
+                  {item.quantity !== null && <span className="text-body/45">x{item.quantity}</span>}
+                  {item.tech_level !== null && <span className="text-body/45">TL {item.tech_level}</span>}
+                  {item.mass !== null && <span className="text-cyan-trav/70">{item.mass} kg</span>}
+                  {item.cost !== null && <span className="text-amber/80">{fmtCr(item.cost)}</span>}
+                  {item.notes && <span className="text-body/55">{item.notes}</span>}
+                </div>
+              ))}
+            </div>
+          </DetailSection>
+        )}
+
+        {financeRows.length > 0 && (
+          <DetailSection title="FINANCES">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs font-mono">
+              {financeRows.map(([label, value]) => (
+                <div key={label}>
+                  <span className="text-body/35">{label}</span>
+                  <span className="text-amber/80 ml-2">{fmtCr(value as number)}</span>
+                </div>
+              ))}
+            </div>
+          </DetailSection>
+        )}
+
+        {contacts.some(c => hasValue(c.name) || hasValue(c.type) || hasValue(c.description) || hasValue(c.link)) && (
+          <DetailSection title="CONTACTS">
+            <div className="space-y-1">
+              {contacts
+                .filter(c => hasValue(c.name) || hasValue(c.type) || hasValue(c.description) || hasValue(c.link))
+                .map((contact, i) => (
+                  <div key={`${contact.name ?? contact.type ?? i}-${i}`} className="text-xs font-mono border border-steel/35 px-2 py-1">
+                    <div className="flex flex-wrap gap-x-2 gap-y-1">
+                      {contact.name && <span className="text-bright">{contact.name}</span>}
+                      {contact.type && <span className="text-amber">{contact.type}</span>}
+                      {contact.gender_species && <span className="text-body/45">{contact.gender_species}</span>}
+                      {contact.alive !== null && <span className={contact.alive ? 'text-safe' : 'text-alert'}>{contact.alive ? 'ALIVE' : 'DEAD'}</span>}
+                    </div>
+                    {contact.description && <div className="text-body/60 mt-0.5">{contact.description}</div>}
+                  </div>
+                ))}
+            </div>
+          </DetailSection>
+        )}
+
+        {backgroundRows.length > 0 && (
+          <DetailSection title="BACKGROUND">
+            <div className="space-y-1.5 text-xs font-mono">
+              {backgroundRows.map(([label, value]) => (
+                <div key={label} className="border border-steel/35 px-2 py-1">
+                  <div className="text-body/35">{label}</div>
+                  <div className="text-body/70 whitespace-pre-wrap">{String(value)}</div>
+                </div>
+              ))}
+            </div>
+          </DetailSection>
+        )}
+
         {/* Skills */}
         <div>
           <div className="label mb-2">
@@ -656,10 +1253,6 @@ function CharDetailContent({
           <div className="text-xs text-body/70 border-t border-steel/50 pt-2">{char.notes}</div>
         )}
 
-        <div className="flex gap-2 pt-1">
-          <button onClick={onEdit} className="btn-steel text-xs">EDIT</button>
-          <button onClick={onDelete} className="btn-danger text-xs">DELETE</button>
-        </div>
       </div>
     </>
   );
@@ -668,13 +1261,15 @@ function CharDetailContent({
 // ─── Mobile Card (accordion) ──────────────────────────────────────────────────
 
 function CharCard({
-  char, onEdit, onDelete, onRollSave, onStatAdjust,
+  char, onEdit, onDelete, onRollSave, onStatAdjust, onPortraitUpload, uploadingPortrait,
 }: {
   char: Character;
   onEdit: () => void;
   onDelete: () => void;
-  onRollSave: (charName: string, result: { d1: number; d2: number; charDM: number; skillLevel: number; total: number }, checkLabel: string, difficulty: number) => void;
+  onRollSave: (charName: string, result: { d1: number; d2: number; charDM: number; skillLevel: number; bonusDM: number; total: number }, checkLabel: string, difficulty: number) => void;
   onStatAdjust: (id: string, patch: Partial<Character>) => void;
+  onPortraitUpload: (char: Character, file: File) => void;
+  uploadingPortrait: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const displayName = charDisplayName(char);
@@ -686,13 +1281,25 @@ function CharCard({
         className="px-4 py-3 cursor-pointer flex items-center justify-between hover:bg-steel/20 transition-colors"
         onClick={() => setExpanded(v => !v)}
       >
-        <div>
-          <div className="text-bright font-bold font-mono text-sm">{displayName}</div>
-          <div className="text-xs text-body/50 mt-0.5 space-x-2">
-            {char.rank && <span className="text-amber">{char.rank}</span>}
-            {char.career && <span className="text-body/50">· {char.career}</span>}
-            {char.homeworld && <span className="text-body/40">· {char.homeworld}</span>}
-            {char.player && <span className="text-steel ml-2">[{char.player}]</span>}
+        <div className="flex items-start gap-3 flex-1 min-w-0">
+          <CharacterPortrait
+            char={char}
+            size="sm"
+            editable
+            uploading={uploadingPortrait}
+            onUpload={file => onPortraitUpload(char, file)}
+          />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <div className="text-bright font-bold font-mono text-sm truncate">{displayName}</div>
+              <CharacterActionsMenu onEdit={onEdit} onDelete={onDelete} />
+            </div>
+            <div className="text-xs text-body/50 mt-0.5 space-x-2">
+              {char.rank && <span className="text-amber">{char.rank}</span>}
+              {char.career && <span className="text-body/50">· {char.career}</span>}
+              {char.homeworld && <span className="text-body/40">· {char.homeworld}</span>}
+              {char.player && <span className="text-steel ml-2">[{char.player}]</span>}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-4">
@@ -708,8 +1315,6 @@ function CharCard({
         <div className="border-t border-steel px-4 py-3">
           <CharDetailContent
             char={char}
-            onEdit={onEdit}
-            onDelete={onDelete}
             onRollSave={onRollSave}
             onStatAdjust={onStatAdjust}
           />
@@ -763,6 +1368,7 @@ export default function PartyRoster() {
   const [skillsRaw, setSkillsRaw] = useState('');
   const [talentsRaw, setTalentsRaw] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [uploadingPortraitId, setUploadingPortraitId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const loadChars = useCallback(async () => {
@@ -784,35 +1390,82 @@ export default function PartyRoster() {
   async function saveChar(e: React.FormEvent) {
     e.preventDefault();
     if (!client) return;
-    const payload = {
+    const payload: CharForm = {
       ...form,
       skills: parseSkillsCSV(skillsRaw),
       psionic_talents: parseTalentsCSV(talentsRaw),
     };
     if (editing) {
-      await client.from('characters').update(payload).eq('id', editing);
-      setSelectedId(editing);
+      const editingId = editing;
+      const previous = chars.find(c => c.id === editingId);
+      const optimistic = {
+        ...(previous ?? { id: editingId, created_at: new Date().toISOString() }),
+        ...payload,
+      } as Character;
+
+      setChars(prev => sortCharacters(prev.map(c => c.id === editingId ? optimistic : c)));
+      setSelectedId(editingId);
       setEditing(null);
+      setForm(EMPTY); setSkillsRaw(''); setTalentsRaw(''); setShowForm(false);
+
+      const { data, error } = await client.from('characters').update(payload).eq('id', editingId).select().single();
+      if (error) {
+        console.error('Character update failed:', error);
+        if (previous) {
+          setChars(prev => sortCharacters(prev.map(c => c.id === editingId ? previous : c)));
+        }
+        loadChars();
+        return;
+      }
+      if (data) {
+        setChars(prev => sortCharacters(prev.map(c => c.id === editingId ? data as Character : c)));
+      }
+      return;
     } else {
-      const { data } = await client.from('characters').insert(payload).select().single();
-      if (data) setSelectedId((data as Character).id);
+      const { data, error } = await client.from('characters').insert(payload).select().single();
+      if (error) {
+        console.error('Character insert failed:', error);
+        return;
+      }
+      if (data) {
+        const inserted = data as Character;
+        setChars(prev => sortCharacters([...prev, inserted]));
+        setSelectedId(inserted.id);
+      }
     }
     setForm(EMPTY); setSkillsRaw(''); setTalentsRaw(''); setShowForm(false);
   }
 
   async function deleteChar(id: string) {
     if (!client || !confirm('Remove this character?')) return;
-    await client.from('characters').delete().eq('id', id);
+    const previous = chars.find(c => c.id === id);
+    setChars(prev => prev.filter(c => c.id !== id));
     if (selectedId === id) setSelectedId(null);
+    const { error } = await client.from('characters').delete().eq('id', id);
+    if (error) {
+      console.error('Character delete failed:', error);
+      if (previous) setChars(prev => sortCharacters([...prev, previous]));
+      loadChars();
+    }
   }
 
   function startEdit(char: Character) {
     setForm({
-      name: char.name, player: char.player,
+      name: char.name, player: char.player, portrait_url: char.portrait_url,
       str: char.str, dex: char.dex, end_stat: char.end_stat,
       int_stat: char.int_stat, edu: char.edu, soc: char.soc, psi: char.psi,
       chr: char.chr, mor: char.mor, lck: char.lck,
       str_cur: char.str_cur, dex_cur: char.dex_cur, end_cur: char.end_cur, psi_cur: char.psi_cur,
+      temp_mods: normalizeTempMods(char.temp_mods),
+      profile_details: char.profile_details ?? {},
+      homeworld_details: char.homeworld_details ?? {},
+      lifepath: char.lifepath ?? [],
+      armour: char.armour ?? [],
+      augments: char.augments ?? [],
+      personal_equipment: char.personal_equipment ?? [],
+      finances: char.finances ?? {},
+      contacts: char.contacts ?? [],
+      background: char.background ?? {},
       career: char.career, rank: char.rank, homeworld: char.homeworld,
       skills: char.skills, psionic_talents: char.psionic_talents,
       weapons: char.weapons ?? [],
@@ -826,7 +1479,7 @@ export default function PartyRoster() {
 
   async function saveRoll(
     charName: string,
-    result: { d1: number; d2: number; charDM: number; skillLevel: number; total: number },
+    result: { d1: number; d2: number; charDM: number; skillLevel: number; bonusDM: number; total: number },
     checkLabel: string,
     difficulty: number,
   ) {
@@ -836,6 +1489,7 @@ export default function PartyRoster() {
       check_label: checkLabel,
       d1: result.d1, d2: result.d2,
       char_dm: result.charDM, skill_level: result.skillLevel,
+      bonus_dm: result.bonusDM,
       total: result.total, difficulty,
       success: result.total >= difficulty,
       effect: result.total - difficulty,
@@ -848,7 +1502,34 @@ export default function PartyRoster() {
     const { error } = await client.from('characters').update(patch).eq('id', id);
     if (error) {
       console.error('Stat update failed:', error);
-      loadChars();
+      const isTempModOnly = Object.keys(patch).length === 1 && Object.prototype.hasOwnProperty.call(patch, 'temp_mods');
+      if (!isTempModOnly) loadChars();
+    }
+  }
+
+  async function uploadPortrait(char: Character, file: File) {
+    if (!client || uploadingPortraitId) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Choose an image file for the portrait.');
+      return;
+    }
+
+    setUploadingPortraitId(char.id);
+    try {
+      const portrait_url = await portraitFileToDataUrl(file);
+      setChars(prev => prev.map(c => c.id === char.id ? { ...c, portrait_url } : c));
+
+      const { error: updateError } = await client.from('characters').update({ portrait_url }).eq('id', char.id);
+      if (updateError) {
+        console.error('Portrait update failed:', updateError);
+        alert('Portrait could not be saved: ' + updateError.message);
+        loadChars();
+      }
+    } catch (error) {
+      console.error('Portrait upload failed:', error);
+      alert(error instanceof Error ? error.message : 'Portrait upload failed.');
+    } finally {
+      setUploadingPortraitId(null);
     }
   }
 
@@ -859,7 +1540,16 @@ export default function PartyRoster() {
     const playerName = file.name.replace(/\.[^.]+$/, '');
     const parsed = parseXLSXCharacter(buffer, playerName);
     if (!parsed) { alert('Could not parse character sheet. Check the file format.'); return; }
-    await client.from('characters').insert(parsed);
+    const { data, error } = await client.from('characters').insert(parsed).select().single();
+    if (error) {
+      console.error('Character import failed:', error);
+      return;
+    }
+    if (data) {
+      const inserted = data as Character;
+      setChars(prev => sortCharacters([...prev, inserted]));
+      setSelectedId(inserted.id);
+    }
     e.target.value = '';
   }
 
@@ -867,21 +1557,18 @@ export default function PartyRoster() {
 
   const numInput = (key: keyof CharForm, label: string) => {
     const val = (form[key] as number | null) ?? null;
+    const inputId = `character-${String(key)}`;
     return (
       <div key={key} className="space-y-1">
-        <label className="label flex items-center justify-between">
+        <label htmlFor={inputId} className="label flex items-center justify-between">
           <span>{label}</span>
           {val !== null && <span className="text-amber font-mono">{toHex(val)}</span>}
         </label>
-        <input className="input" type="number" min={0} max={15} value={val ?? ''}
+        <input id={inputId} className="input" type="number" min={0} max={15} value={val ?? ''}
           onChange={e => setForm({ ...form, [key]: e.target.value ? parseInt(e.target.value) : null })} />
       </div>
     );
   };
-
-  const F = ({ name, children }: { name: string; children: React.ReactNode }) => (
-    <div className="space-y-1"><label className="label">{name}</label>{children}</div>
-  );
 
   const charForm = (
     <form onSubmit={saveChar} className="panel p-4 space-y-4">
@@ -889,31 +1576,35 @@ export default function PartyRoster() {
         {editing ? 'EDIT CHARACTER' : 'NEW CHARACTER'}
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <F name="Character Name">
+        <Field name="Character Name">
           <input className="input" required value={form.name}
             onChange={e => setForm({ ...form, name: e.target.value })} />
-        </F>
-        <F name="Player">
+        </Field>
+        <Field name="Player">
           <input className="input" value={form.player ?? ''} placeholder="Graham, Jesse, ..."
             onChange={e => setForm({ ...form, player: e.target.value || null })} />
-        </F>
-        <F name="Rank / Title">
+        </Field>
+        <Field name="Rank / Title">
           <input className="input" value={form.rank ?? ''} placeholder="Lance Corporal, fmr. Knight"
             onChange={e => setForm({ ...form, rank: e.target.value || null })} />
-        </F>
-        <F name="Career">
+        </Field>
+        <Field name="Career">
           <input className="input" value={form.career ?? ''}
             onChange={e => setForm({ ...form, career: e.target.value || null })} />
-        </F>
-        <F name="Homeworld">
+        </Field>
+        <Field name="Homeworld">
           <input className="input" value={form.homeworld ?? ''}
             onChange={e => setForm({ ...form, homeworld: e.target.value || null })} />
-        </F>
+        </Field>
       </div>
+      <Field name="Portrait URL">
+        <input className="input" value={form.portrait_url ?? ''} placeholder="https://..."
+          onChange={e => setForm({ ...form, portrait_url: e.target.value || null })} />
+      </Field>
       <div>
         <div className="label mb-2">UPP (0–15; hex shown live)</div>
         <div className="grid grid-cols-6 gap-2">
-          {(['str','dex','end_stat','int_stat','edu','soc'] as (keyof CharForm)[]).map(k =>
+          {CORE_STAT_FIELDS.map(k =>
             numInput(k, STAT_LABELS[k as CharStat] ?? String(k))
           )}
         </div>
@@ -924,18 +1615,18 @@ export default function PartyRoster() {
         {numInput('mor', 'MOR')}
         {numInput('lck', 'LCK')}
       </div>
-      <F name="Skills (e.g. Medic-2, Gun Combat (Slug)-3, Recon-1)">
+      <Field name="Skills (e.g. Medic-2, Gun Combat (Slug)-3, Recon-1)">
         <input className="input" value={skillsRaw} onChange={e => setSkillsRaw(e.target.value)}
           placeholder="SkillName-Level, ..." />
-      </F>
-      <F name="Psionic Talents (e.g. Awareness-1, Telepathy-0)">
+      </Field>
+      <Field name="Psionic Talents (e.g. Awareness-1, Telepathy-0)">
         <input className="input" value={talentsRaw} onChange={e => setTalentsRaw(e.target.value)}
           placeholder="TalentName-Level, ..." />
-      </F>
-      <F name="Notes">
+      </Field>
+      <Field name="Notes">
         <textarea className="input resize-none h-16" value={form.notes ?? ''}
           onChange={e => setForm({ ...form, notes: e.target.value || null })} />
-      </F>
+      </Field>
       <div className="flex gap-2 justify-end">
         <button type="button" onClick={() => setShowForm(false)} className="btn-steel">CANCEL</button>
         <button type="submit" className="btn-amber">{editing ? 'UPDATE' : 'SAVE'}</button>
@@ -977,6 +1668,8 @@ export default function PartyRoster() {
               onDelete={() => deleteChar(char.id)}
               onRollSave={saveRoll}
               onStatAdjust={handleStatAdjust}
+              onPortraitUpload={uploadPortrait}
+              uploadingPortrait={uploadingPortraitId === char.id}
             />
           ))}
         </div>
@@ -1029,34 +1722,50 @@ export default function PartyRoster() {
             <div className="p-4 max-w-2xl">{charForm}</div>
           ) : selectedChar ? (
             <div className="p-5">
-              {/* Character header */}
-              <div className="flex items-start justify-between mb-5 pb-4 border-b border-steel/50">
-                <div>
-                  <div className="text-bright font-bold font-mono text-xl">{charDisplayName(selectedChar)}</div>
-                  <div className="text-xs text-body/50 mt-1 flex flex-wrap gap-x-2">
-                    {selectedChar.rank && <span className="text-amber">{selectedChar.rank}</span>}
-                    {selectedChar.career && <span>· {selectedChar.career}</span>}
-                    {selectedChar.homeworld && <span>· {selectedChar.homeworld}</span>}
-                    {selectedChar.player && <span className="text-steel">· [{selectedChar.player}]</span>}
+              <div className="flex items-start gap-5">
+                <div className="min-w-0 flex-1">
+                  {/* Character header */}
+                  <div className="flex items-start justify-between gap-4 mb-5 pb-4 border-b border-steel/50">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <div className="text-bright font-bold font-mono text-xl truncate">{charDisplayName(selectedChar)}</div>
+                        <CharacterActionsMenu
+                          onEdit={() => startEdit(selectedChar)}
+                          onDelete={() => deleteChar(selectedChar.id)}
+                        />
+                      </div>
+                      <div className="text-xs text-body/50 mt-1 flex flex-wrap gap-x-2">
+                        {selectedChar.rank && <span className="text-amber">{selectedChar.rank}</span>}
+                        {selectedChar.career && <span>· {selectedChar.career}</span>}
+                        {selectedChar.homeworld && <span>· {selectedChar.homeworld}</span>}
+                        {selectedChar.player && <span className="text-steel">· [{selectedChar.player}]</span>}
+                      </div>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <div className="font-mono text-2xl text-amber tracking-widest glow-amber">{upp(selectedChar)}</div>
+                      <div className={`text-xs font-mono mt-0.5 ${physicalStatus(selectedChar).color}`}>
+                        {physicalStatus(selectedChar).label}
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div className="text-right flex-shrink-0">
-                  <div className="font-mono text-2xl text-amber tracking-widest glow-amber">{upp(selectedChar)}</div>
-                  <div className={`text-xs font-mono mt-0.5 ${physicalStatus(selectedChar).color}`}>
-                    {physicalStatus(selectedChar).label}
-                  </div>
-                </div>
-              </div>
 
-              {/* key resets all local state (tracking, damage input, etc.) when switching characters */}
-              <CharDetailContent
-                key={selectedChar.id}
-                char={selectedChar}
-                onEdit={() => startEdit(selectedChar)}
-                onDelete={() => deleteChar(selectedChar.id)}
-                onRollSave={saveRoll}
-                onStatAdjust={handleStatAdjust}
-              />
+                  {/* key resets all local state (tracking, damage input, etc.) when switching characters */}
+                  <CharDetailContent
+                    key={selectedChar.id}
+                    char={selectedChar}
+                    onRollSave={saveRoll}
+                    onStatAdjust={handleStatAdjust}
+                  />
+                </div>
+                <aside className="w-32 flex-shrink-0 border-l border-steel/50 pl-4">
+                  <CharacterPortrait
+                    char={selectedChar}
+                    editable
+                    uploading={uploadingPortraitId === selectedChar.id}
+                    onUpload={file => uploadPortrait(selectedChar, file)}
+                  />
+                </aside>
+              </div>
             </div>
           ) : (
             <div className="flex items-center justify-center h-full text-body/30">

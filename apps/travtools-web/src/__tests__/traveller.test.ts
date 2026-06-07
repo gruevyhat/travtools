@@ -6,12 +6,27 @@ import type { Character } from '../types';
 
 const baseChar: Character = {
   id: '1', name: 'Test', created_at: '',
+  portrait_url: null,
   str: 9, dex: 11, end_stat: 11, int_stat: 8, edu: 10, soc: 4, psi: null,
-  career: null, rank: null, homeworld: null, skills: [], psionic_talents: [], notes: null,
+  chr: null, mor: null, lck: null,
+  str_cur: null, dex_cur: null, end_cur: null, psi_cur: null,
+  temp_mods: {},
+  profile_details: {},
+  homeworld_details: {},
+  lifepath: [],
+  armour: [],
+  augments: [],
+  personal_equipment: [],
+  finances: {},
+  contacts: [],
+  background: {},
+  player: null, career: null, rank: null, homeworld: null,
+  skills: [], psionic_talents: [], weapons: [], notes: null,
 };
 
 describe('toHex', () => {
   it('returns null as ?', () => expect(toHex(null)).toBe('?'));
+  it('returns undefined as ?', () => expect(toHex(undefined)).toBe('?'));
   it('renders 0–9 as digits', () => {
     expect(toHex(0)).toBe('0');
     expect(toHex(9)).toBe('9');
@@ -24,13 +39,17 @@ describe('toHex', () => {
 });
 
 describe('upp', () => {
-  it('formats 6 stats as hex string', () => {
+  it('formats core stats as hex string when expanded stats are absent', () => {
     // str=9 dex=11(B) end=11(B) int=8 edu=10(A) soc=4
     expect(upp(baseChar)).toBe('9BB8A4');
   });
-  it('PSI is not included in UPP string', () => {
-    const c: Character = { ...baseChar, psi: 12 };
-    expect(upp(c)).toHaveLength(6);
+  it('includes PSI and extra attributes in expanded UPP', () => {
+    const c: Character = { ...baseChar, psi: 12, chr: 7, mor: 8, lck: 9 };
+    expect(upp(c)).toBe('9BB8A4-C789');
+  });
+  it('omits missing expanded attributes instead of rendering ?', () => {
+    const c: Character = { ...baseChar, chr: 7, mor: 8, lck: 9 };
+    expect(upp(c)).toBe('9BB8A4-789');
   });
   it('null stats render as ?', () => {
     const c: Character = { ...baseChar, str: null, edu: null };
@@ -140,6 +159,12 @@ describe('parseCSV', () => {
       { name: 'Awareness', level: 1 },
       { name: 'Telepathy', level: 0 },
     ]);
+  });
+
+  it('parses portrait URL column aliases', () => {
+    const csv = 'Name,Portrait URL\nTester,https://example.com/portrait.png';
+    const [c] = parseCSV(csv);
+    expect(c.portrait_url).toBe('https://example.com/portrait.png');
   });
 
   it('handles missing optional columns', () => {

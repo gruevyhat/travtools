@@ -76,6 +76,7 @@ export default function RollLog() {
                 [{e.d1}]+[{e.d2}]
                 {e.char_dm !== 0 && ` ${fmtDM(e.char_dm)} (char)`}
                 {e.skill_level !== 0 && ` ${fmtDM(e.skill_level)} (skill)`}
+                {(e.bonus_dm ?? 0) !== 0 && ` ${fmtDM(e.bonus_dm ?? 0)} (ad hoc)`}
                 {' '}= {e.total} vs {e.difficulty}+
                 {' '}· Effect {fmtDM(e.effect)}
               </div>

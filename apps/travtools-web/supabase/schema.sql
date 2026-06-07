@@ -53,6 +53,7 @@ create table if not exists characters (
   id uuid default gen_random_uuid() primary key,
   name text not null,
   player text,                                          -- player name (distinct from character name)
+  portrait_url text,                                    -- optional portrait image URL
   str integer,
   dex integer,
   end_stat integer,
@@ -67,6 +68,16 @@ create table if not exists characters (
   str_cur integer,                                      -- current STR (null = full)
   dex_cur integer,                                      -- current DEX (null = full)
   psi_cur integer,                                      -- current PSI points (null = full)
+  temp_mods jsonb not null default '{}'::jsonb,         -- temporary characteristic modifiers, shared until reset
+  profile_details jsonb not null default '{}'::jsonb,   -- species, age, gender, height, weight, appearance
+  homeworld_details jsonb not null default '{}'::jsonb, -- sector/subsector/location/UWP/trade code metadata
+  lifepath jsonb not null default '[]'::jsonb,          -- term history rows from XLSX Profile
+  armour jsonb not null default '[]'::jsonb,            -- worn armour and protection values
+  augments jsonb not null default '[]'::jsonb,          -- augments/cybernetics
+  personal_equipment jsonb not null default '[]'::jsonb,-- carried equipment from character sheet
+  finances jsonb not null default '{}'::jsonb,          -- cash, pension, salary, costs, debt summary
+  contacts jsonb not null default '[]'::jsonb,          -- allies, contacts, rivals, enemies
+  background jsonb not null default '{}'::jsonb,        -- personality/background notes
   career text,
   rank text,
   homeworld text,
@@ -86,12 +97,26 @@ create table if not exists roll_log (
   d2 integer not null,
   char_dm integer not null default 0,
   skill_level integer not null default 0,
+  bonus_dm integer not null default 0,
   total integer not null,
   difficulty integer not null,
   success boolean not null,
   effect integer not null,
   created_at timestamptz not null default now()
 );
+
+alter table roll_log add column if not exists bonus_dm integer not null default 0;
+alter table characters add column if not exists portrait_url text;
+alter table characters add column if not exists temp_mods jsonb not null default '{}'::jsonb;
+alter table characters add column if not exists profile_details jsonb not null default '{}'::jsonb;
+alter table characters add column if not exists homeworld_details jsonb not null default '{}'::jsonb;
+alter table characters add column if not exists lifepath jsonb not null default '[]'::jsonb;
+alter table characters add column if not exists armour jsonb not null default '[]'::jsonb;
+alter table characters add column if not exists augments jsonb not null default '[]'::jsonb;
+alter table characters add column if not exists personal_equipment jsonb not null default '[]'::jsonb;
+alter table characters add column if not exists finances jsonb not null default '{}'::jsonb;
+alter table characters add column if not exists contacts jsonb not null default '[]'::jsonb;
+alter table characters add column if not exists background jsonb not null default '{}'::jsonb;
 
 -- ============================================================
 -- Row Level Security

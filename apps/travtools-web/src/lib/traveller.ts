@@ -19,15 +19,19 @@ export function statDM(n: number | null): number {
   return 3;
 }
 
-export function toHex(n: number | null): string {
-  if (n === null) return '?';
+export function toHex(n: number | null | undefined): string {
+  if (n == null) return '?';
   if (n >= 10) return String.fromCharCode(55 + n); // A=10 … F=15
   return String(n);
 }
 
 export function upp(char: Character): string {
-  return [char.str, char.dex, char.end_stat, char.int_stat, char.edu, char.soc]
+  const core = [char.str, char.dex, char.end_stat, char.int_stat, char.edu, char.soc]
     .map(toHex).join('');
+  const expanded = [char.psi, char.chr, char.mor, char.lck]
+    .filter((v): v is number => v != null)
+    .map(toHex).join('');
+  return expanded ? `${core}-${expanded}` : core;
 }
 
 // Maps skill names (including parenthesized specialties) to governing characteristic.
@@ -120,16 +124,28 @@ export function parseCSV(text: string): CharFormBase[] {
     }
     values.push(cur);
     const get = (key: string) => values[headers.indexOf(key)]?.trim() ?? '';
+    const getAny = (...keys: string[]) => keys.map(get).find(Boolean) ?? '';
     const num = (key: string) => { const v = parseInt(get(key)); return isNaN(v) ? null : v; };
     const strVal = num('str'), dexVal = num('dex'), endVal = num('end'), psiVal = num('psi');
     return {
       name: get('name') || 'Unknown',
       player: get('player') || null,
+      portrait_url: getAny('portrait_url', 'portraiturl', 'portrait url') || null,
       str: strVal, dex: dexVal, end_stat: endVal,
       int_stat: num('int'), edu: num('edu'), soc: num('soc'),
       psi: psiVal,
       chr: num('chr'), mor: num('mor'), lck: num('lck'),
       str_cur: strVal, dex_cur: dexVal, end_cur: endVal, psi_cur: psiVal,
+      temp_mods: {},
+      profile_details: {},
+      homeworld_details: {},
+      lifepath: [],
+      armour: [],
+      augments: [],
+      personal_equipment: [],
+      finances: {},
+      contacts: [],
+      background: {},
       career: get('career') || null,
       rank: get('rank') || null,
       homeworld: get('homeworld') || null,
@@ -151,5 +167,5 @@ export function parseDamageExpr(expr: string): { dice: number; constant: number 
 }
 
 export const CSV_TEMPLATE =
-  'Name,STR,DEX,END,INT,EDU,SOC,PSI,Career,Rank,Homeworld,Skills,PsionicTalents,Notes\n' +
-  'Example,9,11,11,8,10,4,0,Rogue,Thief,Regina,"Gun Combat (Slug)-3,Recon-2","Awareness-1,Telepathy-0",Notes here\n';
+  'Name,STR,DEX,END,INT,EDU,SOC,PSI,CHR,MOR,LCK,Career,Rank,Homeworld,PortraitUrl,Skills,PsionicTalents,Notes\n' +
+  'Example,9,11,11,8,10,4,0,,,,Rogue,Thief,Regina,,"Gun Combat (Slug)-3,Recon-2","Awareness-1,Telepathy-0",Notes here\n';

@@ -5,6 +5,73 @@ import { chromium } from 'playwright';
 
 const host = '127.0.0.1';
 const outputDir = new URL('../test-results/e2e/', import.meta.url);
+const tinyPortraitPng = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
+  'base64',
+);
+const smokeCharacter = {
+  id: '00000000-0000-4000-8000-000000000001',
+  name: 'Smoke Traveller',
+  player: 'QA',
+  portrait_url: null,
+  str: 9,
+  dex: 11,
+  end_stat: 11,
+  int_stat: 8,
+  edu: 10,
+  soc: 4,
+  psi: 12,
+  chr: 7,
+  mor: 8,
+  lck: 9,
+  str_cur: null,
+  dex_cur: null,
+  end_cur: null,
+  psi_cur: null,
+  temp_mods: {},
+  profile_details: { species: 'Human', age: '34', gender: 'Male', height: "6'1\"", weight: '210' },
+  homeworld_details: {
+    name: 'Regina',
+    sector: 'Spinward Marches',
+    subsector: 'Regina',
+    location: '1910',
+    uwp: 'A788899-C',
+    bases: 'NS',
+    trade_codes: 'Ri Pa Ph',
+    travel_zone: 'A',
+    gas_giant: 'G',
+  },
+  lifepath: [
+    {
+      term: 1,
+      career: 'Scout',
+      assignment: 'Detached Duty',
+      survived: true,
+      commissioned: false,
+      advanced: true,
+      rank: '1',
+      notes: 'Found a patron and learned Pilot.',
+    },
+  ],
+  armour: [{ worn: true, name: 'Cloth Armour', protection: 8, radiation: 0, required_skill: null }],
+  augments: [],
+  personal_equipment: [{ quantity: 1, name: 'Medkit', notes: 'Field kit', tech_level: 10, mass: 1, cost: 500 }],
+  finances: { cash_on_hand: 1200, yearly_pension: 0, monthly_living_cost: 1500, total_debts: 0 },
+  contacts: [{ name: 'Mora', gender_species: 'Human', type: 'Ally', description: 'Scout contact', link: null, alive: true }],
+  background: { short_term_goals: 'Find the lost courier', hobbies: 'Ship maintenance' },
+  career: 'Scout',
+  rank: 'Detached Duty',
+  homeworld: 'Regina',
+  skills: [{ name: 'Pilot', level: 1 }],
+  psionic_talents: [],
+  weapons: [{ name: 'Unarmed', skill: 'Melee (Unarmed)', range: 'Melee', damage: '1D+STR DM', traits: '' }],
+  notes: null,
+  created_at: new Date(0).toISOString(),
+};
+
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
 
 function getFreePort() {
   return new Promise((resolve, reject) => {
@@ -65,16 +132,80 @@ function startServer(port) {
 }
 
 async function installSupabaseMock(page) {
+  let nextId = 2;
+  const stores = {
+    characters: [clone(smokeCharacter)],
+    trade_deals: [],
+    inventory_items: [],
+    roll_log: [],
+    ships: [],
+  };
+
+  function eqId(url) {
+    const id = url.searchParams.get('id');
+    return id?.startsWith('eq.') ? id.slice(3) : null;
+  }
+
+  function responseBody(request, value) {
+    const accept = request.headers().accept ?? '';
+    if (accept.includes('application/vnd.pgrst.object+json') && Array.isArray(value)) {
+      return value[0] ?? null;
+    }
+    return value;
+  }
+
+  function withDefaults(table, row) {
+    const now = new Date(0).toISOString();
+    return {
+      id: `${table}-${nextId++}`,
+      created_at: now,
+      ...(table === 'trade_deals' ? { updated_at: now } : {}),
+      ...row,
+    };
+  }
+
   await page.route('https://*/rest/v1/**', async route => {
     const request = route.request();
     const method = request.method();
-    const body = method === 'POST' ? [{}] : [];
+    const url = new URL(request.url());
+    const table = url.pathname.split('/').pop();
+    const store = table ? stores[table] : undefined;
+    let body = [];
+
+    if (store) {
+      if (method === 'GET') {
+        body = store;
+      } else if (method === 'POST') {
+        const payload = JSON.parse(request.postData() || '{}');
+        const rows = Array.isArray(payload) ? payload.map(row => withDefaults(table, row)) : [withDefaults(table, payload)];
+        store.push(...rows);
+        body = rows;
+      } else if (method === 'PATCH') {
+        const id = eqId(url);
+        const payload = JSON.parse(request.postData() || '{}');
+        const updated = [];
+        for (let i = 0; i < store.length; i += 1) {
+          if (!id || store[i].id === id) {
+            store[i] = { ...store[i], ...payload };
+            updated.push(store[i]);
+          }
+        }
+        body = updated;
+      } else if (method === 'DELETE') {
+        const id = eqId(url);
+        if (id) {
+          const index = store.findIndex(row => row.id === id);
+          if (index >= 0) store.splice(index, 1);
+        }
+        body = [];
+      }
+    }
 
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       headers: { 'content-range': '0-0/0' },
-      body: JSON.stringify(body),
+      body: JSON.stringify(responseBody(request, body)),
     });
   });
 }
@@ -144,6 +275,140 @@ async function checkConfiguredRoute(browser, baseUrl, route, expected) {
   };
 }
 
+async function checkRosterInteractions(browser, baseUrl) {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  await context.addInitScript(() => {
+    localStorage.setItem('tt_sb_url', 'https://smoke.supabase.co');
+    localStorage.setItem('tt_sb_key', 'smoke-key');
+  });
+
+  const page = await context.newPage();
+  const errors = collectPageErrors(page);
+
+  await installSupabaseMock(page);
+  await page.goto(`${baseUrl}#/roster`, { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1_000);
+
+  const desktopRoster = page.locator('.hidden.lg\\:flex');
+
+  await desktopRoster.getByRole('button', { name: 'Smoke Traveller 9BB8A4-C789' }).click();
+  await desktopRoster.getByLabel('Character actions').click();
+  await page.getByText('EDIT', { exact: true }).waitFor({ state: 'visible', timeout: 5_000 });
+  await page.keyboard.press('Escape');
+
+  const body = await readBody(page);
+  const hasExpandedUpp = body.includes('9BB8A4-C789');
+  const hasPortraitSlot = body.includes('PORTRAIT');
+  const hasImportedDetails = body.includes('PROFILE')
+    && body.includes('HOMEWORLD')
+    && body.includes('LIFEPATH')
+    && body.includes('Cloth Armour')
+    && body.includes('Scout contact');
+
+  await desktopRoster.getByLabel('Portrait file for Smoke Traveller').setInputFiles({
+    name: 'portrait.png',
+    mimeType: 'image/png',
+    buffer: tinyPortraitPng,
+  });
+  await desktopRoster.locator('img[alt="Smoke Traveller portrait"]').waitFor({ state: 'visible', timeout: 5_000 });
+
+  await desktopRoster.getByRole('button', { name: 'TEMP MODS' }).click();
+  await desktopRoster.getByLabel('Increase DEX temporary modifier').click();
+  const rosterAfterTempMod = await desktopRoster.innerText();
+  if (rosterAfterTempMod.includes('base B +1')) {
+    throw new Error('Temporary modifier annotation leaked into the attribute tile');
+  }
+  await desktopRoster.getByRole('button', { name: 'Roll DEX check' }).click();
+  const dexRollText = await page.locator('.fixed .panel').innerText({ timeout: 5_000 });
+  if (!dexRollText.includes('Char DM: +2')) {
+    throw new Error(`Temporary DEX modifier did not affect roll DM:\n${dexRollText}`);
+  }
+  await page.keyboard.press('Escape');
+
+  await desktopRoster.getByTitle('Roll any skill check. Skill 0 = no DM bonus. Unskilled = DM-3.').click();
+  await page.getByPlaceholder('e.g. Pilot (Small Craft)').type('Astrogation');
+  await page.getByLabel('+DM').type('+2');
+  const typedValues = {
+    label: await page.getByPlaceholder('e.g. Pilot (Small Craft)').inputValue(),
+    bonus: await page.getByLabel('+DM').inputValue(),
+  };
+  if (typedValues.label !== 'Astrogation' || typedValues.bonus !== '+2') {
+    throw new Error(`Roll tool input lost characters: ${JSON.stringify(typedValues)}`);
+  }
+  await page.getByRole('button', { name: 'ROLL 2D6' }).click();
+  await page.getByText('+DM +2', { exact: false }).waitFor({ state: 'visible', timeout: 5_000 });
+  await page.screenshot({ path: new URL('roster.png', outputDir).pathname, fullPage: false });
+  await context.close();
+
+  return {
+    route: 'roster-interactions',
+    ok: hasExpandedUpp && hasPortraitSlot && hasImportedDetails,
+    errors,
+  };
+}
+
+async function replaceByTyping(locator, value) {
+  await locator.press('ControlOrMeta+A');
+  await locator.type(value);
+  const actual = await locator.inputValue();
+  if (actual !== value) {
+    throw new Error(`Input lost characters: expected ${JSON.stringify(value)}, got ${JSON.stringify(actual)}`);
+  }
+}
+
+async function checkFormTyping(browser, baseUrl) {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  await context.addInitScript(() => {
+    localStorage.setItem('tt_sb_url', 'https://smoke.supabase.co');
+    localStorage.setItem('tt_sb_key', 'smoke-key');
+  });
+
+  const page = await context.newPage();
+  const errors = collectPageErrors(page);
+
+  await installSupabaseMock(page);
+
+  await page.goto(`${baseUrl}#/roster`, { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1_000);
+  const desktopRoster = page.locator('.hidden.lg\\:flex');
+  await desktopRoster.getByRole('button', { name: 'Smoke Traveller 9BB8A4-C789' }).click();
+  await desktopRoster.getByLabel('Character actions').click();
+  await page.getByRole('button', { name: 'EDIT' }).click();
+  await replaceByTyping(desktopRoster.getByLabel('Character Name'), 'Smoke Traveller Prime');
+  await replaceByTyping(desktopRoster.locator('#character-str'), '12');
+  await replaceByTyping(desktopRoster.getByLabel('Skills (e.g. Medic-2, Gun Combat (Slug)-3, Recon-1)'), 'Pilot-2, Astrogation-1');
+  await desktopRoster.getByRole('button', { name: 'UPDATE' }).click();
+  await desktopRoster.getByRole('button', { name: 'Smoke Traveller Prime CBB8A4-C789' }).waitFor({ state: 'visible', timeout: 5_000 });
+  const rosterBody = await desktopRoster.innerText();
+  if (!rosterBody.includes('Smoke Traveller Prime') || !rosterBody.includes('CBB8A4-C789')) {
+    throw new Error('Edited character did not refresh in the roster display');
+  }
+
+  await page.goto(`${baseUrl}#/trade`, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'NEW DEAL' }).click();
+  await replaceByTyping(page.getByLabel('Item / Cargo'), 'Advanced Electronics');
+  await replaceByTyping(page.getByLabel('World Bought'), 'Regina');
+  await replaceByTyping(page.getByLabel('Notes'), 'Multi parsec arbitrage');
+  await page.getByRole('button', { name: 'SAVE' }).click();
+  await page.getByText('Advanced Electronics').waitFor({ state: 'visible', timeout: 5_000 });
+
+  await page.goto(`${baseUrl}#/inventory`, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'ADD ITEM' }).click();
+  await replaceByTyping(page.getByLabel('Item Name'), 'Advanced Medkit');
+  await replaceByTyping(page.getByLabel('Owner'), 'Captain Reyes');
+  await replaceByTyping(page.getByLabel('Location'), 'Ship Locker');
+  await page.getByRole('button', { name: 'SAVE' }).click();
+  await page.getByText('Advanced Medkit').waitFor({ state: 'visible', timeout: 5_000 });
+
+  await context.close();
+
+  return {
+    route: 'form-typing',
+    ok: true,
+    errors,
+  };
+}
+
 async function main() {
   await mkdir(outputDir, { recursive: true });
 
@@ -159,7 +424,8 @@ async function main() {
     const results = [
       await checkLanding(browser, baseUrl),
       await checkConfiguredRoute(browser, baseUrl, 'ships', 'SHIPS'),
-      await checkConfiguredRoute(browser, baseUrl, 'roster', 'ROSTER'),
+      await checkRosterInteractions(browser, baseUrl),
+      await checkFormTyping(browser, baseUrl),
       await checkConfiguredRoute(browser, baseUrl, 'log', 'ROLL LOG'),
     ];
 
