@@ -62,7 +62,7 @@ export default function SetupScreen() {
                 onChange={e => setKey(e.target.value)}
                 required
               />
-              <div className="text-body/50 text-xs mt-1">
+              <div className="text-body/70 text-xs mt-1">
                 Found in Project Settings → API → Project API keys
               </div>
             </div>
@@ -76,7 +76,7 @@ export default function SetupScreen() {
             </button>
           </form>
 
-          <div className="text-body/40 text-xs text-center">
+          <div className="text-body/65 text-xs text-center">
             Credentials stored in browser localStorage. Not sent to any third party.
           </div>
 

@@ -81,6 +81,9 @@ export interface Weapon {
   range: string;
   damage: string;
   traits: string;
+  quantity?: number | null;
+  mass?: number | null;
+  cost?: number | null;
 }
 
 export interface AttributeMods {
@@ -134,6 +137,9 @@ export interface ArmourItem {
   protection: number | null;
   radiation: number | null;
   required_skill: string | null;
+  quantity?: number | null;
+  mass?: number | null;
+  cost?: number | null;
 }
 
 export interface CharacterAugment {

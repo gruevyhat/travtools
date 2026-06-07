@@ -93,19 +93,19 @@ function ShipSpecsPanel({ specs, editing, form, onFormChange, onEdit, onSave, on
         <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
           {SPECS_FIELDS.filter(f => specs[f.key] != null).map(({ key, label }) => (
             <div key={key} className="flex justify-between border-b border-steel/20 pb-0.5">
-              <span className="text-body/50">{label}</span>
+              <span className="text-body/70">{label}</span>
               <span className="text-amber font-mono">{String(specs[key])}</span>
             </div>
           ))}
           {specs.crew_notes && (
             <div className="col-span-2 flex justify-between border-b border-steel/20 pb-0.5">
-              <span className="text-body/50">Crew</span>
+              <span className="text-body/70">Crew</span>
               <span className="text-amber font-mono">{specs.crew_notes}</span>
             </div>
           )}
         </div>
       ) : (
-        <div className="text-xs text-body/30 text-center py-2">No specs recorded. Click EDIT to add.</div>
+        <div className="text-xs text-body/55 text-center py-2">No specs recorded. Click EDIT to add.</div>
       )}
     </div>
   );
@@ -446,7 +446,7 @@ export default function ShipViewer() {
             </li>
           ))}
           {ships.length === 0 && (
-            <li className="px-4 py-6 text-center text-body/40 text-xs">
+            <li className="px-4 py-6 text-center text-body/65 text-xs">
               No ships registered.<br />Add a canonical or custom ship.
             </li>
           )}
@@ -591,7 +591,7 @@ export default function ShipViewer() {
                     onSave={saveSpecs}
                     onCancel={() => setEditingSpecs(false)}
                   />
-                  <div className="flex items-center justify-center h-64 text-body/40 text-sm border border-steel bg-panel">
+                  <div className="flex items-center justify-center h-64 text-body/65 text-sm border border-steel bg-panel">
                     No schematic image available.
                   </div>
                   <div>
@@ -611,7 +611,7 @@ export default function ShipViewer() {
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center">
-            <div className="text-center text-body/40 space-y-2">
+            <div className="text-center text-body/65 space-y-2">
               <div className="text-4xl opacity-20">◈</div>
               <div className="text-sm font-mono">Select a ship to view its schematic.</div>
             </div>

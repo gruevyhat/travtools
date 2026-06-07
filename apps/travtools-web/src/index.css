@@ -81,7 +81,7 @@
 
   .input {
     @apply bg-void border border-steel text-bright font-mono text-sm px-3 py-1.5 w-full
-           placeholder:text-body/40 focus:outline-none focus:border-amber transition-colors;
+           placeholder:text-body/65 focus:outline-none focus:border-amber transition-colors;
   }
 
   .select {

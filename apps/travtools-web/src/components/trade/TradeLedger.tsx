@@ -88,7 +88,6 @@ export default function TradeLedger() {
       setEditing(null);
       setForm(EMPTY);
       setShowForm(false);
-      setShowTradeGoods(false);
 
       const { data, error } = await client.from('trade_deals').update(payload).eq('id', editingId).select().single();
       if (error) {
@@ -109,7 +108,6 @@ export default function TradeLedger() {
     }
     setForm(EMPTY);
     setShowForm(false);
-    setShowTradeGoods(false);
   }
 
   async function deleteDeal(id: string) {
@@ -288,7 +286,14 @@ export default function TradeLedger() {
             <Download size={13} /> EXPORT CSV
           </button>
           <button
-            onClick={() => { setForm(EMPTY); setEditing(null); setShowForm(v => { setShowTradeGoods(!v); return !v; }); }}
+            type="button"
+            onClick={() => setShowTradeGoods(v => !v)}
+            className={`btn-steel flex items-center gap-1 ${showTradeGoods && !showForm ? 'btn-amber' : ''}`}
+          >
+            TRADE GOODS
+          </button>
+          <button
+            onClick={() => { setForm(EMPTY); setEditing(null); setShowForm(v => !v); }}
             className="btn-amber flex items-center gap-1"
           >
             <Plus size={13} /> NEW DEAL
@@ -301,7 +306,7 @@ export default function TradeLedger() {
         const goodsList = (
           <div className="space-y-2">
             <div className="relative">
-              <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-body/40 pointer-events-none" />
+              <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-body/65 pointer-events-none" />
               <input
                 className="input pl-6 text-xs"
                 placeholder="Search type, trade code, d66…"
@@ -318,30 +323,30 @@ export default function TradeLedger() {
                   className="w-full text-left border border-steel/40 rounded p-2 text-xs space-y-1 hover:border-amber/60 hover:bg-steel/20 transition-colors group"
                 >
                   <div className="flex items-center gap-2">
-                    <span className="font-mono text-body/50 w-6">{g.d66}</span>
+                    <span className="font-mono text-body/70 w-6">{g.d66}</span>
                     <span className="font-mono text-bright flex-1 group-hover:text-amber">{g.type}</span>
                     {g.illegal && <span className="text-[9px] font-mono text-alert border border-alert/50 px-1">ILLEGAL</span>}
                     {g.exotic && <span className="text-[9px] font-mono text-cyan-trav border border-cyan-trav/50 px-1">EXOTIC</span>}
                   </div>
                   <div className="flex gap-4 text-[10px] pl-8">
-                    <span className="text-body/40">{g.availability}</span>
+                    <span className="text-body/65">{g.availability}</span>
                     {!g.exotic && (
                       <>
-                        <span className="text-body/50">TONS <span className="text-bright">{g.tons}</span></span>
-                        <span className="text-body/50">BASE <span className="text-cyan-trav">{formatBasePrice(g.basePrice)}</span></span>
+                        <span className="text-body/70">TONS <span className="text-bright">{g.tons}</span></span>
+                        <span className="text-body/70">BASE <span className="text-cyan-trav">{formatBasePrice(g.basePrice)}</span></span>
                       </>
                     )}
                   </div>
                   {!g.exotic && (
                     <div className="text-[10px] pl-8 space-y-0.5">
-                      <div><span className="text-body/30">BUY </span><span className="text-body/60">{g.purchaseDM}</span></div>
-                      <div><span className="text-body/30">SELL </span><span className="text-body/60">{g.saleDM}</span></div>
+                      <div><span className="text-body/55">BUY </span><span className="text-body/60">{g.purchaseDM}</span></div>
+                      <div><span className="text-body/55">SELL </span><span className="text-body/60">{g.saleDM}</span></div>
                     </div>
                   )}
                 </button>
               ))}
               {searchTradeGoods(tradeQuery).length === 0 && (
-                <div className="text-body/40 text-center py-4">No matching trade goods.</div>
+                <div className="text-body/65 text-center py-4">No matching trade goods.</div>
               )}
             </div>
           </div>
@@ -384,7 +389,7 @@ export default function TradeLedger() {
                   <input className="input" value={form.notes ?? ''} onChange={e => setForm({ ...form, notes: e.target.value || null })} />
                 </Field>
                 <div className="col-span-2 flex gap-2 justify-end">
-                  <button type="button" onClick={() => { setShowForm(false); setShowTradeGoods(false); }} className="btn-steel">CANCEL</button>
+                  <button type="button" onClick={() => setShowForm(false)} className="btn-steel">CANCEL</button>
                   <button type="submit" className="btn-amber">{editing ? 'UPDATE' : 'SAVE'}</button>
                 </div>
               </form>
@@ -398,21 +403,11 @@ export default function TradeLedger() {
           );
         }
 
+        if (!showTradeGoods) return null;
         return (
-          <div className="panel">
-            <button
-              type="button"
-              onClick={() => setShowTradeGoods(v => !v)}
-              className="w-full flex items-center justify-between px-3 py-2 text-xs font-mono tracking-wider text-amber hover:text-amber-bright"
-            >
-              <span>TRADE GOODS REFERENCE — {TRADE_GOODS.length} ENTRIES · p.244–245</span>
-              <span className="text-body/50">{showTradeGoods ? '▲' : '▼'}</span>
-            </button>
-            {showTradeGoods && (
-              <div className="border-t border-steel/40 p-3">
-                {goodsList}
-              </div>
-            )}
+          <div className="panel p-3 space-y-2">
+            <div className="label">TRADE GOODS REFERENCE — {TRADE_GOODS.length} ENTRIES · p.244–245</div>
+            {goodsList}
           </div>
         );
       })()}
@@ -439,7 +434,7 @@ export default function TradeLedger() {
                 <tr key={deal.id} className="table-row">
                   <td className="table-cell font-bold text-bright">
                     {deal.item}
-                    {deal.notes && <div className="text-xs text-body/50 mt-0.5">{deal.notes}</div>}
+                    {deal.notes && <div className="text-xs text-body/70 mt-0.5">{deal.notes}</div>}
                   </td>
                   <td className="table-cell">{deal.quantity}</td>
                   <td className="table-cell">{formatCr(deal.buy_price)}</td>
@@ -493,7 +488,7 @@ export default function TradeLedger() {
             })}
             {visible.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-body/40 text-sm">
+                <td colSpan={8} className="px-4 py-8 text-center text-body/65 text-sm">
                   No deals found.
                 </td>
               </tr>

@@ -84,7 +84,16 @@ export default function LandingPage() {
 
   useEffect(() => {
     loadStats();
-  }, [loadStats]);
+    if (!client) return;
+    const tables = ['characters', 'ships', 'trade_deals', 'inventory_items', 'roll_log'];
+    const channels = tables.map(table =>
+      client
+        .channel(`landing-${table}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table }, loadStats)
+        .subscribe()
+    );
+    return () => { channels.forEach(ch => client.removeChannel(ch)); };
+  }, [client, loadStats]);
 
   const HeroShip = CANONICAL_SHIPS[1]?.Component ?? CANONICAL_SHIPS[0].Component;
 
@@ -124,19 +133,19 @@ export default function LandingPage() {
 
             <div className="mt-8 grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-2xl">
               <div className="border border-steel/70 bg-panel/80 px-3 py-3">
-                <div className="text-[10px] text-body/50 tracking-widest">CREW</div>
+                <div className="text-[10px] text-body/70 tracking-widest">CREW</div>
                 <div className="mt-1 text-2xl font-mono text-amber glow-amber">{displayCount(stats.characters)}</div>
               </div>
               <div className="border border-steel/70 bg-panel/80 px-3 py-3">
-                <div className="text-[10px] text-body/50 tracking-widest">SHIPS</div>
+                <div className="text-[10px] text-body/70 tracking-widest">SHIPS</div>
                 <div className="mt-1 text-2xl font-mono text-cyan-trav glow-cyan">{displayCount(stats.ships)}</div>
               </div>
               <div className="border border-steel/70 bg-panel/80 px-3 py-3">
-                <div className="text-[10px] text-body/50 tracking-widest">ACTIVE TRADE</div>
+                <div className="text-[10px] text-body/70 tracking-widest">ACTIVE TRADE</div>
                 <div className="mt-1 text-2xl font-mono text-amber glow-amber">{displayCount(stats.activeDeals)}</div>
               </div>
               <div className="border border-steel/70 bg-panel/80 px-3 py-3">
-                <div className="text-[10px] text-body/50 tracking-widest">GEAR</div>
+                <div className="text-[10px] text-body/70 tracking-widest">GEAR</div>
                 <div className="mt-1 text-2xl font-mono text-cyan-trav glow-cyan">{displayCount(stats.inventory)}</div>
               </div>
             </div>
@@ -166,7 +175,7 @@ export default function LandingPage() {
                         <Icon size={14} />
                         <span>{signal}</span>
                       </div>
-                      <ArrowRight size={14} className="text-body/40 group-hover:text-amber transition-colors" />
+                      <ArrowRight size={14} className="text-body/65 group-hover:text-amber transition-colors" />
                     </div>
                     <div className="mt-5 text-xl font-display text-bright tracking-wide">{label}</div>
                   </Link>

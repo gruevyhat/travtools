@@ -7,7 +7,7 @@ interface FanNoticeProps {
 
 export default function FanNotice({ compact = false }: FanNoticeProps) {
   return (
-    <div className={`text-[10px] text-body/35 font-mono tracking-wider ${compact ? '' : 'px-3 py-2'}`}>
+    <div className={`text-[10px] text-body/60 font-mono tracking-wider ${compact ? '' : 'px-3 py-2'}`}>
       {FAN_NOTICE}
     </div>
   );

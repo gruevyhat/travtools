@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
-import RollLog from '../components/log/RollLog';
+import RollLog, { relTime } from '../components/log/RollLog';
 import type { RollLogEntry } from '../types';
 import * as SupabaseContext from '../lib/supabaseContext';
+
+const NOW = new Date('2026-06-07T12:00:00Z').getTime();
 
 const baseEntries: RollLogEntry[] = [
   {
@@ -53,8 +55,41 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe('relTime', () => {
+  it('formats seconds ago', () => {
+    vi.setSystemTime(NOW);
+    const iso = new Date(NOW - 45_000).toISOString();
+    expect(relTime(iso)).toBe('45s ago');
+  });
+
+  it('formats minutes ago', () => {
+    vi.setSystemTime(NOW);
+    const iso = new Date(NOW - 5 * 60_000).toISOString();
+    expect(relTime(iso)).toBe('5m ago');
+  });
+
+  it('formats hours ago', () => {
+    vi.setSystemTime(NOW);
+    const iso = new Date(NOW - 3 * 3_600_000).toISOString();
+    expect(relTime(iso)).toBe('3h ago');
+  });
+
+  it('formats days ago', () => {
+    vi.setSystemTime(NOW);
+    const iso = new Date(NOW - 2 * 86_400_000).toISOString();
+    expect(relTime(iso)).toBe('2d ago');
+  });
+
+  it('formats a date for entries older than 7 days', () => {
+    vi.setSystemTime(NOW);
+    const iso = new Date(NOW - 10 * 86_400_000).toISOString();
+    const result = relTime(iso);
+    expect(result).toMatch(/May/);
+  });
+});
+
 describe('RollLog', () => {
-  it('clears all roll log entries after confirmation', async () => {
+  it('clears all roll log entries after styled in-app confirmation', async () => {
     const mock = makeRollLogClient(baseEntries);
     vi.spyOn(SupabaseContext, 'useSupabase').mockReturnValue({
       client: mock.client as never,
@@ -62,12 +97,15 @@ describe('RollLog', () => {
       configure: vi.fn(),
       reset: vi.fn(),
     });
-    vi.stubGlobal('confirm', vi.fn(() => true));
 
     render(<RollLog />);
 
     expect(await screen.findByText('Rafael')).toBeTruthy();
+
     fireEvent.click(screen.getByRole('button', { name: /CLEAR LOG/i }));
+    expect(screen.getByRole('button', { name: /CONFIRM/i })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /CONFIRM/i }));
 
     await waitFor(() => {
       expect(mock.deleteFn).toHaveBeenCalled();
@@ -75,5 +113,24 @@ describe('RollLog', () => {
     });
     expect(screen.getByText('0 ROLLS RECORDED')).toBeTruthy();
     expect(screen.queryByText('Rafael')).toBeNull();
+  });
+
+  it('cancels the clear confirmation without deleting', async () => {
+    const mock = makeRollLogClient(baseEntries);
+    vi.spyOn(SupabaseContext, 'useSupabase').mockReturnValue({
+      client: mock.client as never,
+      isConfigured: true,
+      configure: vi.fn(),
+      reset: vi.fn(),
+    });
+
+    render(<RollLog />);
+    expect(await screen.findByText('Rafael')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /CLEAR LOG/i }));
+    fireEvent.click(screen.getByRole('button', { name: /CANCEL/i }));
+
+    expect(mock.deleteFn).not.toHaveBeenCalled();
+    expect(screen.getByText('Rafael')).toBeTruthy();
   });
 });

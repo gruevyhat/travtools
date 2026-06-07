@@ -465,11 +465,26 @@ Questions to answer:
 - [x] Browser offline state shows "RECONNECTING..." in the header
 - [x] XLSX import errors show which sheet/section failed when possible
 - [ ] Optional CSV fallback errors show which rows failed and why, if CSV UI is restored
+- [x] Replace native `confirm()` dialog in Roll Log "Clear Log" with a styled in-app confirmation (inconsistent with terminal aesthetic)
 
 **Performance**
 - [x] Lazy-load routes so the initial bundle is smaller
 - [x] Resolve or consciously accept the current Vite chunk-size warning after production builds
 - [ ] Verify Lighthouse score ≥ 80 on mobile
+
+**Code quality**
+- [ ] Split `PartyRoster.tsx` (2837 lines) — extract `RollModal`, `CharDetailContent`, `CharacterPortrait`, and `CharacterActionsMenu` into their own files
+- [x] Unify `fmtDM()` — removed local definitions from `PartyRoster.tsx` and `RollLog.tsx`; all call sites now import from `dice.ts`
+- [x] Fix `InventoryManager.tsx` — removed all redundant `console.error` calls (errors already shown via `setErrorMessage`)
+
+**UX gaps (identified in review)**
+- [x] Landing page stats: added Supabase realtime subscriptions — all five stat tables subscribe and re-load on change
+- [x] Roll Log: added per-character filter dropdown (shows when 2+ characters have rolled)
+- [x] Roll Log: improved `relTime()` — now shows days (2d ago) and formatted dates (May 28) for entries older than 24h / 7d
+- [x] Roll Log: added "LOAD MORE" button — fetches in pages of 100 with `hasMore` detection
+- [x] Weapon damage rolls logged to Roll Log — `onSaveDamage` callback writes `{weaponName} Damage` entries
+- [ ] Background section in character detail: group fields into readable clusters (Personality, History, Goals, etc.) instead of a raw alphabetical dump of all snake_case keys
+- [ ] Add a "Roll Initiative for All" party button that shows a ranked initiative list without opening each character card individually
 
 ### Milestone 6 Retrospective
 
@@ -484,17 +499,32 @@ Questions to answer:
 
 ## Milestone 7 — Depth
 
-**Goal:** Features that reward long campaigns. Triggered by actual player demand from Milestones 1–3.
+**Goal:** Features that reward long campaigns and fill the gaps identified in the post-launch review. Reprioritise based on Milestone 1–6 retrospectives and actual table demand.
 
-*Candidate features — reprioritise based on Milestone 1–6 retrospectives:*
+### High-priority additions (most needed at the table)
+
+- **Flux dice** — `1D6 - 1D6` (range −5 to +5), used throughout Traveller for random events, NPC reactions, animal encounters, and some trade rolls. Add as a mode in the standalone dice roller alongside Normal / Boon / Bane.
+- **Combat / initiative tracker** — initiative queue (ranked list), round counter, range bands, and per-character action tracking. The roll infrastructure is in place; the missing piece is a structured encounter view. Needs no schema changes — initiative results already flow through the roll modal.
+- **Trade goods roller** — the reference table (`tradeGoods.ts`) exists; the missing tool is rolling availability (D66) and price modifiers per p.243–245. Add to the Global Tools drawer Reference tab.
+- **Reaction roll and morale** — a one-button roller for NPC reactions (2D6, table lookup) and morale checks. Fits naturally in the Reference tab or a new Combat sub-tab.
+
+### Medium-priority additions
+
+- **Boon/bane in character roll modal** — the standalone dice roller supports boon/bane (M5), but the character-level skill/attribute/weapon roll modal does not; add a Normal / Boon / Bane selector to `RollModal` so roster checks can use the same mechanic.
+- **Global Tools Reference tab expansion** — currently only has difficulties, task chain, and boon/bane. Add: common situational DMs, combat action types (minor/significant), natural healing rates, critical hits summary, wound severity table.
+- **Jump planner / fuel calculator** — parsec distance input, jump rating, fuel cost in tons. Static calculation; no schema changes needed.
+- **Session journal** — shared timestamped notes per session; searchable. New Supabase table. Enables campaign continuity across sessions.
+- **Ship combat tracker** — range bands, ship initiative, damage allocation, repair actions. Complements the existing Ship Viewer. Requires a new schema table or session-local state.
+
+### Long-term candidates
 
 - **Trade route map** — plot world-to-world routes on a subsector grid; colour-code by profit
-- **Speculative cargo generator** — roll or auto-generate available cargo lots per the core trade rules
-- **Character advancement** — build on imported lifepath/background data; track skill improvements, aging rolls, mustering out benefits, and long-term wounds/augments across sessions
-- **Crew dossier view** — campaign-friendly character dossier that combines portrait, background, contacts, finances, and advancement notes
-- **Session log** — timestamped notes per session; searchable
+- **Speculative cargo generator** — roll or auto-generate available cargo lots per the core trade rules; consumes the Modified Price table (p.243, already noted in M5 backlog)
+- **Character advancement** — track skill improvements, aging rolls, mustering out benefits, and long-term wounds/augments across sessions
+- **Crew dossier view** — campaign-friendly character dossier combining portrait, background, contacts, finances, and advancement notes
 - [x] **Roll analytics** — use persisted `roll_log` data for session recaps, notable failures, and character spotlight moments
 - **Ship mortgage tracker** — monthly payment schedule, running balance, jump fuel costs
+- **Portrait storage migration** — character portraits are currently stored as JPEG data URLs inside the `characters` table, growing row size significantly; migrating to the existing `ship-schematics` Storage bucket pattern would reduce DB payload
 
 ---
 

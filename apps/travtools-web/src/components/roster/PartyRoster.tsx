@@ -1,13 +1,24 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { Download, Plus, Upload, ChevronDown, ChevronUp, X, Minus, Settings, Pencil, Trash2 } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
-import { AttributeMods, Character, Weapon } from '../../types';
+import {
+  ArmourItem,
+  AttributeMods,
+  Character,
+  CharacterAugment,
+  CharacterContact,
+  LifepathTerm,
+  PersonalEquipmentItem,
+  Weapon,
+} from '../../types';
 import {
   toHex, upp, statDM, skillChar, parseSkillsCSV, parseTalentsCSV,
   STAT_LABELS, CharStat, parseDamageExpr, DEFAULT_CHARACTER_TITLE,
 } from '../../lib/traveller';
 import { parseXLSXCharacter } from '../../lib/parseXLSX';
 import { csvRow, downloadCsv } from '../../lib/csv';
+import { CORE_EQUIPMENT } from '../../data/equipment';
+import { fmtDM, DIFFICULTIES } from '../../lib/dice';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -43,19 +54,7 @@ const TEMP_MOD_MAX = 15;
 const PORTRAIT_WIDTH = 360;
 const PORTRAIT_HEIGHT = 480;
 
-const DIFFICULTIES = [
-  { label: 'Routine', target: 6 },
-  { label: 'Average', target: 8 },
-  { label: 'Difficult', target: 10 },
-  { label: 'Very Difficult', target: 12 },
-  { label: 'Formidable', target: 14 },
-] as const;
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function fmtDM(n: number): string {
-  return n >= 0 ? `+${n}` : String(n);
-}
 
 function parseIntegerInput(raw: string): number {
   const trimmed = raw.trim();
@@ -93,6 +92,126 @@ function normalizeTempMods(raw: AttributeMods | null | undefined): Partial<Recor
     }
     return mods;
   }, {});
+}
+
+function parseNullableNumber(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (trimmed === '') return null;
+  const value = Number(trimmed);
+  return Number.isFinite(value) ? value : null;
+}
+
+function normaliseLookupName(name: string | null | undefined): string {
+  return (name ?? '')
+    .toLowerCase()
+    .replace(/\(x\s*\d+\)/g, '')
+    .replace(/\btl\s*\d+\b/g, '')
+    .replace(/\([^)]*\)/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function equipmentLookupName(name: string | null | undefined): string {
+  return (name ?? '')
+    .toLowerCase()
+    .replace(/\(x\s*\d+\)/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function inferredQuantityFromName(name: string | null | undefined): number | null {
+  const match = (name ?? '').match(/\(x\s*(\d+)\)/i);
+  if (!match) return null;
+  const value = parseInt(match[1], 10);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function quantityFor(item: { quantity?: number | null; name?: string | null }): number {
+  return item.quantity ?? inferredQuantityFromName(item.name) ?? 1;
+}
+
+function explicitMass(item: { mass?: number | null; mass_kg?: number | null; weight_kg?: number | null }): number | null {
+  if (typeof item.mass === 'number') return item.mass;
+  if (typeof item.mass_kg === 'number') return item.mass_kg;
+  if (typeof item.weight_kg === 'number') return item.weight_kg;
+  return null;
+}
+
+function coreMassFor(name: string | null | undefined, categories: string[]): number | null {
+  const exactKey = equipmentLookupName(name);
+  const exactMatch = CORE_EQUIPMENT.find(item =>
+    categories.includes(item.inventoryCategory) &&
+    item.massKg !== null &&
+    equipmentLookupName(item.name) === exactKey
+  );
+  if (exactMatch) return exactMatch.massKg;
+
+  const key = normaliseLookupName(name);
+  if (!key) return null;
+  const match = CORE_EQUIPMENT.find(item =>
+    categories.includes(item.inventoryCategory) &&
+    item.massKg !== null &&
+    normaliseLookupName(item.name) === key
+  );
+  return match?.massKg ?? null;
+}
+
+function massFor(item: { name?: string | null; mass?: number | null; mass_kg?: number | null; weight_kg?: number | null }, categories: string[]): number | null {
+  return explicitMass(item) ?? coreMassFor(item.name, categories);
+}
+
+function kg(value: number): string {
+  const raw = value.toFixed(value >= 10 ? 1 : 2);
+  return `${raw.replace(/\.0+$/, '').replace(/(\.\d*[1-9])0+$/, '$1')} kg`;
+}
+
+function carriedMass(char: Character): number {
+  const weaponMass = (char.weapons ?? []).reduce((sum, item) => {
+    const mass = massFor(item, ['Weapon']);
+    return mass === null ? sum : sum + mass * quantityFor(item);
+  }, 0);
+
+  const armourMass = (char.armour ?? []).reduce((sum, item) => {
+    const mass = massFor(item, ['Armour']);
+    if (mass === null) return sum;
+    const wornMultiplier = item.worn ? 0.25 : 1;
+    return sum + mass * quantityFor(item) * wornMultiplier;
+  }, 0);
+
+  const equipmentMass = (char.personal_equipment ?? []).reduce((sum, item) => {
+    const mass = massFor(item, ['Equipment', 'Medicine', 'Electronics', 'Survival', 'Other']);
+    return mass === null ? sum : sum + mass * quantityFor(item);
+  }, 0);
+
+  return weaponMass + armourMass + equipmentMass;
+}
+
+function knownSkillLevel(char: Character, names: string[]): number | null {
+  const wanted = names.map(normaliseLookupName);
+  let best: number | null = null;
+  for (const skill of char.skills ?? []) {
+    const skillName = normaliseLookupName(skill.name);
+    const matches = wanted.some(name => skillName === name || skillName.startsWith(`${name} `));
+    if (matches) best = Math.max(best ?? skill.level, skill.level);
+  }
+  return best;
+}
+
+function athleticsLoadBonus(char: Character): number {
+  return (char.skills ?? []).reduce((bonus, skill) => {
+    const name = normaliseLookupName(skill.name);
+    if (name === 'athletics' || name === 'athletics strength' || name === 'athletics endurance') {
+      return bonus + Math.max(0, skill.level);
+    }
+    return bonus;
+  }, 0);
+}
+
+function encumbranceStatus(totalKg: number, capacityKg: number): { label: string; color: string; physicalMod: number | null } {
+  if (capacityKg <= 0) return { label: 'UNKNOWN', color: 'text-body/70', physicalMod: null };
+  if (totalKg <= capacityKg) return { label: 'CLEAR', color: 'text-safe', physicalMod: 0 };
+  if (totalKg <= capacityKg * 2) return { label: 'ENCUMBERED', color: 'text-amber', physicalMod: -2 };
+  return { label: 'OVERLOADED', color: 'text-alert', physicalMod: -2 };
 }
 
 async function portraitFileToDataUrl(file: File): Promise<string> {
@@ -199,7 +318,7 @@ function CharacterActionsMenu({
         aria-label="Character actions"
         aria-expanded={open}
         onClick={() => setOpen(v => !v)}
-        className="w-6 h-6 border border-steel/50 text-body/50 hover:border-amber/70 hover:text-amber transition-colors flex items-center justify-center"
+        className="w-6 h-6 border border-steel/50 text-body/70 hover:border-amber/70 hover:text-amber transition-colors flex items-center justify-center"
       >
         <Settings size={13} />
       </button>
@@ -282,7 +401,7 @@ function CharacterPortrait({
         />
       ) : (
         <div className="w-full h-full flex items-center justify-center bg-steel/10">
-          <span className={`${textClass} font-mono text-body/25`}>PORTRAIT</span>
+          <span className={`${textClass} font-mono text-body/70`}>PORTRAIT</span>
         </div>
       )}
       {editable && (
@@ -379,9 +498,12 @@ function boolMark(value: boolean | null | undefined): string {
 
 interface RollTarget {
   label: string;
-  skillLevel: number;
+  skillLevel: number | null;
   charKey: CharStat | null;
   isPsionic: boolean;
+  isCustom?: boolean;
+  kind?: 'check' | 'initiative';
+  applyJackOfAllTrades?: boolean;
   weapon?: Weapon;
 }
 
@@ -405,27 +527,30 @@ function RollModal({
   statValues,
   onClose,
   onSave,
+  onSaveDamage,
 }: {
   char: Character;
   target: RollTarget;
   statValues: Partial<Record<CharStat, number | null>>;
   onClose: () => void;
   onSave: (result: { d1: number; d2: number; charDM: number; skillLevel: number; bonusDM: number; total: number }, difficulty: number, label: string) => void;
+  onSaveDamage?: (weaponName: string, rolls: number[], constant: number, strDM: number, effect: number, total: number) => void;
 }) {
   const isWeapon = !!initialTarget.weapon;
   const isMelee = isWeapon && initialTarget.weapon!.range === 'Melee';
+  const isInitiative = initialTarget.kind === 'initiative';
 
   const defaultCharKey = initialTarget.charKey ?? (isMelee ? 'str' : null);
 
   const [charKey, setCharKey] = useState<CharStat | null>(defaultCharKey);
   const [difficulty, setDifficulty] = useState<number>(8);
   const [label, setLabel] = useState(initialTarget.label);
-  const [skillLevelInput, setSkillLevelInput] = useState(String(initialTarget.skillLevel));
+  const [skillLevelInput] = useState(initialTarget.skillLevel === null ? 'None' : String(initialTarget.skillLevel));
   const [bonusDMInput, setBonusDMInput] = useState('');
   const [attackResult, setAttackResult] = useState<AttackResult | null>(null);
   const [damageResult, setDamageResult] = useState<DamageResult | null>(null);
   const [saved, setSaved] = useState(false);
-  const isCustom = initialTarget.label === '';
+  const isCustom = initialTarget.isCustom === true;
 
   function statValue(key: CharStat): number | null {
     if (Object.prototype.hasOwnProperty.call(statValues, key)) return statValues[key] ?? null;
@@ -433,10 +558,15 @@ function RollModal({
   }
 
   const charDM = charKey !== null ? statDM(statValue(charKey)) : 0;
-  const skillLevel = parseIntegerInput(skillLevelInput);
+  const skillLevelIsNone = skillLevelInput === 'None';
+  const joatLevel = skillLevelIsNone && initialTarget.applyJackOfAllTrades ? knownSkillLevel(char, ['Jack-of-all-Trades', 'Jack of All Trades']) ?? 0 : 0;
+  const skillLevel = isInitiative ? 0 : skillLevelIsNone ? -3 + joatLevel : parseIntegerInput(skillLevelInput);
   const bonusDM = parseIntegerInput(bonusDMInput);
   const availableStats = ALL_STATS.filter(k => statValue(k) !== null);
   const attackHit = attackResult !== null && attackResult.total >= difficulty;
+  const skillSummary = skillLevelIsNone
+    ? `None (${fmtDM(skillLevel)}${joatLevel > 0 ? ` incl. JoAT +${joatLevel}` : ''})`
+    : fmtDM(skillLevel);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -453,7 +583,7 @@ function RollModal({
     setAttackResult(r);
     setDamageResult(null);
     setSaved(false);
-    onSave({ d1, d2, charDM, skillLevel, bonusDM, total }, difficulty, label || 'Custom');
+    onSave({ d1, d2, charDM, skillLevel, bonusDM, total }, difficulty, label || 'Unknown');
     setSaved(true);
   }
 
@@ -466,13 +596,15 @@ function RollModal({
     const base = rolls.reduce((s, r) => s + r, 0);
     const total = Math.max(0, base + constant + strDMVal + effect);
     setDamageResult({ rolls, constant, strDM: strDMVal, effect, total });
+    onSaveDamage?.(initialTarget.weapon.name, rolls, constant, strDMVal, effect, total);
   }
 
   const success = attackResult !== null && attackResult.total >= difficulty;
   const effect = attackResult !== null ? attackResult.total - difficulty : 0;
   const modalTitle = isWeapon
     ? `${initialTarget.weapon!.name} ATTACK — ${charDisplayName(char)}`
-    : isCustom ? `CUSTOM CHECK — ${charDisplayName(char)}`
+    : isInitiative ? `INITIATIVE — ${charDisplayName(char)}`
+    : isCustom ? `UNKNOWN CHECK — ${charDisplayName(char)}`
     : `${label} CHECK — ${charDisplayName(char)}`;
 
   return (
@@ -481,16 +613,16 @@ function RollModal({
       <div className="relative z-10 w-full max-w-md mx-4 panel border border-steel/80 shadow-2xl">
         <div className="panel-header flex items-center justify-between">
           <span className="truncate">{modalTitle}</span>
-          <button onClick={onClose} className="text-body/50 hover:text-body ml-4 flex-shrink-0"><X size={14} /></button>
+          <button onClick={onClose} className="text-body/70 hover:text-body ml-4 flex-shrink-0"><X size={14} /></button>
         </div>
 
         <div className="p-4 space-y-3">
           {isWeapon && (
             <div className="flex items-center gap-4 text-xs font-mono border border-steel/40 px-3 py-2">
-              <span className="text-body/50">{initialTarget.weapon!.range}</span>
+              <span className="text-body/70">{initialTarget.weapon!.range}</span>
               <span className="text-amber">{initialTarget.weapon!.damage}</span>
-              <span className="text-body/40 text-[10px]">{initialTarget.weapon!.skill}</span>
-              {initialTarget.weapon!.traits && <span className="text-body/30 text-[10px] ml-auto">{initialTarget.weapon!.traits}</span>}
+              <span className="text-body/65 text-[10px]">{initialTarget.weapon!.skill}</span>
+              {initialTarget.weapon!.traits && <span className="text-body/55 text-[10px] ml-auto">{initialTarget.weapon!.traits}</span>}
             </div>
           )}
 
@@ -502,7 +634,7 @@ function RollModal({
             </div>
           )}
 
-          <div className="grid grid-cols-3 gap-2">
+          <div className={`grid gap-2 ${isInitiative ? 'grid-cols-2' : 'grid-cols-3'}`}>
             <div className="space-y-1">
               <label className="label">Characteristic</label>
               <select className="select text-xs" value={charKey ?? ''}
@@ -515,15 +647,14 @@ function RollModal({
                 ))}
               </select>
             </div>
+            {!isInitiative && (
+              <div className="space-y-1">
+                <label className="label">Skill Level</label>
+                <input className="input text-xs" type="text" value={skillLevelInput} readOnly />
+              </div>
+            )}
             <div className="space-y-1">
-              <label className="label">Skill Level</label>
-              <input className="input text-xs" type="text" inputMode="numeric" pattern="[+-]?[0-9]*"
-                value={skillLevelInput}
-                readOnly={!isCustom}
-                onChange={e => setSkillLevelInput(e.target.value)} />
-            </div>
-            <div className="space-y-1">
-              <label className="label" htmlFor="roll-bonus-dm">+DM</label>
+              <label className="label" htmlFor="roll-bonus-dm">Mod</label>
               <input id="roll-bonus-dm" className="input text-xs" type="text" inputMode="numeric" pattern="[+-]?[0-9]*"
                 placeholder="0"
                 value={bonusDMInput}
@@ -532,40 +663,48 @@ function RollModal({
           </div>
 
           {isCustom && (
-            <div className="text-xs text-body/40 font-mono">
-              Unskilled penalty is DM-3 · Skill 0 = competent, no bonus
+            <div className="text-xs text-body/65 font-mono">
+              Unknown skills use None: DM-3, plus Jack of All Trades if present.
             </div>
           )}
 
-          <div className="space-y-1">
-            <div className="label">Difficulty</div>
-            <div className="flex items-center gap-1 flex-wrap">
-              {DIFFICULTIES.map(d => (
-                <button key={d.target} onClick={() => setDifficulty(d.target)}
-                  className={`px-2 py-0.5 border text-xs font-mono transition-colors ${
-                    difficulty === d.target
-                      ? 'border-amber text-amber'
-                      : 'border-steel text-body hover:border-amber/60 hover:text-amber/60'
-                  }`}>
-                  {d.label} {d.target}+
-                </button>
-              ))}
+          {isInitiative ? (
+            <div className="text-xs text-body/65 font-mono">
+              Initiative is the Effect of an Average 8+ DEX or INT check.
             </div>
-          </div>
+          ) : (
+            <div className="space-y-1">
+              <div className="label">Difficulty</div>
+              <div className="flex items-center gap-1 flex-wrap">
+                {DIFFICULTIES.map(d => (
+                  <button key={d.target} onClick={() => setDifficulty(d.target)}
+                    className={`px-2 py-0.5 border text-xs font-mono transition-colors ${
+                      difficulty === d.target
+                        ? 'border-amber text-amber'
+                        : 'border-steel text-body hover:border-amber/60 hover:text-amber/60'
+                    }`}>
+                    {d.label} {d.target}+
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
-          <div className="text-xs text-body/50 font-mono">
+          <div className="text-xs text-body/70 font-mono">
             Char DM: <span className="text-cyan-trav">{fmtDM(charDM)}</span>
-            {' · '}Skill: <span className="text-cyan-trav">{fmtDM(skillLevel)}</span>
-            {' · '}+DM: <span className="text-cyan-trav">{fmtDM(bonusDM)}</span>
+            {!isInitiative && <>{' · '}Skill: <span className="text-cyan-trav">{skillSummary}</span></>}
+            {' · '}Mod: <span className="text-cyan-trav">{fmtDM(bonusDM)}</span>
             {' · '}
-          {(() => {
-            const pct = Math.round(successChance(difficulty, charDM + skillLevel + bonusDM) * 100);
-            return <span className={pct >= 50 ? 'text-safe' : 'text-alert'}>{pct}% success</span>;
-          })()}
+            {isInitiative ? (
+              <span className="text-body/70">Effect becomes Initiative</span>
+            ) : (() => {
+              const pct = Math.round(successChance(difficulty, charDM + skillLevel + bonusDM) * 100);
+              return <span className={pct >= 50 ? 'text-safe' : 'text-alert'}>{pct}% success</span>;
+            })()}
           </div>
 
           <button onClick={rollAttack} className="btn-amber w-full text-center text-sm">
-            {isWeapon ? 'ROLL ATTACK 2D6' : 'ROLL 2D6'}
+            {isWeapon ? 'ROLL ATTACK 2D6' : isInitiative ? 'ROLL INITIATIVE 2D6' : 'ROLL 2D6'}
           </button>
 
           {attackResult !== null && (
@@ -575,24 +714,31 @@ function RollModal({
                 <span className="text-body">+</span>
                 <span className="inline-flex items-center justify-center w-9 h-9 border border-amber text-amber font-bold text-lg">{attackResult.d2}</span>
                 {attackResult.charDM !== 0 && <><span className="text-body">+</span><span className="text-cyan-trav text-xs">{charKey && STAT_LABELS[charKey]} {fmtDM(attackResult.charDM)}</span></>}
-                {skillLevel !== 0 && <><span className="text-body">+</span><span className="text-cyan-trav text-xs">Skill {fmtDM(attackResult.skillLevel)}</span></>}
-                {attackResult.bonusDM !== 0 && <><span className="text-body">+</span><span className="text-cyan-trav text-xs">+DM {fmtDM(attackResult.bonusDM)}</span></>}
+                {!isInitiative && attackResult.skillLevel !== 0 && <><span className="text-body">+</span><span className="text-cyan-trav text-xs">Skill {skillLevelIsNone ? `None ${fmtDM(attackResult.skillLevel)}` : fmtDM(attackResult.skillLevel)}</span></>}
+                {attackResult.bonusDM !== 0 && <><span className="text-body">+</span><span className="text-cyan-trav text-xs">Mod {fmtDM(attackResult.bonusDM)}</span></>}
                 <span className="text-body">=</span>
-                <span className={`text-2xl font-bold ${success ? 'text-safe glow-cyan' : 'text-alert'}`}>{attackResult.total}</span>
+                <span className={`text-2xl font-bold ${isInitiative || success ? 'text-safe glow-cyan' : 'text-alert'}`}>{attackResult.total}</span>
               </div>
-              <div className={`text-sm font-mono tracking-wider ${success ? 'text-safe' : 'text-alert'}`}>
-                {success ? (isWeapon ? '✓ HIT' : '✓ SUCCESS') : (isWeapon ? '✗ MISS' : '✗ FAILURE')}
-                <span className="text-body/60 text-xs ml-2">vs {difficulty}+</span>
-                <span className="text-bright text-xs ml-2">Effect {fmtDM(effect)}</span>
-              </div>
-              {saved && !isWeapon && <div className="text-xs text-body/40">Logged to Roll Log</div>}
+              {isInitiative ? (
+                <div className="text-sm font-mono tracking-wider text-safe">
+                  INITIATIVE {fmtDM(effect)}
+                  <span className="text-body/60 text-xs ml-2">Effect of Average 8+ check</span>
+                </div>
+              ) : (
+                <div className={`text-sm font-mono tracking-wider ${success ? 'text-safe' : 'text-alert'}`}>
+                  {success ? (isWeapon ? '✓ HIT' : '✓ SUCCESS') : (isWeapon ? '✗ MISS' : '✗ FAILURE')}
+                  <span className="text-body/60 text-xs ml-2">vs {difficulty}+</span>
+                  <span className="text-bright text-xs ml-2">Effect {fmtDM(effect)}</span>
+                </div>
+              )}
+              {saved && !isWeapon && <div className="text-xs text-body/65">Logged to Roll Log</div>}
 
               {isWeapon && attackHit && (
                 <div className="border-t border-steel/40 pt-2 space-y-2">
                   <div className="text-xs text-body/60 font-mono">
                     Damage: <span className="text-amber">{initialTarget.weapon!.damage}</span>
                     {' + Effect'} {fmtDM(effect)}
-                    {isMelee && <span className="text-body/50"> + STR DM {fmtDM(statDM(statValue('str')))}</span>}
+                    {isMelee && <span className="text-body/70"> + STR DM {fmtDM(statDM(statValue('str')))}</span>}
                   </div>
                   <button onClick={rollDamage} className="btn-steel w-full text-center text-xs">
                     ROLL DAMAGE
@@ -621,9 +767,9 @@ function RollModal({
                         )}
                         <span className="text-body">=</span>
                         <span className="text-alert font-bold text-2xl">{damageResult.total}</span>
-                        <span className="text-body/50 text-xs">damage</span>
+                        <span className="text-body/70 text-xs">damage</span>
                       </div>
-                      <div className="text-xs text-body/40 font-mono">
+                      <div className="text-xs text-body/65 font-mono">
                         Damage goes to END first, then STR or DEX (target's choice)
                       </div>
                     </div>
@@ -755,6 +901,21 @@ function CharDetailContent({
     values[key] = effectiveVal(key);
     return values;
   }, {});
+  const carriedMassKg = carriedMass(char);
+  const encumbranceBonus = athleticsLoadBonus(char);
+  const encumbranceCapacity = Math.max(0, (effectiveVal('str') ?? 0) + (effectiveVal('end_stat') ?? 0) + encumbranceBonus);
+  const encumbrance = encumbranceStatus(carriedMassKg, encumbranceCapacity);
+  const initiativeDM = Math.max(statDM(effectiveVal('dex')), statDM(effectiveVal('int_stat')));
+  const tacticsSkillLevel = knownSkillLevel(char, ['Tactics']);
+  const tacticsDM = statDM(effectiveVal('int_stat')) + (tacticsSkillLevel ?? -3);
+  const leadershipSkillLevel = knownSkillLevel(char, ['Leadership']);
+  const leadershipDM = Math.max(
+    statDM(effectiveVal('int_stat')),
+    statDM(effectiveVal('edu')),
+    statDM(effectiveVal('soc')),
+  ) + (leadershipSkillLevel ?? -3);
+  const dodgeAthleticsLevel = knownSkillLevel(char, ['Athletics (Dexterity)']);
+  const dodgePenalty = Math.max(0, statDM(effectiveVal('dex')), dodgeAthleticsLevel ?? 0);
 
   function openSkillRoll(skillName: string, skillLvl: number) {
     setRollTarget({ label: skillName, skillLevel: skillLvl, charKey: skillChar(skillName), isPsionic: false });
@@ -772,12 +933,39 @@ function CharDetailContent({
     const skillLvl = char.skills.find(s => s.name === weapon.skill)?.level ?? 0;
     setRollTarget({ label: weapon.name, skillLevel: skillLvl, charKey: defaultChar, isPsionic: false, weapon });
   }
+  function openInitiativeRoll() {
+    const dexDM = statDM(effectiveVal('dex'));
+    const intDM = statDM(effectiveVal('int_stat'));
+    setRollTarget({ label: 'Initiative', skillLevel: 0, charKey: dexDM >= intDM ? 'dex' : 'int_stat', isPsionic: false, kind: 'initiative' });
+  }
+  function openTacticsRoll() {
+    setRollTarget({ label: 'Tactics', skillLevel: tacticsSkillLevel, charKey: 'int_stat', isPsionic: false });
+  }
+  function openLeadershipRoll() {
+    const candidates: CharStat[] = ['int_stat', 'edu', 'soc'];
+    const charKey = candidates.reduce((best, key) => statDM(effectiveVal(key)) > statDM(effectiveVal(best)) ? key : best, candidates[0]);
+    setRollTarget({ label: 'Leadership', skillLevel: leadershipSkillLevel, charKey, isPsionic: false });
+  }
+  function openDodgeRoll() {
+    setRollTarget({ label: 'Dodge Reaction', skillLevel: dodgeAthleticsLevel ?? 0, charKey: 'dex', isPsionic: false });
+  }
   function openCustomRoll() {
-    setRollTarget({ label: '', skillLevel: 0, charKey: null, isPsionic: false });
+    setRollTarget({ label: 'Unknown', skillLevel: null, charKey: null, isPsionic: false, isCustom: true, applyJackOfAllTrades: true });
   }
 
   function handleRollSave(result: { d1: number; d2: number; charDM: number; skillLevel: number; bonusDM: number; total: number }, difficulty: number, label: string) {
     onRollSave(displayName, result, label, difficulty);
+  }
+
+  function handleDamageSave(weaponName: string, rolls: number[], constant: number, strDM: number, effect: number, total: number) {
+    onRollSave(displayName, {
+      d1: rolls[0] ?? 0,
+      d2: rolls[1] ?? 0,
+      charDM: strDM,
+      skillLevel: effect,
+      bonusDM: constant,
+      total,
+    }, `${weaponName} Damage`, 0);
   }
 
   function adjustStat(field: keyof Character, max: number, delta: number) {
@@ -851,7 +1039,7 @@ function CharDetailContent({
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-xs font-mono">
         {profileRows.map(([label, value]) => (
           <div key={label} className="min-w-0">
-            <span className="text-body/35">{label}</span>
+            <span className="text-body/60">{label}</span>
             <span className="text-body/70 ml-2 break-words">{String(value)}</span>
           </div>
         ))}
@@ -868,7 +1056,7 @@ function CharDetailContent({
             className={`text-[10px] font-mono px-2 py-0.5 border transition-colors ${
               trackingTempMods
                 ? 'border-safe/60 text-safe hover:border-steel hover:text-body/60'
-                : 'border-steel/40 text-body/40 hover:border-safe/50 hover:text-safe/70'
+                : 'border-steel/40 text-body/65 hover:border-safe/50 hover:text-safe/70'
             }`}>
             {trackingTempMods ? 'HIDE MODS' : 'TEMP MODS'}
           </button>
@@ -877,7 +1065,7 @@ function CharDetailContent({
               className={`text-[10px] font-mono px-2 py-0.5 border transition-colors ${
                 trackingPsi
                   ? 'border-cyan-dim text-cyan-trav hover:border-steel hover:text-body/60'
-                  : 'border-steel/40 text-body/40 hover:border-cyan-dim hover:text-cyan-trav'
+                  : 'border-steel/40 text-body/65 hover:border-cyan-dim hover:text-cyan-trav'
               }`}>
               {trackingPsi ? 'RESET PSI' : 'TRACK PSI'}
             </button>
@@ -886,7 +1074,7 @@ function CharDetailContent({
             className={`text-[10px] font-mono px-2 py-0.5 border transition-colors ${
               trackingHealth
                 ? 'border-alert/60 text-alert hover:border-steel hover:text-body/60'
-                : 'border-steel/40 text-body/40 hover:border-amber/50 hover:text-amber/70'
+                : 'border-steel/40 text-body/65 hover:border-amber/50 hover:text-amber/70'
             }`}>
             {trackingHealth ? 'RESET HEALTH' : 'TRACK HEALTH'}
           </button>
@@ -919,7 +1107,7 @@ function CharDetailContent({
 
           const labelClass = isZero ? 'text-alert' : isReduced ? 'text-amber' :
             isBoosted ? 'text-safe' :
-            isPsiStat ? 'text-cyan-trav/70' : isExtra ? 'text-body/50' : 'text-body';
+            isPsiStat ? 'text-cyan-trav/70' : isExtra ? 'text-body/70' : 'text-body';
 
           const valClass = isZero ? 'text-alert' : isReduced ? 'text-amber' :
             isBoosted ? 'text-safe' :
@@ -939,11 +1127,11 @@ function CharDetailContent({
                 {toHex(ev)}
               </div>
               {isTracked && (
-                <div className="text-[10px] text-body/35 font-mono leading-tight">
+                <div className="text-[10px] text-body/60 font-mono leading-tight">
                   {toHex(cv)}/{toHex(baseVal)}
                 </div>
               )}
-              <div className="text-xs text-body/40">{fmtDM(dm)}</div>
+              <div className="text-xs text-body/65">{fmtDM(dm)}</div>
             </button>
           );
         })}
@@ -956,7 +1144,7 @@ function CharDetailContent({
             <div className="label text-safe/80">TEMP MODIFIERS</div>
             {hasTempMods && (
               <button onClick={resetTempMods}
-                className="text-[10px] font-mono px-2 py-0.5 border border-steel/40 text-body/40 hover:border-amber/60 hover:text-amber transition-colors">
+                className="text-[10px] font-mono px-2 py-0.5 border border-steel/40 text-body/65 hover:border-amber/60 hover:text-amber transition-colors">
                 RESET
               </button>
             )}
@@ -966,17 +1154,17 @@ function CharDetailContent({
               const mod = tempMod(key);
               return (
                 <div key={key} className="flex items-center border border-steel/40 font-mono text-[10px]">
-                  <span className="w-9 px-1.5 py-1 text-body/50 text-center">{STAT_LABELS[key]}</span>
+                  <span className="w-9 px-1.5 py-1 text-body/70 text-center">{STAT_LABELS[key]}</span>
                   <button
                     type="button"
                     aria-label={`Decrease ${STAT_LABELS[key]} temporary modifier`}
                     disabled={curVal(key) === null || mod <= TEMP_MOD_MIN}
                     onClick={() => adjustTempMod(key, -1)}
-                    className="w-6 h-6 border-l border-steel/30 flex items-center justify-center text-body/40 hover:text-amber hover:bg-steel/20 disabled:opacity-20 disabled:cursor-not-allowed"
+                    className="w-6 h-6 border-l border-steel/30 flex items-center justify-center text-body/65 hover:text-amber hover:bg-steel/20 disabled:opacity-20 disabled:cursor-not-allowed"
                   >
                     <Minus size={8} />
                   </button>
-                  <span className={`w-8 text-center ${mod > 0 ? 'text-safe' : mod < 0 ? 'text-amber' : 'text-body/30'}`}>
+                  <span className={`w-8 text-center ${mod > 0 ? 'text-safe' : mod < 0 ? 'text-amber' : 'text-body/55'}`}>
                     {fmtDM(mod)}
                   </span>
                   <button
@@ -984,7 +1172,7 @@ function CharDetailContent({
                     aria-label={`Increase ${STAT_LABELS[key]} temporary modifier`}
                     disabled={curVal(key) === null || mod >= TEMP_MOD_MAX}
                     onClick={() => adjustTempMod(key, 1)}
-                    className="w-6 h-6 border-l border-steel/30 flex items-center justify-center text-body/40 hover:text-safe hover:bg-steel/20 disabled:opacity-20 disabled:cursor-not-allowed"
+                    className="w-6 h-6 border-l border-steel/30 flex items-center justify-center text-body/65 hover:text-safe hover:bg-steel/20 disabled:opacity-20 disabled:cursor-not-allowed"
                   >
                     <Plus size={8} />
                   </button>
@@ -1018,7 +1206,7 @@ function CharDetailContent({
                 onKeyDown={e => { if (e.key === 'Enter') applyDamage(); }}
                 className="input text-xs w-28 py-1" />
               <button onClick={applyDamage} className="btn-danger text-xs py-1">APPLY</button>
-              <span className="text-body/30 text-[10px] font-mono ml-1">END first, then STR or DEX</span>
+              <span className="text-body/55 text-[10px] font-mono ml-1">END first, then STR or DEX</span>
             </div>
           )}
           <div className="flex items-center gap-4">
@@ -1027,14 +1215,14 @@ function CharDetailContent({
               const cv2 = (char[ck] as number | null) ?? max;
               return (
                 <div key={fl} className="flex items-center gap-1 text-xs font-mono">
-                  <span className="text-body/50 w-6">{fl}</span>
+                  <span className="text-body/70 w-6">{fl}</span>
                   <button onClick={() => adjustStat(ck, max, -1)} disabled={cv2 <= 0}
-                    className="w-5 h-5 border border-steel/60 text-body/50 hover:border-alert hover:text-alert disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center">
+                    className="w-5 h-5 border border-steel/60 text-body/70 hover:border-alert hover:text-alert disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center">
                     <Minus size={8} />
                   </button>
                   <span className="text-amber w-8 text-center">{cv2}/{max}</span>
                   <button onClick={() => adjustStat(ck, max, 1)} disabled={cv2 >= max}
-                    className="w-5 h-5 border border-steel/60 text-body/50 hover:border-safe hover:text-safe disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center">
+                    className="w-5 h-5 border border-steel/60 text-body/70 hover:border-safe hover:text-safe disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center">
                     <Plus size={8} />
                   </button>
                 </div>
@@ -1042,7 +1230,7 @@ function CharDetailContent({
             })}
             <span className={`text-xs font-mono ml-auto ${status.color}`}>{status.label}</span>
           </div>
-          <div className="text-[10px] text-body/30 font-mono">
+          <div className="text-[10px] text-body/55 font-mono">
             Natural healing: 1D+END DM hp/day (rest) · Unconscious when 2 stats at 0 · Dead when all 3 at 0
           </div>
         </div>
@@ -1063,18 +1251,18 @@ function CharDetailContent({
             <div className="flex items-center gap-1 text-xs font-mono">
               <span className="text-cyan-trav/70 w-6">PSI</span>
               <button onClick={() => adjustStat('psi_cur', psiMax, -1)} disabled={psiCur <= 0}
-                className="w-5 h-5 border border-steel/60 text-body/50 hover:border-alert hover:text-alert disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center">
+                className="w-5 h-5 border border-steel/60 text-body/70 hover:border-alert hover:text-alert disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center">
                 <Minus size={8} />
               </button>
               <span className="text-cyan-trav w-8 text-center">{psiCur}/{psiMax}</span>
               <button onClick={() => adjustStat('psi_cur', psiMax, 1)} disabled={psiCur >= psiMax}
-                className="w-5 h-5 border border-steel/60 text-body/50 hover:border-safe hover:text-safe disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center">
+                className="w-5 h-5 border border-steel/60 text-body/70 hover:border-safe hover:text-safe disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center">
                 <Plus size={8} />
               </button>
             </div>
             {psiCur === 0 && <span className="text-alert text-xs font-mono">EXHAUSTED</span>}
           </div>
-          <div className="text-[10px] text-body/30 font-mono">Recovers with rest · cost = talent level + power cost</div>
+          <div className="text-[10px] text-body/55 font-mono">Recovers with rest · cost = talent level + power cost</div>
         </div>
       )}
     </div>
@@ -1089,6 +1277,7 @@ function CharDetailContent({
           statValues={effectiveStatValues}
           onClose={() => setRollTarget(null)}
           onSave={handleRollSave}
+          onSaveDamage={handleDamageSave}
         />
       )}
 
@@ -1112,7 +1301,7 @@ function CharDetailContent({
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-xs font-mono">
               {homeworldRows.map(([label, value]) => (
                 <div key={label} className="min-w-0">
-                  <span className="text-body/35">{label}</span>
+                  <span className="text-body/60">{label}</span>
                   <span className="text-cyan-trav/80 ml-2 break-words">{String(value)}</span>
                 </div>
               ))}
@@ -1130,7 +1319,7 @@ function CharDetailContent({
                     {term.career && <span className="text-bright">{term.career}</span>}
                     {term.assignment && <span className="text-body/55">{term.assignment}</span>}
                     {term.rank && <span className="text-cyan-trav/80">RANK {term.rank}</span>}
-                    <span className="text-body/35">
+                    <span className="text-body/60">
                       SURV {boolMark(term.survived)} / COM {boolMark(term.commissioned)} / ADV {boolMark(term.advanced)}
                     </span>
                   </div>
@@ -1144,15 +1333,20 @@ function CharDetailContent({
         {armour.length > 0 && (
           <DetailSection title="ARMOR" className="order-5">
             <div className="space-y-1">
-              {armour.map((item, i) => (
-                <div key={`${item.name}-${i}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-mono border border-steel/35 px-2 py-1">
-                  <span className={item.worn ? 'text-safe' : 'text-body/35'}>{item.worn ? 'WORN' : 'STOWED'}</span>
-                  <span className="text-bright">{item.name}</span>
-                  {item.protection !== null && <span className="text-amber">PROT {item.protection}</span>}
-                  {item.radiation !== null && <span className="text-cyan-trav/70">RAD {item.radiation}</span>}
-                  {item.required_skill && <span className="text-body/45">REQ {item.required_skill}</span>}
-                </div>
-              ))}
+              {armour.map((item, i) => {
+                const armourMass = massFor(item, ['Armour']);
+                return (
+                  <div key={`${item.name}-${i}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-mono border border-steel/35 px-2 py-1">
+                    <span className={item.worn ? 'text-safe' : 'text-body/60'}>{item.worn ? 'WORN' : 'STOWED'}</span>
+                    <span className="text-bright">{item.name}</span>
+                    {quantityFor(item) !== 1 && <span className="text-body/70">x{quantityFor(item)}</span>}
+                    {item.protection !== null && <span className="text-amber">PROT {item.protection}</span>}
+                    {item.radiation !== null && <span className="text-cyan-trav/70">RAD {item.radiation}</span>}
+                    {armourMass !== null && <span className="text-cyan-trav/60">{kg(armourMass * quantityFor(item) * (item.worn ? 0.25 : 1))}</span>}
+                    {item.required_skill && <span className="text-body/70">REQ {item.required_skill}</span>}
+                  </div>
+                );
+              })}
             </div>
           </DetailSection>
         )}
@@ -1163,7 +1357,7 @@ function CharDetailContent({
               {augments.map((augment, i) => (
                 <div key={`${augment.name}-${i}`} className="text-xs font-mono border border-steel/35 px-2 py-1">
                   <span className="text-bright">{augment.name}</span>
-                  {augment.tech_level !== null && <span className="text-body/45 ml-2">TL {augment.tech_level}</span>}
+                  {augment.tech_level !== null && <span className="text-body/70 ml-2">TL {augment.tech_level}</span>}
                   {augment.cost !== null && <span className="text-amber/80 ml-2">{fmtCr(augment.cost)}</span>}
                   {augment.notes && <div className="text-body/60 mt-0.5">{augment.notes}</div>}
                 </div>
@@ -1172,14 +1366,42 @@ function CharDetailContent({
           </DetailSection>
         )}
 
-        {personalEquipment.length > 0 && (
+        {(personalEquipment.length > 0 || carriedMassKg > 0) && (
           <DetailSection title="EQUIPMENT" className="order-11">
+            <div className="mb-2 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
+              <div className="border border-steel/35 px-2 py-1">
+                <div className="text-body/60">CARRIED MASS</div>
+                <div className="text-cyan-trav">{kg(carriedMassKg)}</div>
+              </div>
+              <div className="border border-steel/35 px-2 py-1">
+                <div className="text-body/60">NO PENALTY</div>
+                <div className="text-body/80">{kg(encumbranceCapacity)}</div>
+              </div>
+              <div className="border border-steel/35 px-2 py-1">
+                <div className="text-body/60">MAX LOAD</div>
+                <div className="text-body/80">{kg(encumbranceCapacity * 2)}</div>
+              </div>
+              <div className="border border-steel/35 px-2 py-1">
+                <div className="text-body/60">ENCUMBRANCE</div>
+                <div className={encumbrance.color}>
+                  {encumbrance.label}
+                  {encumbrance.physicalMod !== null && encumbrance.physicalMod !== 0 && (
+                    <span className="text-body/70 ml-1">{fmtDM(encumbrance.physicalMod)} physical</span>
+                  )}
+                </div>
+              </div>
+              {encumbranceBonus > 0 && (
+                <div className="col-span-2 sm:col-span-4 text-[10px] text-body/60">
+                  Includes Athletics load bonus +{encumbranceBonus}. Worn armour counts as 25% mass.
+                </div>
+              )}
+            </div>
             <div className="space-y-1">
               {personalEquipment.map((item, i) => (
                 <div key={`${item.name}-${i}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-mono border border-steel/35 px-2 py-1">
                   <span className="text-bright">{item.name}</span>
-                  {item.quantity !== null && <span className="text-body/45">x{item.quantity}</span>}
-                  {item.tech_level !== null && <span className="text-body/45">TL {item.tech_level}</span>}
+                  {item.quantity !== null && <span className="text-body/70">x{item.quantity}</span>}
+                  {item.tech_level !== null && <span className="text-body/70">TL {item.tech_level}</span>}
                   {item.mass !== null && <span className="text-cyan-trav/70">{item.mass} kg</span>}
                   {item.cost !== null && <span className="text-amber/80">{fmtCr(item.cost)}</span>}
                   {item.notes && <span className="text-body/55">{item.notes}</span>}
@@ -1194,7 +1416,7 @@ function CharDetailContent({
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs font-mono">
               {financeRows.map(([label, value]) => (
                 <div key={label}>
-                  <span className="text-body/35">{label}</span>
+                  <span className="text-body/60">{label}</span>
                   <span className="text-amber/80 ml-2">{fmtCr(value as number)}</span>
                 </div>
               ))}
@@ -1212,7 +1434,7 @@ function CharDetailContent({
                     <div className="flex flex-wrap gap-x-2 gap-y-1">
                       {contact.name && <span className="text-bright">{contact.name}</span>}
                       {contact.type && <span className="text-amber">{contact.type}</span>}
-                      {contact.gender_species && <span className="text-body/45">{contact.gender_species}</span>}
+                      {contact.gender_species && <span className="text-body/70">{contact.gender_species}</span>}
                       {contact.alive !== null && <span className={contact.alive ? 'text-safe' : 'text-alert'}>{contact.alive ? 'ALIVE' : 'DEAD'}</span>}
                     </div>
                     {contact.description && <div className="text-body/60 mt-0.5">{contact.description}</div>}
@@ -1227,7 +1449,7 @@ function CharDetailContent({
             <div className="space-y-1.5 text-xs font-mono">
               {backgroundRows.map(([label, value]) => (
                 <div key={label} className="border border-steel/35 px-2 py-1">
-                  <div className="text-body/35">{label}</div>
+                  <div className="text-body/60">{label}</div>
                   <div className="text-body/70 whitespace-pre-wrap">{String(value)}</div>
                 </div>
               ))}
@@ -1239,12 +1461,12 @@ function CharDetailContent({
         <div className="order-3">
           <div className="label mb-2">
             SKILLS
-            <span className="text-body/30 font-normal ml-2 text-[10px]">click to roll</span>
+            <span className="text-body/55 font-normal ml-2 text-[10px]">click to roll</span>
           </div>
           <div className="flex flex-wrap gap-1.5">
             {trainedSkills.map((sk, i) => (
               <button key={i} onClick={() => openSkillRoll(sk.name, sk.level)}
-                title={sk.level === 0 ? 'Skill 0: competent, no DM bonus, avoids DM-3 unskilled penalty' : `Skill ${sk.level}: trained, DM+${sk.level}`}
+                title={sk.level === 0 ? 'Skill 0: competent, no Mod bonus, avoids DM-3 unskilled penalty' : `Skill ${sk.level}: trained, Mod +${sk.level}`}
                 className={`flex items-center gap-1.5 border px-2 py-0.5 text-xs font-mono transition-colors ${
                   sk.level === 0
                     ? 'border-steel/60 text-body/70 hover:border-amber/60 hover:text-amber/70'
@@ -1255,9 +1477,9 @@ function CharDetailContent({
               </button>
             ))}
             <button onClick={openCustomRoll}
-              title="Roll any skill check. Skill 0 = no DM bonus. Unskilled = DM-3."
-              className="flex items-center gap-1 border border-dashed border-steel/50 text-body/40 hover:border-amber/50 hover:text-amber/50 px-2 py-0.5 text-xs font-mono transition-colors">
-              <Plus size={9} /> CUSTOM
+              title="Roll any skill check. Skill 0 = no Mod bonus. Unskilled = DM-3."
+              className="flex items-center gap-1 border border-dashed border-steel/50 text-body/65 hover:border-amber/50 hover:text-amber/50 px-2 py-0.5 text-xs font-mono transition-colors">
+              UNKNOWN
             </button>
           </div>
         </div>
@@ -1278,20 +1500,57 @@ function CharDetailContent({
           </div>
         )}
 
-        {/* Weapons */}
+        {/* Combat */}
         <div className="order-4">
-          <div className="label mb-2">WEAPONS</div>
+          <div className="label mb-2">COMBAT</div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2 text-xs font-mono">
+            <button type="button" onClick={openInitiativeRoll}
+              className="border border-steel/35 hover:border-amber/60 px-2 py-1 text-left transition-colors">
+              <div className="text-body/60">INITIATIVE DM</div>
+              <div className="text-amber">{fmtDM(initiativeDM)}</div>
+            </button>
+            <button type="button" onClick={openTacticsRoll}
+              className="border border-steel/35 hover:border-amber/60 px-2 py-1 text-left transition-colors">
+              <div className="text-body/60">TACTICS DM</div>
+              <div className="text-amber">{fmtDM(tacticsDM)}</div>
+            </button>
+            <button type="button" onClick={openLeadershipRoll}
+              className="border border-steel/35 hover:border-amber/60 px-2 py-1 text-left transition-colors">
+              <div className="text-body/60">LEADERSHIP DM</div>
+              <div className="text-amber">{fmtDM(leadershipDM)}</div>
+            </button>
+            <button type="button" onClick={openDodgeRoll}
+              className="border border-steel/35 hover:border-amber/60 px-2 py-1 text-left transition-colors">
+              <div className="text-body/60">OPP. DODGE PENALTY</div>
+              <div className="text-alert">{dodgePenalty > 0 ? `-${dodgePenalty}` : '0'}</div>
+            </button>
+          </div>
           <div className="space-y-1">
-            {(char.weapons ?? []).map((w, i) => (
-              <button key={i} onClick={() => openWeaponRoll(w)}
-                className="w-full flex items-center gap-3 border border-steel/40 hover:border-amber/60 px-3 py-2 text-xs font-mono transition-colors text-left group">
-                <span className="text-bright group-hover:text-amber min-w-[7rem]">{w.name}</span>
-                <span className="text-body/40 min-w-[3rem]">{w.range}</span>
-                <span className="text-amber/80 font-bold">{w.damage}</span>
-                <span className="text-body/30 text-[10px] hidden sm:block">{w.skill}</span>
-                {w.traits && <span className="text-body/30 text-[10px] ml-auto hidden md:block">{w.traits}</span>}
-              </button>
-            ))}
+            <div className="hidden md:grid grid-cols-[minmax(8rem,1.2fr)_3rem_4rem_5rem_5rem_minmax(10rem,1fr)] gap-3 px-3 text-[10px] font-mono text-body/60">
+              <span>WEAPON</span>
+              <span>QTY</span>
+              <span>RANGE</span>
+              <span>DAMAGE</span>
+              <span>MASS</span>
+              <span>SKILL / TRAITS</span>
+            </div>
+            {(char.weapons ?? []).map((w, i) => {
+              const weaponMass = massFor(w, ['Weapon']);
+              return (
+                <button key={i} onClick={() => openWeaponRoll(w)}
+                  className="w-full grid grid-cols-[minmax(7rem,1.2fr)_4rem_5rem] md:grid-cols-[minmax(8rem,1.2fr)_3rem_4rem_5rem_5rem_minmax(10rem,1fr)] gap-3 border border-steel/40 hover:border-amber/60 px-3 py-2 text-xs font-mono transition-colors text-left group items-center">
+                  <span className="text-bright group-hover:text-amber truncate">{w.name}</span>
+                  <span className="text-body/65 hidden md:block">{quantityFor(w) !== 1 ? `x${quantityFor(w)}` : ''}</span>
+                  <span className="text-body/65 truncate">{w.range}</span>
+                  <span className="text-amber/80 font-bold">{w.damage}</span>
+                  <span className="text-cyan-trav/60 text-[10px] hidden md:block">{weaponMass !== null ? kg(weaponMass * quantityFor(w)) : ''}</span>
+                  <span className="text-body/55 text-[10px] hidden md:block truncate">
+                    {w.skill}
+                    {w.traits ? ` · ${w.traits}` : ''}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -1342,10 +1601,10 @@ function CharCard({
               <div className="text-bright font-bold font-mono text-sm truncate">{displayName}</div>
               <CharacterActionsMenu onEdit={onEdit} onDelete={onDelete} onRefreshXLSX={onRefreshXLSX} />
             </div>
-            <div className="text-xs text-body/50 mt-0.5 space-x-2">
+            <div className="text-xs text-body/70 mt-0.5 space-x-2">
               {char.rank && <span className="text-amber">{char.rank}</span>}
-              {char.career && <span className="text-body/50">· {char.career}</span>}
-              {char.homeworld && <span className="text-body/40">· {char.homeworld}</span>}
+              {char.career && <span className="text-body/70">· {char.career}</span>}
+              {char.homeworld && <span className="text-body/65">· {char.homeworld}</span>}
               {char.player && <span className="text-steel ml-2">[{char.player}]</span>}
             </div>
           </div>
@@ -1354,7 +1613,7 @@ function CharCard({
           <div className="text-right">
             <div className="font-mono text-lg text-amber tracking-widest glow-amber">{upp(char)}</div>
             <div className={`text-xs font-mono ${status.color}`}>{status.label}</div>
-            <div className="text-[10px] font-mono text-body/40">
+            <div className="text-[10px] font-mono text-body/65">
               {char.skills.filter(s => s.level >= 0).length} SKILLS
             </div>
           </div>
@@ -1402,7 +1661,7 @@ function CharSidebarRow({
         <div className={`text-[10px] font-mono ${status.color}`}>{status.label}</div>
       </div>
       {char.rank && (
-        <div className="text-[10px] text-body/40 mt-0.5 truncate">{char.rank}</div>
+        <div className="text-[10px] text-body/65 mt-0.5 truncate">{char.rank}</div>
       )}
     </button>
   );
@@ -1449,6 +1708,12 @@ export default function PartyRoster() {
       rank: form.rank || DEFAULT_CHARACTER_TITLE,
       skills: parseSkillsCSV(skillsRaw),
       psionic_talents: parseTalentsCSV(talentsRaw),
+      weapons: form.weapons.filter(item => hasValue(item.name) || hasValue(item.damage) || hasValue(item.traits)),
+      armour: form.armour.filter(item => hasValue(item.name) || hasValue(item.protection) || hasValue(item.radiation)),
+      personal_equipment: form.personal_equipment.filter(item => hasValue(item.name) || hasValue(item.notes)),
+      augments: form.augments.filter(item => hasValue(item.name) || hasValue(item.notes)),
+      contacts: form.contacts.filter(item => hasValue(item.name) || hasValue(item.type) || hasValue(item.description) || hasValue(item.link)),
+      lifepath: form.lifepath.filter(item => hasValue(item.term) || hasValue(item.career) || hasValue(item.assignment) || hasValue(item.notes)),
     };
     if (editing) {
       const editingId = editing;
@@ -1669,6 +1934,135 @@ export default function PartyRoster() {
     );
   };
 
+  function boolSelectValue(value: boolean | null | undefined): string {
+    if (value === true) return 'true';
+    if (value === false) return 'false';
+    return '';
+  }
+
+  function boolFromSelect(value: string): boolean | null {
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return null;
+  }
+
+  function updateWeapon(index: number, patch: Partial<Weapon>) {
+    setForm(prev => ({
+      ...prev,
+      weapons: prev.weapons.map((item, i) => i === index ? { ...item, ...patch } : item),
+    }));
+  }
+
+  function addWeapon() {
+    setForm(prev => ({
+      ...prev,
+      weapons: [...prev.weapons, { name: '', skill: '', range: '', damage: '', traits: '', quantity: 1, mass: null, cost: null }],
+    }));
+  }
+
+  function removeWeapon(index: number) {
+    setForm(prev => ({ ...prev, weapons: prev.weapons.filter((_, i) => i !== index) }));
+  }
+
+  function updateArmour(index: number, patch: Partial<ArmourItem>) {
+    setForm(prev => ({
+      ...prev,
+      armour: prev.armour.map((item, i) => i === index ? { ...item, ...patch } : item),
+    }));
+  }
+
+  function addArmour() {
+    setForm(prev => ({
+      ...prev,
+      armour: [...prev.armour, { worn: false, name: '', protection: null, radiation: null, required_skill: null, quantity: 1, mass: null, cost: null }],
+    }));
+  }
+
+  function removeArmour(index: number) {
+    setForm(prev => ({ ...prev, armour: prev.armour.filter((_, i) => i !== index) }));
+  }
+
+  function updateEquipment(index: number, patch: Partial<PersonalEquipmentItem>) {
+    setForm(prev => ({
+      ...prev,
+      personal_equipment: prev.personal_equipment.map((item, i) => i === index ? { ...item, ...patch } : item),
+    }));
+  }
+
+  function addEquipment() {
+    setForm(prev => ({
+      ...prev,
+      personal_equipment: [...prev.personal_equipment, { quantity: 1, name: '', notes: null, tech_level: null, mass: null, cost: null }],
+    }));
+  }
+
+  function removeEquipment(index: number) {
+    setForm(prev => ({ ...prev, personal_equipment: prev.personal_equipment.filter((_, i) => i !== index) }));
+  }
+
+  function updateAugment(index: number, patch: Partial<CharacterAugment>) {
+    setForm(prev => ({
+      ...prev,
+      augments: prev.augments.map((item, i) => i === index ? { ...item, ...patch } : item),
+    }));
+  }
+
+  function addAugment() {
+    setForm(prev => ({
+      ...prev,
+      augments: [...prev.augments, { name: '', notes: null, tech_level: null, cost: null }],
+    }));
+  }
+
+  function removeAugment(index: number) {
+    setForm(prev => ({ ...prev, augments: prev.augments.filter((_, i) => i !== index) }));
+  }
+
+  function updateContact(index: number, patch: Partial<CharacterContact>) {
+    setForm(prev => ({
+      ...prev,
+      contacts: prev.contacts.map((item, i) => i === index ? { ...item, ...patch } : item),
+    }));
+  }
+
+  function addContact() {
+    setForm(prev => ({
+      ...prev,
+      contacts: [...prev.contacts, { name: null, gender_species: null, type: null, description: null, link: null, alive: null }],
+    }));
+  }
+
+  function removeContact(index: number) {
+    setForm(prev => ({ ...prev, contacts: prev.contacts.filter((_, i) => i !== index) }));
+  }
+
+  function updateLifepath(index: number, patch: Partial<LifepathTerm>) {
+    setForm(prev => ({
+      ...prev,
+      lifepath: prev.lifepath.map((item, i) => i === index ? { ...item, ...patch } : item),
+    }));
+  }
+
+  function addLifepathTerm() {
+    setForm(prev => ({
+      ...prev,
+      lifepath: [...prev.lifepath, { term: prev.lifepath.length + 1, career: null, assignment: null, survived: null, commissioned: null, advanced: null, rank: null, notes: null }],
+    }));
+  }
+
+  function removeLifepathTerm(index: number) {
+    setForm(prev => ({ ...prev, lifepath: prev.lifepath.filter((_, i) => i !== index) }));
+  }
+
+  function updateTempMod(key: CharStat, value: number | null) {
+    setForm(prev => {
+      const next = normalizeTempMods(prev.temp_mods);
+      if (value === null || value === 0) delete next[key];
+      else next[key] = clamp(Math.trunc(value), TEMP_MOD_MIN, TEMP_MOD_MAX);
+      return { ...prev, temp_mods: next };
+    });
+  }
+
   const charForm = (
     <form onSubmit={saveChar} className="panel p-4 space-y-4">
       <div className="panel-header -mx-4 -mt-4 mb-1">
@@ -1722,6 +2116,44 @@ export default function PartyRoster() {
         <input className="input" value={talentsRaw} onChange={e => setTalentsRaw(e.target.value)}
           placeholder="TalentName-Level, ..." />
       </Field>
+      <details className="group">
+        <summary className="label cursor-pointer hover:text-amber list-none flex items-center justify-between">
+          <span>TRACKING / MODIFIERS</span>
+          <ChevronDown size={12} className="group-open:hidden" />
+          <ChevronUp size={12} className="hidden group-open:block" />
+        </summary>
+        <div className="mt-2 space-y-3">
+          <div>
+            <div className="label mb-2 text-body/70">CURRENT VALUES</div>
+            <div className="grid grid-cols-4 gap-2">
+              {[
+                { key: 'str_cur', label: 'STR Cur' },
+                { key: 'dex_cur', label: 'DEX Cur' },
+                { key: 'end_cur', label: 'END Cur' },
+                { key: 'psi_cur', label: 'PSI Cur' },
+              ].map(({ key, label }) => (
+                <Field key={key} name={label}>
+                  <input className="input" type="number" min={0}
+                    value={(form[key as keyof CharForm] as number | null) ?? ''}
+                    onChange={e => setForm({ ...form, [key]: parseNullableNumber(e.target.value) })} />
+                </Field>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="label mb-2 text-body/70">TEMP MODS</div>
+            <div className="grid grid-cols-5 gap-2">
+              {ALL_STATS.map(key => (
+                <Field key={key} name={STAT_LABELS[key]}>
+                  <input className="input" type="number" min={TEMP_MOD_MIN} max={TEMP_MOD_MAX}
+                    value={normalizeTempMods(form.temp_mods)[key] ?? ''}
+                    onChange={e => updateTempMod(key, parseNullableNumber(e.target.value))} />
+                </Field>
+              ))}
+            </div>
+          </div>
+        </div>
+      </details>
       <Field name="Notes">
         <textarea className="input resize-none h-16" value={form.notes ?? ''}
           onChange={e => setForm({ ...form, notes: e.target.value || null })} />
@@ -1772,6 +2204,14 @@ export default function PartyRoster() {
           <ChevronUp size={12} className="hidden group-open:block" />
         </summary>
         <div className="mt-2 grid grid-cols-2 gap-3">
+          <Field name="World">
+            <input className="input" value={form.homeworld_details?.name ?? form.homeworld ?? ''}
+              onChange={e => setForm({
+                ...form,
+                homeworld: e.target.value || null,
+                homeworld_details: { ...form.homeworld_details, name: e.target.value || null },
+              })} />
+          </Field>
           <Field name="Sector">
             <input className="input" value={form.homeworld_details?.sector ?? ''}
               onChange={e => setForm({ ...form, homeworld_details: { ...form.homeworld_details, sector: e.target.value || null } })} />
@@ -1784,9 +2224,25 @@ export default function PartyRoster() {
             <input className="input font-mono" value={form.homeworld_details?.uwp ?? ''}
               onChange={e => setForm({ ...form, homeworld_details: { ...form.homeworld_details, uwp: e.target.value || null } })} />
           </Field>
+          <Field name="Hex">
+            <input className="input font-mono" value={form.homeworld_details?.location ?? ''}
+              onChange={e => setForm({ ...form, homeworld_details: { ...form.homeworld_details, location: e.target.value || null } })} />
+          </Field>
           <Field name="Trade Codes">
             <input className="input" value={form.homeworld_details?.trade_codes ?? ''}
               onChange={e => setForm({ ...form, homeworld_details: { ...form.homeworld_details, trade_codes: e.target.value || null } })} />
+          </Field>
+          <Field name="Bases">
+            <input className="input" value={form.homeworld_details?.bases ?? ''}
+              onChange={e => setForm({ ...form, homeworld_details: { ...form.homeworld_details, bases: e.target.value || null } })} />
+          </Field>
+          <Field name="Travel Zone">
+            <input className="input" value={form.homeworld_details?.travel_zone ?? ''}
+              onChange={e => setForm({ ...form, homeworld_details: { ...form.homeworld_details, travel_zone: e.target.value || null } })} />
+          </Field>
+          <Field name="Gas Giant">
+            <input className="input" value={form.homeworld_details?.gas_giant ?? ''}
+              onChange={e => setForm({ ...form, homeworld_details: { ...form.homeworld_details, gas_giant: e.target.value || null } })} />
           </Field>
         </div>
       </details>
@@ -1805,6 +2261,7 @@ export default function PartyRoster() {
             { key: 'monthly_salary', label: 'Monthly Salary (Cr)' },
             { key: 'ship_operating_costs', label: 'Ship Operating Costs (Cr/mo)' },
             { key: 'monthly_debt_payments', label: 'Debt Payments (Cr/mo)' },
+            { key: 'monthly_living_cost', label: 'Living Cost (Cr/mo)' },
             { key: 'total_debts', label: 'Total Debts (Cr)' },
           ].map(({ key, label }) => (
             <Field key={key} name={label}>
@@ -1813,6 +2270,317 @@ export default function PartyRoster() {
                 onChange={e => setForm({ ...form, finances: { ...form.finances, [key]: e.target.value ? parseFloat(e.target.value) : null } })} />
             </Field>
           ))}
+        </div>
+      </details>
+
+      {/* ── Weapons / Armour / Items ───────────────────────────────────────── */}
+      <details className="group">
+        <summary className="label cursor-pointer hover:text-amber list-none flex items-center justify-between">
+          <span>WEAPONS</span>
+          <ChevronDown size={12} className="group-open:hidden" />
+          <ChevronUp size={12} className="hidden group-open:block" />
+        </summary>
+        <div className="mt-2 space-y-2">
+          {form.weapons.map((weapon, i) => (
+            <div key={i} className="border border-steel/35 p-2 space-y-2">
+              <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
+                <Field name="Name">
+                  <input className="input" value={weapon.name}
+                    onChange={e => updateWeapon(i, { name: e.target.value })} />
+                </Field>
+                <Field name="Skill">
+                  <input className="input" value={weapon.skill}
+                    onChange={e => updateWeapon(i, { skill: e.target.value })} />
+                </Field>
+                <Field name="Range">
+                  <input className="input" value={weapon.range}
+                    onChange={e => updateWeapon(i, { range: e.target.value })} />
+                </Field>
+                <Field name="Damage">
+                  <input className="input" value={weapon.damage}
+                    onChange={e => updateWeapon(i, { damage: e.target.value })} />
+                </Field>
+                <Field name="Qty">
+                  <input className="input" type="number" min={0} step="1" value={weapon.quantity ?? ''}
+                    onChange={e => updateWeapon(i, { quantity: parseNullableNumber(e.target.value) })} />
+                </Field>
+                <Field name="Mass kg">
+                  <input className="input" type="number" min={0} step="0.001" value={weapon.mass ?? ''}
+                    placeholder={String(coreMassFor(weapon.name, ['Weapon']) ?? '')}
+                    onChange={e => updateWeapon(i, { mass: parseNullableNumber(e.target.value) })} />
+                </Field>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-[1fr_8rem_auto] gap-2 items-end">
+                <Field name="Traits">
+                  <input className="input" value={weapon.traits}
+                    onChange={e => updateWeapon(i, { traits: e.target.value })} />
+                </Field>
+                <Field name="Cost Cr">
+                  <input className="input" type="number" min={0} step="1" value={weapon.cost ?? ''}
+                    onChange={e => updateWeapon(i, { cost: parseNullableNumber(e.target.value) })} />
+                </Field>
+                <button type="button" onClick={() => removeWeapon(i)} className="btn-steel text-alert hover:border-alert">
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            </div>
+          ))}
+          <button type="button" onClick={addWeapon} className="btn-steel flex items-center gap-1 text-xs">
+            <Plus size={12} /> ADD WEAPON
+          </button>
+        </div>
+      </details>
+
+      <details className="group">
+        <summary className="label cursor-pointer hover:text-amber list-none flex items-center justify-between">
+          <span>ARMOR</span>
+          <ChevronDown size={12} className="group-open:hidden" />
+          <ChevronUp size={12} className="hidden group-open:block" />
+        </summary>
+        <div className="mt-2 space-y-2">
+          {form.armour.map((item, i) => (
+            <div key={i} className="border border-steel/35 p-2 space-y-2">
+              <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
+                <Field name="Worn">
+                  <select className="select" value={boolSelectValue(item.worn)}
+                    onChange={e => updateArmour(i, { worn: boolFromSelect(e.target.value) })}>
+                    <option value="">—</option>
+                    <option value="true">Yes</option>
+                    <option value="false">No</option>
+                  </select>
+                </Field>
+                <Field name="Name">
+                  <input className="input" value={item.name}
+                    onChange={e => updateArmour(i, { name: e.target.value })} />
+                </Field>
+                <Field name="Prot">
+                  <input className="input" type="number" value={item.protection ?? ''}
+                    onChange={e => updateArmour(i, { protection: parseNullableNumber(e.target.value) })} />
+                </Field>
+                <Field name="Rad">
+                  <input className="input" type="number" value={item.radiation ?? ''}
+                    onChange={e => updateArmour(i, { radiation: parseNullableNumber(e.target.value) })} />
+                </Field>
+                <Field name="Qty">
+                  <input className="input" type="number" min={0} step="1" value={item.quantity ?? ''}
+                    onChange={e => updateArmour(i, { quantity: parseNullableNumber(e.target.value) })} />
+                </Field>
+                <Field name="Mass kg">
+                  <input className="input" type="number" min={0} step="0.001" value={item.mass ?? ''}
+                    placeholder={String(coreMassFor(item.name, ['Armour']) ?? '')}
+                    onChange={e => updateArmour(i, { mass: parseNullableNumber(e.target.value) })} />
+                </Field>
+                <Field name="Cost Cr">
+                  <input className="input" type="number" min={0} step="1" value={item.cost ?? ''}
+                    onChange={e => updateArmour(i, { cost: parseNullableNumber(e.target.value) })} />
+                </Field>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-2 items-end">
+                <Field name="Required Skill">
+                  <input className="input" value={item.required_skill ?? ''}
+                    onChange={e => updateArmour(i, { required_skill: e.target.value || null })} />
+                </Field>
+                <button type="button" onClick={() => removeArmour(i)} className="btn-steel text-alert hover:border-alert">
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            </div>
+          ))}
+          <button type="button" onClick={addArmour} className="btn-steel flex items-center gap-1 text-xs">
+            <Plus size={12} /> ADD ARMOR
+          </button>
+        </div>
+      </details>
+
+      <details className="group">
+        <summary className="label cursor-pointer hover:text-amber list-none flex items-center justify-between">
+          <span>CHARACTER ITEMS</span>
+          <ChevronDown size={12} className="group-open:hidden" />
+          <ChevronUp size={12} className="hidden group-open:block" />
+        </summary>
+        <div className="mt-2 space-y-2">
+          {form.personal_equipment.map((item, i) => (
+            <div key={i} className="border border-steel/35 p-2 space-y-2">
+              <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
+                <Field name="Qty">
+                  <input className="input" type="number" min={0} step="1" value={item.quantity ?? ''}
+                    onChange={e => updateEquipment(i, { quantity: parseNullableNumber(e.target.value) })} />
+                </Field>
+                <Field name="Name">
+                  <input className="input" value={item.name}
+                    onChange={e => updateEquipment(i, { name: e.target.value })} />
+                </Field>
+                <Field name="TL">
+                  <input className="input" type="number" min={0} value={item.tech_level ?? ''}
+                    onChange={e => updateEquipment(i, { tech_level: parseNullableNumber(e.target.value) })} />
+                </Field>
+                <Field name="Mass kg">
+                  <input className="input" type="number" min={0} step="0.001" value={item.mass ?? ''}
+                    onChange={e => updateEquipment(i, { mass: parseNullableNumber(e.target.value) })} />
+                </Field>
+                <Field name="Cost Cr">
+                  <input className="input" type="number" min={0} step="1" value={item.cost ?? ''}
+                    onChange={e => updateEquipment(i, { cost: parseNullableNumber(e.target.value) })} />
+                </Field>
+                <button type="button" onClick={() => removeEquipment(i)} className="btn-steel text-alert hover:border-alert self-end">
+                  <Trash2 size={12} />
+                </button>
+              </div>
+              <Field name="Notes">
+                <input className="input" value={item.notes ?? ''}
+                  onChange={e => updateEquipment(i, { notes: e.target.value || null })} />
+              </Field>
+            </div>
+          ))}
+          <button type="button" onClick={addEquipment} className="btn-steel flex items-center gap-1 text-xs">
+            <Plus size={12} /> ADD ITEM
+          </button>
+        </div>
+      </details>
+
+      <details className="group">
+        <summary className="label cursor-pointer hover:text-amber list-none flex items-center justify-between">
+          <span>AUGMENTS</span>
+          <ChevronDown size={12} className="group-open:hidden" />
+          <ChevronUp size={12} className="hidden group-open:block" />
+        </summary>
+        <div className="mt-2 space-y-2">
+          {form.augments.map((augment, i) => (
+            <div key={i} className="border border-steel/35 p-2 grid grid-cols-2 md:grid-cols-[1fr_6rem_8rem_auto] gap-2 items-end">
+              <Field name="Name">
+                <input className="input" value={augment.name}
+                  onChange={e => updateAugment(i, { name: e.target.value })} />
+              </Field>
+              <Field name="TL">
+                <input className="input" type="number" min={0} value={augment.tech_level ?? ''}
+                  onChange={e => updateAugment(i, { tech_level: parseNullableNumber(e.target.value) })} />
+              </Field>
+              <Field name="Cost Cr">
+                <input className="input" type="number" min={0} step="1" value={augment.cost ?? ''}
+                  onChange={e => updateAugment(i, { cost: parseNullableNumber(e.target.value) })} />
+              </Field>
+              <button type="button" onClick={() => removeAugment(i)} className="btn-steel text-alert hover:border-alert">
+                <Trash2 size={12} />
+              </button>
+              <div className="col-span-2 md:col-span-4">
+                <Field name="Notes">
+                  <input className="input" value={augment.notes ?? ''}
+                    onChange={e => updateAugment(i, { notes: e.target.value || null })} />
+                </Field>
+              </div>
+            </div>
+          ))}
+          <button type="button" onClick={addAugment} className="btn-steel flex items-center gap-1 text-xs">
+            <Plus size={12} /> ADD AUGMENT
+          </button>
+        </div>
+      </details>
+
+      <details className="group">
+        <summary className="label cursor-pointer hover:text-amber list-none flex items-center justify-between">
+          <span>CONTACTS</span>
+          <ChevronDown size={12} className="group-open:hidden" />
+          <ChevronUp size={12} className="hidden group-open:block" />
+        </summary>
+        <div className="mt-2 space-y-2">
+          {form.contacts.map((contact, i) => (
+            <div key={i} className="border border-steel/35 p-2 space-y-2">
+              <div className="grid grid-cols-2 md:grid-cols-[1fr_1fr_1fr_7rem_auto] gap-2 items-end">
+                <Field name="Name">
+                  <input className="input" value={contact.name ?? ''}
+                    onChange={e => updateContact(i, { name: e.target.value || null })} />
+                </Field>
+                <Field name="Gender / Species">
+                  <input className="input" value={contact.gender_species ?? ''}
+                    onChange={e => updateContact(i, { gender_species: e.target.value || null })} />
+                </Field>
+                <Field name="Type">
+                  <input className="input" value={contact.type ?? ''}
+                    onChange={e => updateContact(i, { type: e.target.value || null })} />
+                </Field>
+                <Field name="Alive">
+                  <select className="select" value={boolSelectValue(contact.alive)}
+                    onChange={e => updateContact(i, { alive: boolFromSelect(e.target.value) })}>
+                    <option value="">—</option>
+                    <option value="true">Yes</option>
+                    <option value="false">No</option>
+                  </select>
+                </Field>
+                <button type="button" onClick={() => removeContact(i)} className="btn-steel text-alert hover:border-alert">
+                  <Trash2 size={12} />
+                </button>
+              </div>
+              <Field name="Link">
+                <input className="input" value={contact.link ?? ''}
+                  onChange={e => updateContact(i, { link: e.target.value || null })} />
+              </Field>
+              <Field name="Description">
+                <textarea className="input resize-none h-14" value={contact.description ?? ''}
+                  onChange={e => updateContact(i, { description: e.target.value || null })} />
+              </Field>
+            </div>
+          ))}
+          <button type="button" onClick={addContact} className="btn-steel flex items-center gap-1 text-xs">
+            <Plus size={12} /> ADD CONTACT
+          </button>
+        </div>
+      </details>
+
+      <details className="group">
+        <summary className="label cursor-pointer hover:text-amber list-none flex items-center justify-between">
+          <span>LIFEPATH</span>
+          <ChevronDown size={12} className="group-open:hidden" />
+          <ChevronUp size={12} className="hidden group-open:block" />
+        </summary>
+        <div className="mt-2 space-y-2">
+          {form.lifepath.map((term, i) => (
+            <div key={i} className="border border-steel/35 p-2 space-y-2">
+              <div className="grid grid-cols-2 md:grid-cols-[5rem_1fr_1fr_1fr_auto] gap-2 items-end">
+                <Field name="Term">
+                  <input className="input" type="number" min={0} value={term.term ?? ''}
+                    onChange={e => updateLifepath(i, { term: parseNullableNumber(e.target.value) })} />
+                </Field>
+                <Field name="Career">
+                  <input className="input" value={term.career ?? ''}
+                    onChange={e => updateLifepath(i, { career: e.target.value || null })} />
+                </Field>
+                <Field name="Assignment">
+                  <input className="input" value={term.assignment ?? ''}
+                    onChange={e => updateLifepath(i, { assignment: e.target.value || null })} />
+                </Field>
+                <Field name="Rank">
+                  <input className="input" value={term.rank ?? ''}
+                    onChange={e => updateLifepath(i, { rank: e.target.value || null })} />
+                </Field>
+                <button type="button" onClick={() => removeLifepathTerm(i)} className="btn-steel text-alert hover:border-alert">
+                  <Trash2 size={12} />
+                </button>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { key: 'survived', label: 'Survived' },
+                  { key: 'commissioned', label: 'Commissioned' },
+                  { key: 'advanced', label: 'Advanced' },
+                ].map(({ key, label }) => (
+                  <Field key={key} name={label}>
+                    <select className="select" value={boolSelectValue(term[key as keyof LifepathTerm] as boolean | null)}
+                      onChange={e => updateLifepath(i, { [key]: boolFromSelect(e.target.value) })}>
+                      <option value="">—</option>
+                      <option value="true">Yes</option>
+                      <option value="false">No</option>
+                    </select>
+                  </Field>
+                ))}
+              </div>
+              <Field name="Notes">
+                <textarea className="input resize-none h-14" value={term.notes ?? ''}
+                  onChange={e => updateLifepath(i, { notes: e.target.value || null })} />
+              </Field>
+            </div>
+          ))}
+          <button type="button" onClick={addLifepathTerm} className="btn-steel flex items-center gap-1 text-xs">
+            <Plus size={12} /> ADD TERM
+          </button>
         </div>
       </details>
 
@@ -1960,7 +2728,7 @@ export default function PartyRoster() {
         </div>
 
         {chars.length === 0 && !showForm && (
-          <div className="text-center py-16 text-body/40 text-sm space-y-2">
+          <div className="text-center py-16 text-body/65 text-sm space-y-2">
             <div className="text-4xl opacity-20">◈</div>
             <div>No characters registered. Import an XLSX sheet or add manually.</div>
           </div>
@@ -1996,11 +2764,11 @@ export default function PartyRoster() {
               />
             ))}
             {chars.length === 0 && (
-              <div className="text-xs text-body/30 p-4 text-center">No characters</div>
+              <div className="text-xs text-body/55 p-4 text-center">No characters</div>
             )}
           </div>
 
-          <div className="border-t border-steel/50 px-3 py-2 text-[10px] text-body/30 flex-shrink-0">
+          <div className="border-t border-steel/50 px-3 py-2 text-[10px] text-body/55 flex-shrink-0">
             {chars.length} CHARACTER{chars.length !== 1 ? 'S' : ''}
           </div>
         </div>
@@ -2008,7 +2776,7 @@ export default function PartyRoster() {
         {/* Detail panel */}
         <div className="flex-1 overflow-y-auto">
           {showForm ? (
-            <div className="p-4 max-w-2xl">{charForm}</div>
+            <div className="p-4 max-w-5xl">{charForm}</div>
           ) : selectedChar ? (
             <div className="p-5">
               <div className="relative min-w-0">
@@ -2032,7 +2800,7 @@ export default function PartyRoster() {
                         onRefreshXLSX={() => { setRefreshTargetId(selectedChar.id); refreshFileRef.current?.click(); }}
                       />
                     </div>
-                    <div className="text-xs text-body/50 mt-1 flex flex-wrap gap-x-2">
+                    <div className="text-xs text-body/70 mt-1 flex flex-wrap gap-x-2">
                       {selectedChar.rank && <span className="text-amber">{selectedChar.rank}</span>}
                       {selectedChar.career && <span>· {selectedChar.career}</span>}
                       {selectedChar.homeworld && <span>· {selectedChar.homeworld}</span>}
@@ -2058,7 +2826,7 @@ export default function PartyRoster() {
               </div>
             </div>
           ) : (
-            <div className="flex items-center justify-center h-full text-body/30">
+            <div className="flex items-center justify-center h-full text-body/55">
               <div className="text-center space-y-2">
                 <div className="text-5xl opacity-20">◈</div>
                 <div className="text-sm">Select a character from the roster</div>

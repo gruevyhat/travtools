@@ -160,7 +160,7 @@ export default function GlobalToolsDrawer({ open, onClose }: GlobalToolsDrawerPr
                 </div>
                 <div className="text-xs font-mono text-body/80">
                   [{result.kept.join(']+[')}] {fmtDM(result.modifier)} = {result.total}
-                  {result.discarded !== null && <span className="text-body/45"> · discarded {result.discarded}</span>}
+                  {result.discarded !== null && <span className="text-body/70"> · discarded {result.discarded}</span>}
                 </div>
                 <div className={`text-xs font-mono tracking-wider ${result.success ? 'text-safe' : 'text-alert'}`}>
                   {result.success ? 'SUCCESS' : 'FAILURE'} · Effect {fmtDM(result.effect)}
@@ -189,11 +189,11 @@ export default function GlobalToolsDrawer({ open, onClose }: GlobalToolsDrawerPr
 
             <section className="panel p-3 space-y-2 text-xs text-body/75">
               <div className="label">TASK CHAIN</div>
-              <div>Previous Effect -6 or less: DM-3</div>
-              <div>Previous Effect -2 to -5: DM-2</div>
-              <div>Previous Effect -1 to +1: DM+0</div>
-              <div>Previous Effect +2 to +5: DM+1</div>
-              <div>Previous Effect +6 or more: DM+2</div>
+              <div>Previous Effect -6 or less: Mod -3</div>
+              <div>Previous Effect -2 to -5: Mod -2</div>
+              <div>Previous Effect -1 to +1: Mod +0</div>
+              <div>Previous Effect +2 to +5: Mod +1</div>
+              <div>Previous Effect +6 or more: Mod +2</div>
             </section>
 
             <section className="panel p-3 space-y-2 text-xs text-body/75">

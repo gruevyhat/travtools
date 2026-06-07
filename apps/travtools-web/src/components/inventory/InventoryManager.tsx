@@ -61,7 +61,6 @@ export default function InventoryManager() {
     if (!client) return;
     const { data, error } = await client.from('inventory_items').select('*').order('name');
     if (error) {
-      console.error('Inventory load failed:', error);
       setErrorMessage('Inventory could not be loaded.');
       return;
     }
@@ -98,7 +97,6 @@ export default function InventoryManager() {
 
       const { data, error } = await client.from('inventory_items').update(form).eq('id', editingId).select().single();
       if (error) {
-        console.error('Inventory item update failed:', error);
         setErrorMessage(`Could not update ${form.name}.`);
         if (previous) setItems(prev => sortItems(prev.map(i => i.id === editingId ? previous : i)));
         loadItems();
@@ -109,7 +107,6 @@ export default function InventoryManager() {
     } else {
       const { data, error } = await client.from('inventory_items').insert(form).select().single();
       if (error) {
-        console.error('Inventory item insert failed:', error);
         setErrorMessage(`Could not add ${form.name}.`);
         return;
       }
@@ -128,7 +125,6 @@ export default function InventoryManager() {
     setSelectedIds(prev => prev.filter(selectedId => selectedId !== id));
     const { error } = await client.from('inventory_items').delete().eq('id', id);
     if (error) {
-      console.error('Inventory item delete failed:', error);
       setErrorMessage('Could not delete inventory item.');
       if (previous) setItems(prev => sortItems([...prev, previous]));
       loadItems();
@@ -150,7 +146,6 @@ export default function InventoryManager() {
       .single();
 
     if (error) {
-      console.error('Inventory quantity update failed:', error);
       setErrorMessage(`Could not update quantity for ${item.name}.`);
       setItems(prev => sortItems(prev.map(i => i.id === item.id ? item : i)));
       loadItems();
@@ -169,7 +164,6 @@ export default function InventoryManager() {
 
     const { error } = await client.from('inventory_items').delete().in('id', ids);
     if (error) {
-      console.error('Inventory bulk delete failed:', error);
       setErrorMessage('Could not delete selected inventory items.');
       setItems(prev => sortItems([...prev, ...previous]));
       loadItems();
@@ -328,7 +322,7 @@ export default function InventoryManager() {
           <div className="space-y-2">
             <div className="grid grid-cols-1 sm:grid-cols-[1fr_9rem] gap-2">
               <div className="relative">
-                <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-body/40 pointer-events-none" />
+                <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-body/65 pointer-events-none" />
                 <input
                   className="input pl-6 text-xs"
                   placeholder="Search equipment, TL, traits..."
@@ -357,29 +351,29 @@ export default function InventoryManager() {
                   <div className="flex items-start gap-2">
                     <span className={`text-[9px] font-mono border px-1 py-0.5 ${categoryChipClass(item.inventoryCategory)}`}>{item.section}</span>
                     <span className="font-mono text-bright flex-1 group-hover:text-amber">{item.name}</span>
-                    <span className="text-[10px] text-body/40">p.{item.page}</span>
+                    <span className="text-[10px] text-body/65">p.{item.page}</span>
                   </div>
                   <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] pl-1">
-                    <span className="text-body/50">TL <span className="text-bright">{item.techLevel ?? '--'}</span></span>
-                    <span className="text-body/50">MASS <span className="text-bright">{formatEquipmentMass(item.massKg)}</span></span>
-                    <span className="text-body/50">COST <span className="text-cyan-trav">{formatEquipmentCost(item)}</span></span>
+                    <span className="text-body/70">TL <span className="text-bright">{item.techLevel ?? '--'}</span></span>
+                    <span className="text-body/70">MASS <span className="text-bright">{formatEquipmentMass(item.massKg)}</span></span>
+                    <span className="text-body/70">COST <span className="text-cyan-trav">{formatEquipmentCost(item)}</span></span>
                   </div>
                   {(item.range || item.damage || item.traits || item.details?.length) && (
                     <div className="text-[10px] pl-1 space-y-0.5 text-body/60">
                       {(item.range || item.damage) && (
                         <div>
-                          {item.range && <span><span className="text-body/30">RANGE </span>{item.range} </span>}
-                          {item.damage && <span><span className="text-body/30">DAMAGE </span>{item.damage}</span>}
+                          {item.range && <span><span className="text-body/55">RANGE </span>{item.range} </span>}
+                          {item.damage && <span><span className="text-body/55">DAMAGE </span>{item.damage}</span>}
                         </div>
                       )}
-                      {item.traits && <div><span className="text-body/30">TRAITS </span>{item.traits}</div>}
+                      {item.traits && <div><span className="text-body/55">TRAITS </span>{item.traits}</div>}
                       {item.details?.slice(0, 2).map(detail => <div key={detail}>{detail}</div>)}
                     </div>
                   )}
                 </button>
               ))}
               {equipmentMatches.length === 0 && (
-                <div className="text-body/40 text-center py-4">No matching Core Rules equipment.</div>
+                <div className="text-body/65 text-center py-4">No matching Core Rules equipment.</div>
               )}
             </div>
           </div>
@@ -479,7 +473,7 @@ export default function InventoryManager() {
                 </td>
                 <td className="table-cell font-bold text-bright">
                   {item.name}
-                  {item.notes && <div className="text-xs text-body/50 mt-0.5">{item.notes}</div>}
+                  {item.notes && <div className="text-xs text-body/70 mt-0.5">{item.notes}</div>}
                 </td>
                 <td className="table-cell">
                   {item.category && (
@@ -493,7 +487,7 @@ export default function InventoryManager() {
                       aria-label={`Decrease ${item.name} quantity`}
                       disabled={item.quantity <= 0}
                       onClick={() => adjustQuantity(item, -1)}
-                      className="w-5 h-5 border border-steel/60 text-body/50 hover:border-amber hover:text-amber disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center"
+                      className="w-5 h-5 border border-steel/60 text-body/70 hover:border-amber hover:text-amber disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center"
                     >
                       <Minus size={9} />
                     </button>
@@ -502,7 +496,7 @@ export default function InventoryManager() {
                       type="button"
                       aria-label={`Increase ${item.name} quantity`}
                       onClick={() => adjustQuantity(item, 1)}
-                      className="w-5 h-5 border border-steel/60 text-body/50 hover:border-safe hover:text-safe flex items-center justify-center"
+                      className="w-5 h-5 border border-steel/60 text-body/70 hover:border-safe hover:text-safe flex items-center justify-center"
                     >
                       <Plus size={9} />
                     </button>
@@ -528,7 +522,7 @@ export default function InventoryManager() {
             ))}
             {visible.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-body/40 text-sm">
+                <td colSpan={9} className="px-4 py-8 text-center text-body/65 text-sm">
                   No items found.
                 </td>
               </tr>
