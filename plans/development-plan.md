@@ -232,21 +232,22 @@ Questions to answer:
 
 **Correctness**
 - [ ] Enter a full party kit (weapons, armour, tools, medicine); verify mass and value totals
-- [ ] Test owner filter, category filter, and both combined
-- [ ] Edge cases: items with no weight, no value, quantity zero
+- [x] Test owner filter, category filter, and both combined
+- [x] Edge cases: items with no weight, no value, quantity zero
 - [ ] Two browser tabs: item added in one appears in the other within ~1s
-- [ ] Error case: Supabase write failure surfaces visibly to the user, not only in `console.error`
+- [x] Error case: Supabase write failure surfaces visibly to the user, not only in `console.error`
 
 **UX improvements**
-- [ ] Category chips on each row are visually distinct per category (colour-coded or icon)
-- [ ] Inline quantity +/− buttons on each row (no need to open the edit form for a count change)
-- [ ] Bulk delete: checkbox select + delete selected
+- [x] Category chips on each row are visually distinct per category (colour-coded or icon)
+- [x] Inline quantity +/− buttons on each row (no need to open the edit form for a count change)
+- [x] Bulk delete: checkbox select + delete selected
 
 **Tests (TDD — write before implementing UX improvements)**
-- [ ] Total weight aggregation: null weights excluded, quantity multiplied correctly
-- [ ] Total value aggregation: same rules
-- [ ] Filter logic: owner filter, category filter, combined filter, no filter
-- [ ] `InventoryManager` renders item list; add form submits correctly (mocked Supabase)
+- [x] Total weight aggregation: null weights excluded, quantity multiplied correctly
+- [x] Total value aggregation: same rules
+- [x] Filter logic: owner filter, category filter, combined filter, no filter
+- [x] `InventoryManager` renders item list; add form submits correctly (mocked Supabase)
+- [x] E2E smoke: inventory add item, inline quantity increase, select item, bulk delete
 
 ### Milestone 2 Retrospective
 

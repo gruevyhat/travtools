@@ -141,9 +141,12 @@ async function installSupabaseMock(page) {
     ships: [],
   };
 
-  function eqId(url) {
+  function filterIds(url) {
     const id = url.searchParams.get('id');
-    return id?.startsWith('eq.') ? id.slice(3) : null;
+    if (!id) return null;
+    if (id.startsWith('eq.')) return [id.slice(3)];
+    if (id.startsWith('in.(') && id.endsWith(')')) return id.slice(4, -1).split(',').filter(Boolean);
+    return null;
   }
 
   function responseBody(request, value) {
@@ -181,21 +184,23 @@ async function installSupabaseMock(page) {
         store.push(...rows);
         body = rows;
       } else if (method === 'PATCH') {
-        const id = eqId(url);
+        const ids = filterIds(url);
         const payload = JSON.parse(request.postData() || '{}');
         const updated = [];
         for (let i = 0; i < store.length; i += 1) {
-          if (!id || store[i].id === id) {
+          if (!ids || ids.includes(store[i].id)) {
             store[i] = { ...store[i], ...payload };
             updated.push(store[i]);
           }
         }
         body = updated;
       } else if (method === 'DELETE') {
-        const id = eqId(url);
-        if (id) {
-          const index = store.findIndex(row => row.id === id);
-          if (index >= 0) store.splice(index, 1);
+        const ids = filterIds(url);
+        if (ids) {
+          for (const id of ids) {
+            const index = store.findIndex(row => row.id === id);
+            if (index >= 0) store.splice(index, 1);
+          }
         }
         body = [];
       }
@@ -399,6 +404,12 @@ async function checkFormTyping(browser, baseUrl) {
   await replaceByTyping(page.getByLabel('Location'), 'Ship Locker');
   await page.getByRole('button', { name: 'SAVE' }).click();
   await page.getByText('Advanced Medkit').waitFor({ state: 'visible', timeout: 5_000 });
+  await page.getByLabel('Increase Advanced Medkit quantity').click();
+  await page.getByLabel('Select Advanced Medkit').check();
+  await page.getByRole('button', { name: 'DELETE 1' }).waitFor({ state: 'visible', timeout: 5_000 });
+  page.once('dialog', dialog => dialog.accept());
+  await page.getByRole('button', { name: 'DELETE 1' }).click();
+  await page.getByText('Advanced Medkit').waitFor({ state: 'hidden', timeout: 5_000 });
 
   await context.close();
 

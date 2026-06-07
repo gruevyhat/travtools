@@ -1,7 +1,14 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Plus, X } from 'lucide-react';
+import { Minus, Plus, Trash2, X } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
 import { InventoryItem } from '../../types';
+import {
+  categoryChipClass,
+  filterInventoryItems,
+  inventoryTotals,
+  INVENTORY_CATEGORIES,
+  sortItems,
+} from '../../lib/inventory';
 
 type ItemForm = Omit<InventoryItem, 'id' | 'created_at'>;
 
@@ -15,12 +22,6 @@ const EMPTY: ItemForm = {
   location: null,
   notes: null,
 };
-
-const CATEGORIES = ['Weapon', 'Armour', 'Equipment', 'Medicine', 'Cargo', 'Electronics', 'Survival', 'Other'];
-
-function sortItems(items: InventoryItem[]): InventoryItem[] {
-  return [...items].sort((a, b) => a.name.localeCompare(b.name));
-}
 
 function Field({ name, children }: { name: string; children: React.ReactNode }) {
   return (
@@ -39,10 +40,17 @@ export default function InventoryManager() {
   const [editing, setEditing] = useState<string | null>(null);
   const [filterOwner, setFilterOwner] = useState('');
   const [filterCat, setFilterCat] = useState('');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const loadItems = useCallback(async () => {
     if (!client) return;
-    const { data } = await client.from('inventory_items').select('*').order('name');
+    const { data, error } = await client.from('inventory_items').select('*').order('name');
+    if (error) {
+      console.error('Inventory load failed:', error);
+      setErrorMessage('Inventory could not be loaded.');
+      return;
+    }
     if (data) setItems(data as InventoryItem[]);
   }, [client]);
 
@@ -59,6 +67,7 @@ export default function InventoryManager() {
   async function saveItem(e: React.FormEvent) {
     e.preventDefault();
     if (!client) return;
+    setErrorMessage(null);
     if (editing) {
       const editingId = editing;
       const previous = items.find(i => i.id === editingId);
@@ -75,6 +84,7 @@ export default function InventoryManager() {
       const { data, error } = await client.from('inventory_items').update(form).eq('id', editingId).select().single();
       if (error) {
         console.error('Inventory item update failed:', error);
+        setErrorMessage(`Could not update ${form.name}.`);
         if (previous) setItems(prev => sortItems(prev.map(i => i.id === editingId ? previous : i)));
         loadItems();
         return;
@@ -85,6 +95,7 @@ export default function InventoryManager() {
       const { data, error } = await client.from('inventory_items').insert(form).select().single();
       if (error) {
         console.error('Inventory item insert failed:', error);
+        setErrorMessage(`Could not add ${form.name}.`);
         return;
       }
       if (data) setItems(prev => sortItems([data as InventoryItem, ...prev]));
@@ -95,12 +106,56 @@ export default function InventoryManager() {
 
   async function deleteItem(id: string) {
     if (!client || !confirm('Delete this item?')) return;
+    setErrorMessage(null);
     const previous = items.find(i => i.id === id);
     setItems(prev => prev.filter(i => i.id !== id));
+    setSelectedIds(prev => prev.filter(selectedId => selectedId !== id));
     const { error } = await client.from('inventory_items').delete().eq('id', id);
     if (error) {
       console.error('Inventory item delete failed:', error);
+      setErrorMessage('Could not delete inventory item.');
       if (previous) setItems(prev => sortItems([...prev, previous]));
+      loadItems();
+    }
+  }
+
+  async function adjustQuantity(item: InventoryItem, delta: number) {
+    if (!client) return;
+    const nextQuantity = Math.max(0, item.quantity + delta);
+    if (nextQuantity === item.quantity) return;
+    setErrorMessage(null);
+    setItems(prev => sortItems(prev.map(i => i.id === item.id ? { ...i, quantity: nextQuantity } : i)));
+
+    const { data, error } = await client
+      .from('inventory_items')
+      .update({ quantity: nextQuantity })
+      .eq('id', item.id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Inventory quantity update failed:', error);
+      setErrorMessage(`Could not update quantity for ${item.name}.`);
+      setItems(prev => sortItems(prev.map(i => i.id === item.id ? item : i)));
+      loadItems();
+      return;
+    }
+    if (data) setItems(prev => sortItems(prev.map(i => i.id === item.id ? data as InventoryItem : i)));
+  }
+
+  async function deleteSelectedItems() {
+    if (!client || selectedIds.length === 0 || !confirm(`Delete ${selectedIds.length} selected item${selectedIds.length !== 1 ? 's' : ''}?`)) return;
+    setErrorMessage(null);
+    const ids = [...selectedIds];
+    const previous = items.filter(item => ids.includes(item.id));
+    setItems(prev => prev.filter(item => !ids.includes(item.id)));
+    setSelectedIds([]);
+
+    const { error } = await client.from('inventory_items').delete().in('id', ids);
+    if (error) {
+      console.error('Inventory bulk delete failed:', error);
+      setErrorMessage('Could not delete selected inventory items.');
+      setItems(prev => sortItems([...prev, ...previous]));
       loadItems();
     }
   }
@@ -117,14 +172,21 @@ export default function InventoryManager() {
 
   const owners = [...new Set(items.map(i => i.owner).filter(Boolean))] as string[];
 
-  const visible = items.filter(i => {
-    if (filterOwner && i.owner !== filterOwner) return false;
-    if (filterCat && i.category !== filterCat) return false;
-    return true;
-  });
+  const visible = filterInventoryItems(items, { owner: filterOwner, category: filterCat });
+  const { totalWeight, totalValue } = inventoryTotals(visible);
+  const allVisibleSelected = visible.length > 0 && visible.every(item => selectedIds.includes(item.id));
 
-  const totalWeight = visible.reduce((s, i) => s + (i.weight_kg ?? 0) * i.quantity, 0);
-  const totalValue = visible.reduce((s, i) => s + (i.value_cr ?? 0) * i.quantity, 0);
+  function toggleSelected(id: string) {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(existing => existing !== id) : [...prev, id]);
+  }
+
+  function toggleAllVisible() {
+    if (allVisibleSelected) {
+      setSelectedIds(prev => prev.filter(id => !visible.some(item => item.id === id)));
+    } else {
+      setSelectedIds(prev => [...new Set([...prev, ...visible.map(item => item.id)])]);
+    }
+  }
 
   return (
     <div className="p-4 space-y-4 h-full overflow-auto">
@@ -150,8 +212,13 @@ export default function InventoryManager() {
         </select>
         <select className="select w-36 py-1 text-xs" value={filterCat} onChange={e => setFilterCat(e.target.value)}>
           <option value="">All categories</option>
-          {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+          {INVENTORY_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
+        {selectedIds.length > 0 && (
+          <button onClick={deleteSelectedItems} className="btn-danger flex items-center gap-1">
+            <Trash2 size={13} /> DELETE {selectedIds.length}
+          </button>
+        )}
         <div className="flex-1" />
         <button
           onClick={() => { setForm(EMPTY); setEditing(null); setShowForm(v => !v); }}
@@ -160,6 +227,15 @@ export default function InventoryManager() {
           <Plus size={13} /> ADD ITEM
         </button>
       </div>
+
+      {errorMessage && (
+        <div role="alert" className="panel border-alert/70 text-alert px-3 py-2 text-xs font-mono flex items-center justify-between">
+          <span>{errorMessage}</span>
+          <button onClick={() => setErrorMessage(null)} className="text-alert/60 hover:text-alert">
+            <X size={13} />
+          </button>
+        </div>
+      )}
 
       {/* Form */}
       {showForm && (
@@ -173,7 +249,7 @@ export default function InventoryManager() {
           <Field name="Category">
             <select className="select" value={form.category ?? ''} onChange={e => setForm({ ...form, category: e.target.value || null })}>
               <option value="">— None —</option>
-              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              {INVENTORY_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </Field>
           <Field name="Quantity">
@@ -206,6 +282,15 @@ export default function InventoryManager() {
         <table className="w-full">
           <thead>
             <tr className="border-b border-steel">
+              <th className="table-header w-8">
+                <input
+                  type="checkbox"
+                  aria-label="Select all visible inventory items"
+                  checked={allVisibleSelected}
+                  onChange={toggleAllVisible}
+                  className="accent-amber"
+                />
+              </th>
               <th className="table-header">Item</th>
               <th className="table-header">Category</th>
               <th className="table-header text-right">Qty</th>
@@ -219,16 +304,46 @@ export default function InventoryManager() {
           <tbody>
             {visible.map(item => (
               <tr key={item.id} className="table-row">
+                <td className="table-cell">
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${item.name}`}
+                    checked={selectedIds.includes(item.id)}
+                    onChange={() => toggleSelected(item.id)}
+                    className="accent-amber"
+                  />
+                </td>
                 <td className="table-cell font-bold text-bright">
                   {item.name}
                   {item.notes && <div className="text-xs text-body/50 mt-0.5">{item.notes}</div>}
                 </td>
                 <td className="table-cell">
                   {item.category && (
-                    <span className="text-xs border border-steel px-1.5 py-0.5 text-body">{item.category}</span>
+                    <span className={`text-xs border px-1.5 py-0.5 font-mono ${categoryChipClass(item.category)}`}>{item.category}</span>
                   )}
                 </td>
-                <td className="table-cell text-right">{item.quantity}</td>
+                <td className="table-cell">
+                  <div className="flex items-center justify-end gap-1">
+                    <button
+                      type="button"
+                      aria-label={`Decrease ${item.name} quantity`}
+                      disabled={item.quantity <= 0}
+                      onClick={() => adjustQuantity(item, -1)}
+                      className="w-5 h-5 border border-steel/60 text-body/50 hover:border-amber hover:text-amber disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center"
+                    >
+                      <Minus size={9} />
+                    </button>
+                    <span className="w-8 text-center font-mono text-amber">{item.quantity}</span>
+                    <button
+                      type="button"
+                      aria-label={`Increase ${item.name} quantity`}
+                      onClick={() => adjustQuantity(item, 1)}
+                      className="w-5 h-5 border border-steel/60 text-body/50 hover:border-safe hover:text-safe flex items-center justify-center"
+                    >
+                      <Plus size={9} />
+                    </button>
+                  </div>
+                </td>
                 <td className="table-cell text-right">
                   {item.weight_kg !== null ? (item.weight_kg * item.quantity).toFixed(1) : '—'}
                 </td>
@@ -249,7 +364,7 @@ export default function InventoryManager() {
             ))}
             {visible.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-body/40 text-sm">
+                <td colSpan={9} className="px-4 py-8 text-center text-body/40 text-sm">
                   No items found.
                 </td>
               </tr>
