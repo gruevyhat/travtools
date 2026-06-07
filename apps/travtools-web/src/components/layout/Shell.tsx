@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, Link } from 'react-router-dom';
-import { Dices, Ship, TrendingUp, Package, Users, ScrollText, Wifi, WifiOff, Settings } from 'lucide-react';
+import { BookOpen, Dices, Ship, Swords, TrendingUp, Package, Users, ScrollText, Wifi, WifiOff, Settings } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
 import GlobalToolsDrawer from '../tools/GlobalToolsDrawer';
 import FanNotice from '../legal/FanNotice';
@@ -20,6 +20,8 @@ const NAV_ITEMS = [
   { to: '/trade', label: 'TRADE', Icon: TrendingUp },
   { to: '/inventory', label: 'INVENTORY', Icon: Package },
   { to: '/log', label: 'ROLL LOG', Icon: ScrollText },
+  { to: '/combat', label: 'COMBAT', Icon: Swords },
+  { to: '/journal', label: 'JOURNAL', Icon: BookOpen },
 ];
 
 export default function Shell() {

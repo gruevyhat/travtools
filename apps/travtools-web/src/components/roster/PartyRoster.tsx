@@ -18,7 +18,7 @@ import {
 import { parseXLSXCharacter } from '../../lib/parseXLSX';
 import { csvRow, downloadCsv } from '../../lib/csv';
 import { CORE_EQUIPMENT } from '../../data/equipment';
-import { fmtDM, DIFFICULTIES } from '../../lib/dice';
+import { fmtDM, DIFFICULTIES, RollMode } from '../../lib/dice';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -509,6 +509,8 @@ interface RollTarget {
 
 interface AttackResult {
   d1: number; d2: number;
+  discarded: number | null;
+  rollMode: RollMode;
   charDM: number; skillLevel: number; bonusDM: number;
   total: number; effect: number;
 }
@@ -547,6 +549,7 @@ function RollModal({
   const [label, setLabel] = useState(initialTarget.label);
   const [skillLevelInput] = useState(initialTarget.skillLevel === null ? 'None' : String(initialTarget.skillLevel));
   const [bonusDMInput, setBonusDMInput] = useState('');
+  const [rollMode, setRollMode] = useState<RollMode>('normal');
   const [attackResult, setAttackResult] = useState<AttackResult | null>(null);
   const [damageResult, setDamageResult] = useState<DamageResult | null>(null);
   const [saved, setSaved] = useState(false);
@@ -575,11 +578,15 @@ function RollModal({
   }, [onClose]);
 
   function rollAttack() {
-    const d1 = Math.ceil(Math.random() * 6);
-    const d2 = Math.ceil(Math.random() * 6);
+    const d6 = () => Math.ceil(Math.random() * 6);
+    const rawDice = rollMode === 'normal' ? [d6(), d6()] : [d6(), d6(), d6()];
+    const sorted = [...rawDice].sort((a, b) => a - b);
+    const kept = rollMode === 'boon' ? sorted.slice(1) : rollMode === 'bane' ? sorted.slice(0, 2) : rawDice;
+    const discarded = rollMode === 'normal' ? null : rollMode === 'boon' ? sorted[0] : sorted[2];
+    const [d1, d2] = kept;
     const total = d1 + d2 + charDM + skillLevel + bonusDM;
     const effect = total - difficulty;
-    const r: AttackResult = { d1, d2, charDM, skillLevel, bonusDM, total, effect };
+    const r: AttackResult = { d1, d2, discarded, rollMode, charDM, skillLevel, bonusDM, total, effect };
     setAttackResult(r);
     setDamageResult(null);
     setSaved(false);
@@ -703,8 +710,18 @@ function RollModal({
             })()}
           </div>
 
+          <div className="grid grid-cols-3 gap-1">
+            {(['normal', 'boon', 'bane'] as RollMode[]).map(m => (
+              <button key={m} type="button" onClick={() => setRollMode(m)}
+                className={`btn text-xs ${rollMode === m ? 'btn-amber' : 'btn-steel'}`}>
+                {m.toUpperCase()}
+              </button>
+            ))}
+          </div>
+
           <button onClick={rollAttack} className="btn-amber w-full text-center text-sm">
-            {isWeapon ? 'ROLL ATTACK 2D6' : isInitiative ? 'ROLL INITIATIVE 2D6' : 'ROLL 2D6'}
+            {isWeapon ? 'ROLL ATTACK' : isInitiative ? 'ROLL INITIATIVE' : 'ROLL'}
+            {' '}{rollMode === 'boon' || rollMode === 'bane' ? '3D6' : '2D6'}
           </button>
 
           {attackResult !== null && (
@@ -713,6 +730,9 @@ function RollModal({
                 <span className="inline-flex items-center justify-center w-9 h-9 border border-amber text-amber font-bold text-lg">{attackResult.d1}</span>
                 <span className="text-body">+</span>
                 <span className="inline-flex items-center justify-center w-9 h-9 border border-amber text-amber font-bold text-lg">{attackResult.d2}</span>
+                {attackResult.discarded !== null && (
+                  <span className="text-body/40 text-xs font-mono line-through">({attackResult.discarded})</span>
+                )}
                 {attackResult.charDM !== 0 && <><span className="text-body">+</span><span className="text-cyan-trav text-xs">{charKey && STAT_LABELS[charKey]} {fmtDM(attackResult.charDM)}</span></>}
                 {!isInitiative && attackResult.skillLevel !== 0 && <><span className="text-body">+</span><span className="text-cyan-trav text-xs">Skill {skillLevelIsNone ? `None ${fmtDM(attackResult.skillLevel)}` : fmtDM(attackResult.skillLevel)}</span></>}
                 {attackResult.bonusDM !== 0 && <><span className="text-body">+</span><span className="text-cyan-trav text-xs">Mod {fmtDM(attackResult.bonusDM)}</span></>}

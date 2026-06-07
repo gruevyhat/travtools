@@ -69,3 +69,16 @@ export function rollTravellerCheck(input: TravellerRollInput): TravellerRollResu
 export function fmtDM(value: number): string {
   return value >= 0 ? `+${value}` : String(value);
 }
+
+export interface FluxRollResult {
+  die1: number;
+  die2: number;
+  result: number; // die1 - die2, range -5 to +5
+}
+
+export function rollFlux(roller?: () => number): FluxRollResult {
+  const r = roller ?? Math.random;
+  const die1 = d6(r);
+  const die2 = d6(r);
+  return { die1, die2, result: die1 - die2 };
+}

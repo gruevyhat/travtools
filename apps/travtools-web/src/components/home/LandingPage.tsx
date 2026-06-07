@@ -2,11 +2,13 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight,
+  BookOpen,
   CircleDot,
   Package,
   Radar,
   ScrollText,
   Ship,
+  Swords,
   TrendingUp,
   Users,
   type LucideIcon,
@@ -43,6 +45,8 @@ const MODULES: ModuleLink[] = [
   { to: '/trade', label: 'TRADE', signal: 'CARGO', Icon: TrendingUp },
   { to: '/inventory', label: 'INVENTORY', signal: 'GEAR', Icon: Package },
   { to: '/log', label: 'ROLL LOG', signal: 'DICE', Icon: ScrollText },
+  { to: '/combat', label: 'COMBAT', signal: 'COMBAT', Icon: Swords },
+  { to: '/journal', label: 'JOURNAL', signal: 'LOG', Icon: BookOpen },
 ];
 
 function displayCount(value: number | null) {

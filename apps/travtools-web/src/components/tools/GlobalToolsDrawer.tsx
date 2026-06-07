@@ -1,16 +1,44 @@
 import { useState } from 'react';
 import { BookOpen, Check, Dices, X } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
-import { DIFFICULTIES, fmtDM, RollMode, rollTravellerCheck, TravellerRollResult } from '../../lib/dice';
+import { DIFFICULTIES, fmtDM, rollFlux, RollMode, rollTravellerCheck, TravellerRollResult, FluxRollResult } from '../../lib/dice';
+import { TRADE_GOODS, TradeGood } from '../../data/tradeGoods';
+import { lookupModifiedPrice, rollTonsExpr } from '../../data/modifiedPrice';
 
 interface GlobalToolsDrawerProps {
   open: boolean;
   onClose: () => void;
 }
 
+function rollD66(): { d1: number; d2: number; d66: number } {
+  const d1 = Math.ceil(Math.random() * 6);
+  const d2 = Math.ceil(Math.random() * 6);
+  return { d1, d2, d66: d1 * 10 + d2 };
+}
+
+function roll3D6(): number[] {
+  return [Math.ceil(Math.random() * 6), Math.ceil(Math.random() * 6), Math.ceil(Math.random() * 6)];
+}
+
+interface TradeRollResult {
+  d66: number;
+  d1: number;
+  d2: number;
+  good: TradeGood | null;
+  tons: number | null;
+  purchaseRoll: number[];
+  purchaseDM: number;
+  purchasePct: number;
+  saleRoll: number[];
+  saleDM: number;
+  salePct: number;
+}
+
 export default function GlobalToolsDrawer({ open, onClose }: GlobalToolsDrawerProps) {
   const { client } = useSupabase();
   const [tab, setTab] = useState<'dice' | 'reference'>('dice');
+
+  // Standard check roller
   const [label, setLabel] = useState('Standalone');
   const [modifier, setModifier] = useState('0');
   const [difficulty, setDifficulty] = useState(8);
@@ -18,6 +46,15 @@ export default function GlobalToolsDrawer({ open, onClose }: GlobalToolsDrawerPr
   const [logRoll, setLogRoll] = useState(true);
   const [result, setResult] = useState<TravellerRollResult | null>(null);
   const [saved, setSaved] = useState(false);
+
+  // Flux roller
+  const [fluxResult, setFluxResult] = useState<FluxRollResult | null>(null);
+
+  // Trade goods roller
+  const [purchaseDMInput, setPurchaseDMInput] = useState('0');
+  const [saleDMInput, setSaleDMInput] = useState('0');
+  const [tradeRoll, setTradeRoll] = useState<TradeRollResult | null>(null);
+
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   if (!open) return null;
@@ -50,9 +87,35 @@ export default function GlobalToolsDrawer({ open, onClose }: GlobalToolsDrawerPr
       mode,
     });
     setResult(nextResult);
+    setFluxResult(null);
     setSaved(false);
     setErrorMessage(null);
     saveResult(nextResult);
+  }
+
+  function doRollFlux() {
+    setFluxResult(rollFlux());
+    setResult(null);
+  }
+
+  function doTradeRoll() {
+    const { d1, d2, d66 } = rollD66();
+    const good = TRADE_GOODS.find(g => g.d66 === d66) ?? null;
+
+    const tons = good ? rollTonsExpr(good.tons) : null;
+
+    const purchaseDM = parseInt(purchaseDMInput, 10) || 0;
+    const saleDM = parseInt(saleDMInput, 10) || 0;
+
+    const purchaseDice = roll3D6();
+    const purchaseRawTotal = purchaseDice.reduce((s, v) => s + v, 0) + purchaseDM;
+    const { purchasePct } = lookupModifiedPrice(purchaseRawTotal);
+
+    const saleDice = roll3D6();
+    const saleRawTotal = saleDice.reduce((s, v) => s + v, 0) + saleDM;
+    const { salePct } = lookupModifiedPrice(saleRawTotal);
+
+    setTradeRoll({ d66, d1, d2, good, tons, purchaseRoll: purchaseDice, purchaseDM, purchasePct, saleRoll: saleDice, saleDM, salePct });
   }
 
   return (
@@ -95,83 +158,193 @@ export default function GlobalToolsDrawer({ open, onClose }: GlobalToolsDrawerPr
         </div>
 
         {tab === 'dice' ? (
-          <div className="p-4 space-y-4 overflow-auto">
-            <label className="block space-y-1">
-              <span className="label">CHECK LABEL</span>
-              <input className="input" value={label} onChange={e => setLabel(e.target.value)} />
-            </label>
+          <div className="p-4 space-y-5 overflow-auto">
+            {/* ── 2D6 Check ─────────────────────────────── */}
+            <section className="space-y-3">
+              <div className="label">2D6 CHECK</div>
 
-            <div className="grid grid-cols-2 gap-3">
               <label className="block space-y-1">
-                <span className="label">MODIFIER</span>
-                <input
-                  aria-label="Standalone Modifier"
-                  className="input"
-                  type="text"
-                  inputMode="numeric"
-                  value={modifier}
-                  onChange={e => setModifier(e.target.value)}
-                />
+                <span className="label">CHECK LABEL</span>
+                <input className="input" value={label} onChange={e => setLabel(e.target.value)} />
               </label>
-              <label className="block space-y-1">
-                <span className="label">DIFFICULTY</span>
-                <select className="select" value={difficulty} onChange={e => setDifficulty(parseInt(e.target.value, 10))}>
-                  {DIFFICULTIES.map(d => (
-                    <option key={d.target} value={d.target}>{d.label} {d.target}+</option>
-                  ))}
-                </select>
-              </label>
-            </div>
 
-            <div className="grid grid-cols-3 gap-1">
-              {(['normal', 'boon', 'bane'] as RollMode[]).map(nextMode => (
-                <button
-                  key={nextMode}
-                  type="button"
-                  onClick={() => setMode(nextMode)}
-                  className={`btn text-xs ${mode === nextMode ? 'btn-amber' : 'btn-steel'}`}
-                >
-                  {nextMode.toUpperCase()}
-                </button>
-              ))}
-            </div>
-
-            <label className="flex items-center gap-2 text-xs text-body">
-              <input type="checkbox" checked={logRoll} onChange={e => setLogRoll(e.target.checked)} />
-              <span>Log to Roll Log</span>
-            </label>
-
-            <button type="button" onClick={roll} className="btn-amber w-full text-center">
-              ROLL 2D6
-            </button>
-
-            {result && (
-              <div className="panel p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-amber font-mono text-sm">{result.label}</div>
-                    <div className="text-xs text-body/60">{result.mode.toUpperCase()} · {result.difficulty}+</div>
-                  </div>
-                  <div className={`h-14 w-14 border-2 flex items-center justify-center text-xl font-mono font-bold ${
-                    result.success ? 'border-safe text-safe' : 'border-alert text-alert'
-                  }`}>
-                    {result.total}
-                  </div>
-                </div>
-                <div className="text-xs font-mono text-body/80">
-                  [{result.kept.join(']+[')}] {fmtDM(result.modifier)} = {result.total}
-                  {result.discarded !== null && <span className="text-body/70"> · discarded {result.discarded}</span>}
-                </div>
-                <div className={`text-xs font-mono tracking-wider ${result.success ? 'text-safe' : 'text-alert'}`}>
-                  {result.success ? 'SUCCESS' : 'FAILURE'} · Effect {fmtDM(result.effect)}
-                </div>
-                {saved && (
-                  <div className="text-xs text-safe flex items-center gap-1">
-                    <Check size={12} /> Logged to Roll Log
-                  </div>
-                )}
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block space-y-1">
+                  <span className="label">MODIFIER</span>
+                  <input
+                    aria-label="Standalone Modifier"
+                    className="input"
+                    type="text"
+                    inputMode="numeric"
+                    value={modifier}
+                    onChange={e => setModifier(e.target.value)}
+                  />
+                </label>
+                <label className="block space-y-1">
+                  <span className="label">DIFFICULTY</span>
+                  <select className="select" value={difficulty} onChange={e => setDifficulty(parseInt(e.target.value, 10))}>
+                    {DIFFICULTIES.map(d => (
+                      <option key={d.target} value={d.target}>{d.label} {d.target}+</option>
+                    ))}
+                  </select>
+                </label>
               </div>
-            )}
+
+              <div className="grid grid-cols-3 gap-1">
+                {(['normal', 'boon', 'bane'] as RollMode[]).map(nextMode => (
+                  <button
+                    key={nextMode}
+                    type="button"
+                    onClick={() => setMode(nextMode)}
+                    className={`btn text-xs ${mode === nextMode ? 'btn-amber' : 'btn-steel'}`}
+                  >
+                    {nextMode.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+
+              <label className="flex items-center gap-2 text-xs text-body">
+                <input type="checkbox" checked={logRoll} onChange={e => setLogRoll(e.target.checked)} />
+                <span>Log to Roll Log</span>
+              </label>
+
+              <button type="button" onClick={roll} className="btn-amber w-full text-center">
+                ROLL {mode === 'normal' ? '2D6' : '3D6'}
+              </button>
+
+              {result && (
+                <div className="panel p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-amber font-mono text-sm">{result.label}</div>
+                      <div className="text-xs text-body/60">{result.mode.toUpperCase()} · {result.difficulty}+</div>
+                    </div>
+                    <div className={`h-14 w-14 border-2 flex items-center justify-center text-xl font-mono font-bold ${
+                      result.success ? 'border-safe text-safe' : 'border-alert text-alert'
+                    }`}>
+                      {result.total}
+                    </div>
+                  </div>
+                  <div className="text-xs font-mono text-body/80">
+                    [{result.kept.join(']+[')}] {fmtDM(result.modifier)} = {result.total}
+                    {result.discarded !== null && <span className="text-body/70"> · discarded {result.discarded}</span>}
+                  </div>
+                  <div className={`text-xs font-mono tracking-wider ${result.success ? 'text-safe' : 'text-alert'}`}>
+                    {result.success ? 'SUCCESS' : 'FAILURE'} · Effect {fmtDM(result.effect)}
+                  </div>
+                  {saved && (
+                    <div className="text-xs text-safe flex items-center gap-1">
+                      <Check size={12} /> Logged to Roll Log
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
+
+            {/* ── Flux Roll ─────────────────────────────── */}
+            <section className="space-y-3 border-t border-steel/40 pt-4">
+              <div className="label">FLUX ROLL (1D6 − 1D6)</div>
+              <p className="text-xs text-body/65">Used for random events, NPC reactions, and animal encounter DMs. Range −5 to +5.</p>
+              <button type="button" onClick={doRollFlux} className="btn-steel w-full">
+                ROLL FLUX
+              </button>
+              {fluxResult && (
+                <div className="panel p-3 flex items-center gap-4">
+                  <div className="font-mono flex items-center gap-2">
+                    <span className="inline-flex items-center justify-center w-9 h-9 border border-amber text-amber font-bold text-lg">{fluxResult.die1}</span>
+                    <span className="text-body/60">−</span>
+                    <span className="inline-flex items-center justify-center w-9 h-9 border border-steel text-body font-bold text-lg">{fluxResult.die2}</span>
+                  </div>
+                  <div>
+                    <div className={`text-2xl font-mono font-bold ${fluxResult.result > 0 ? 'text-safe' : fluxResult.result < 0 ? 'text-alert' : 'text-body'}`}>
+                      {fmtDM(fluxResult.result)}
+                    </div>
+                    <div className="text-xs text-body/60">FLUX RESULT</div>
+                  </div>
+                </div>
+              )}
+            </section>
+
+            {/* ── Trade Goods Roller ────────────────────── */}
+            <section className="space-y-3 border-t border-steel/40 pt-4">
+              <div className="label">TRADE GOODS ROLLER (p.243–245)</div>
+              <p className="text-xs text-body/65">Roll D66 to find available cargo. Add applicable trade code DMs, then roll 3D6 for price.</p>
+
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block space-y-1">
+                  <span className="label">PURCHASE DM</span>
+                  <input className="input text-xs" type="text" inputMode="numeric"
+                    value={purchaseDMInput} onChange={e => setPurchaseDMInput(e.target.value)} />
+                </label>
+                <label className="block space-y-1">
+                  <span className="label">SALE DM</span>
+                  <input className="input text-xs" type="text" inputMode="numeric"
+                    value={saleDMInput} onChange={e => setSaleDMInput(e.target.value)} />
+                </label>
+              </div>
+
+              <button type="button" onClick={doTradeRoll} className="btn-steel w-full">
+                ROLL TRADE GOODS
+              </button>
+
+              {tradeRoll && (
+                <div className="panel p-3 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-shrink-0 w-12 h-12 border border-cyan-trav flex items-center justify-center font-mono font-bold text-cyan-trav text-lg">
+                      {String(tradeRoll.d66).padStart(2, '0')}
+                    </div>
+                    <div>
+                      <div className="text-bright font-mono text-sm">
+                        {tradeRoll.good?.type ?? 'No match (re-roll)'}
+                      </div>
+                      {tradeRoll.good && (
+                        <div className="text-xs text-body/65">
+                          {tradeRoll.good.availability} · {tradeRoll.tons}
+                          {tradeRoll.tons !== null && tradeRoll.good.tons !== 'Varies' && (
+                            <span className="text-amber ml-1">→ {tradeRoll.tons} tons</span>
+                          )}
+                          {tradeRoll.good.basePrice !== null && (
+                            <span className="text-body/55 ml-1">Base: {tradeRoll.good.basePrice.toLocaleString()} Cr</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {tradeRoll.good?.basePrice !== null && tradeRoll.good && (
+                    <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                      <div className="border border-steel/50 p-2">
+                        <div className="label text-[10px]">PURCHASE</div>
+                        <div className="text-amber">
+                          [{tradeRoll.purchaseRoll.join('+')}]{tradeRoll.purchaseDM !== 0 && ` ${fmtDM(tradeRoll.purchaseDM)}`}
+                          {' '}= {tradeRoll.purchaseRoll.reduce((s, v) => s + v, 0) + tradeRoll.purchaseDM}
+                        </div>
+                        <div className="text-safe text-sm font-bold">{tradeRoll.purchasePct}% base</div>
+                        <div className="text-body/55 text-[10px]">
+                          {Math.round(tradeRoll.good.basePrice! * tradeRoll.purchasePct / 100).toLocaleString()} Cr/ton
+                        </div>
+                      </div>
+                      <div className="border border-steel/50 p-2">
+                        <div className="label text-[10px]">SALE</div>
+                        <div className="text-amber">
+                          [{tradeRoll.saleRoll.join('+')}]{tradeRoll.saleDM !== 0 && ` ${fmtDM(tradeRoll.saleDM)}`}
+                          {' '}= {tradeRoll.saleRoll.reduce((s, v) => s + v, 0) + tradeRoll.saleDM}
+                        </div>
+                        <div className="text-safe text-sm font-bold">{tradeRoll.salePct}% base</div>
+                        <div className="text-body/55 text-[10px]">
+                          {Math.round(tradeRoll.good.basePrice! * tradeRoll.salePct / 100).toLocaleString()} Cr/ton
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {tradeRoll.good?.illegal && (
+                    <div className="text-xs text-alert font-mono">⚠ ILLEGAL GOODS — broker required</div>
+                  )}
+                  <div className="text-[10px] text-body/40">Verify price table against Core Rulebook p.243</div>
+                </div>
+              )}
+            </section>
           </div>
         ) : (
           <div className="p-4 space-y-4 overflow-auto">
@@ -197,11 +370,43 @@ export default function GlobalToolsDrawer({ open, onClose }: GlobalToolsDrawerPr
             </section>
 
             <section className="panel p-3 space-y-2 text-xs text-body/75">
-              <div className="label">BOON / BANE</div>
-              <div>Boon: roll 3D6 and keep the best two dice.</div>
-              <div>Bane: roll 3D6 and keep the worst two dice.</div>
+              <div className="label">BOON / BANE / FLUX</div>
+              <div>Boon: roll 3D6, keep the highest two dice.</div>
+              <div>Bane: roll 3D6, keep the lowest two dice.</div>
+              <div>Flux: 1D6 − 1D6 (range −5 to +5). Used for random events and NPC reactions.</div>
             </section>
 
+            <section className="panel p-3 space-y-2 text-xs text-body/75">
+              <div className="label">COMBAT ACTIONS</div>
+              <div><span className="text-amber">Minor:</span> Aim, draw weapon, stand up, short move</div>
+              <div><span className="text-amber">Significant:</span> Attack, full move, skill check, reload</div>
+              <div><span className="text-amber">Reaction:</span> Dodge/parry (costs next significant action)</div>
+            </section>
+
+            <section className="panel p-3 space-y-2 text-xs text-body/75">
+              <div className="label">COMMON SITUATIONAL DMs</div>
+              <div>Cover (light): DM−1 to attackers</div>
+              <div>Cover (full): DM−4 to attackers</div>
+              <div>Darkness: DM−2 to skill checks</div>
+              <div>Prone (melee): DM−2 to attack, DM−2 vs attacker</div>
+              <div>Aimed shot: +1 minor action → DM+1</div>
+            </section>
+
+            <section className="panel p-3 space-y-2 text-xs text-body/75">
+              <div className="label">NATURAL HEALING</div>
+              <div>Each day of rest: recover 1D6 points per characteristic.</div>
+              <div>Medical care (Medic 1+): double recovery rate.</div>
+              <div>Unconscious at END 0; dead if all three physical stats reach 0.</div>
+            </section>
+
+            <section className="panel p-3 space-y-2 text-xs text-body/75">
+              <div className="label">NPC REACTION (2D6)</div>
+              <div>2 Hostile — immediate attack</div>
+              <div>3–5 Unfriendly — DM−1 to social checks</div>
+              <div>6–8 Neutral — normal interaction</div>
+              <div>9–11 Friendly — DM+1 to social checks</div>
+              <div>12 Helpful — active assistance offered</div>
+            </section>
           </div>
         )}
       </aside>

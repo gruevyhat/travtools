@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fmtDM, rollTravellerCheck } from '../lib/dice';
+import { fmtDM, rollFlux, rollTravellerCheck } from '../lib/dice';
 
 function roller(values: number[]) {
   let index = 0;
@@ -61,5 +61,41 @@ describe('dice helpers', () => {
     expect(fmtDM(2)).toBe('+2');
     expect(fmtDM(0)).toBe('+0');
     expect(fmtDM(-3)).toBe('-3');
+  });
+});
+
+describe('rollFlux', () => {
+  function seqRoller(values: number[]) {
+    let i = 0;
+    return () => values[i++ % values.length] ?? 0;
+  }
+
+  it('returns die1 - die2 as the result', () => {
+    // roller returns 0.5 → d6 = floor(0.5*6)+1 = 4
+    //                  0.0 → d6 = floor(0.0*6)+1 = 1
+    const r = rollFlux(seqRoller([0.5, 0.0]));
+    expect(r.die1).toBe(4);
+    expect(r.die2).toBe(1);
+    expect(r.result).toBe(3);
+  });
+
+  it('can produce zero when both dice are equal', () => {
+    const r = rollFlux(seqRoller([0.5, 0.5]));
+    expect(r.result).toBe(0);
+  });
+
+  it('can produce negative result when die2 > die1', () => {
+    // 0.0 → 1, 0.99 → 6
+    const r = rollFlux(seqRoller([0.0, 0.99]));
+    expect(r.die1).toBe(1);
+    expect(r.die2).toBe(6);
+    expect(r.result).toBe(-5);
+  });
+
+  it('result is bounded to [-5, +5]', () => {
+    const maxPos = rollFlux(seqRoller([0.99, 0.0]));
+    const maxNeg = rollFlux(seqRoller([0.0, 0.99]));
+    expect(maxPos.result).toBe(5);
+    expect(maxNeg.result).toBe(-5);
   });
 });

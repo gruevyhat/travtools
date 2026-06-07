@@ -503,17 +503,17 @@ Questions to answer:
 
 ### High-priority additions (most needed at the table)
 
-- **Flux dice** — `1D6 - 1D6` (range −5 to +5), used throughout Traveller for random events, NPC reactions, animal encounters, and some trade rolls. Add as a mode in the standalone dice roller alongside Normal / Boon / Bane.
-- **Combat / initiative tracker** — initiative queue (ranked list), round counter, range bands, and per-character action tracking. The roll infrastructure is in place; the missing piece is a structured encounter view. Needs no schema changes — initiative results already flow through the roll modal.
-- **Trade goods roller** — the reference table (`tradeGoods.ts`) exists; the missing tool is rolling availability (D66) and price modifiers per p.243–245. Add to the Global Tools drawer Reference tab.
-- **Reaction roll and morale** — a one-button roller for NPC reactions (2D6, table lookup) and morale checks. Fits naturally in the Reference tab or a new Combat sub-tab.
+- [x] **Flux dice** — `1D6 - 1D6` (range −5 to +5), added as a Flux section in the standalone dice roller.
+- [x] **Combat / initiative tracker** — `/combat` route with ranked initiative queue, round counter, per-character minor/significant action tracking, NPC quick-add, reorder, and Supabase broadcast sync.
+- [x] **Trade goods roller** — D66 availability roll, tons calculation, and 3D6 Modified Price roller (purchase% and sale%) added to the Global Tools dice tab.
+- [x] **Reaction roll and morale** — NPC reaction table (2D6) added to the Reference tab; situational DMs and natural healing also added.
 
 ### Medium-priority additions
 
-- **Boon/bane in character roll modal** — the standalone dice roller supports boon/bane (M5), but the character-level skill/attribute/weapon roll modal does not; add a Normal / Boon / Bane selector to `RollModal` so roster checks can use the same mechanic.
+- [x] **Boon/bane in character roll modal** — Normal / Boon / Bane selector added to `RollModal`; discarded die shown in breakdown.
 - **Global Tools Reference tab expansion** — currently only has difficulties, task chain, and boon/bane. Add: common situational DMs, combat action types (minor/significant), natural healing rates, critical hits summary, wound severity table.
 - **Jump planner / fuel calculator** — parsec distance input, jump rating, fuel cost in tons. Static calculation; no schema changes needed.
-- **Session journal** — shared timestamped notes per session; searchable. New Supabase table. Enables campaign continuity across sessions.
+- [x] **Session journal** — `/journal` route with create/edit/delete session notes, auto-save on blur, and Supabase realtime sync.
 - **Ship combat tracker** — range bands, ship initiative, damage allocation, repair actions. Complements the existing Ship Viewer. Requires a new schema table or session-local state.
 
 ### Long-term candidates

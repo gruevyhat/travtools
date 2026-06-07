@@ -10,6 +10,8 @@ const TradeLedger = lazy(() => import('./components/trade/TradeLedger'));
 const InventoryManager = lazy(() => import('./components/inventory/InventoryManager'));
 const PartyRoster = lazy(() => import('./components/roster/PartyRoster'));
 const RollLog = lazy(() => import('./components/log/RollLog'));
+const CombatTracker = lazy(() => import('./components/combat/CombatTracker'));
+const SessionJournal = lazy(() => import('./components/journal/SessionJournal'));
 
 function AppRoutes() {
   const { isConfigured } = useSupabase();
@@ -27,6 +29,8 @@ function AppRoutes() {
             <Route path="inventory" element={<InventoryManager />} />
             <Route path="roster" element={<PartyRoster />} />
             <Route path="log" element={<RollLog />} />
+            <Route path="combat" element={<CombatTracker />} />
+            <Route path="journal" element={<SessionJournal />} />
           </Route>
         </Routes>
       </Suspense>

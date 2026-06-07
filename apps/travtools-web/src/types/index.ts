@@ -298,3 +298,28 @@ export interface RollLogEntry {
   effect: number;
   created_at: string;
 }
+
+export interface SessionJournalEntry {
+  id: string;
+  session_name: string;
+  content: string;
+  author: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CombatCombatant {
+  id: string; // character id or generated id for NPCs
+  name: string;
+  initiative: number;
+  dexDM: number;
+  minorActionUsed: boolean;
+  significantActionUsed: boolean;
+  isNPC: boolean;
+}
+
+export interface CombatState {
+  combatants: CombatCombatant[];
+  round: number;
+  activeIndex: number;
+}

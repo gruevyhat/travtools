@@ -138,6 +138,19 @@ create policy "anon_all_characters" on characters for all to anon using (true) w
 alter table roll_log enable row level security;
 create policy "anon_all_roll_log" on roll_log for all to anon using (true) with check (true);
 
+-- Session Journal (shared timestamped notes per session, realtime)
+create table if not exists session_journal (
+  id uuid default gen_random_uuid() primary key,
+  session_name text not null default 'Session',
+  content text not null default '',
+  author text not null default 'GM',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table session_journal enable row level security;
+create policy "anon_all_session_journal" on session_journal for all to anon using (true) with check (true);
+
 -- ============================================================
 -- Storage bucket for custom ship schematic images.
 -- Create manually in Supabase Dashboard → Storage → New bucket.
