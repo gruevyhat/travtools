@@ -4,9 +4,11 @@
 
 A group companion app for Traveller RPG (2022 Core Rulebook edition), runnable as a GitHub Pages SPA. Shared real-time state via Supabase. Aesthetic: dark void terminal, amber text, cyan data readouts, CRT scan-lines — the Firefly/Serenity bridge feel.
 
-### Current State (as of plan creation)
+### Current State
 
-All four features are scaffolded and connected to Supabase. The build passes cleanly. The database schema has been applied to the live Supabase project. The app has **never been deployed or exercised with real session data**. No tests exist. The ship-schematics storage bucket has not been created.
+The app is live on GitHub Pages at `https://gruevyhat.github.io/travtools/` and connected to the live Supabase project. The test suite, lint, production build, and GitHub Pages workflow are all active. The current suite has 113 Vitest tests plus a Playwright smoke script.
+
+The core app now has a landing dashboard, roster, ships, trade ledger, inventory manager, roll log, and global tools drawer. The four local character XLSX files under `docs/characters/` have been imported into Supabase with the current parser. Character portraits are stored as data URLs; the `ship-schematics` Storage bucket remains relevant only for custom ship schematic uploads.
 
 ### Design Imperatives
 
@@ -21,14 +23,14 @@ All four features are scaffolded and connected to Supabase. The build passes cle
 
 | # | Name | Goal | Status |
 |---|------|------|--------|
-| 0 | Foundation | App live in production, test infra in place | In Progress |
-| 1 | Party Roster | Roster is production-ready: import, display, edit, sync | Planned |
-| 2 | Inventory Manager | Inventory is production-ready: add/edit, filters, totals, sync | Planned |
+| 0 | Foundation | App live in production, test infra in place | Complete |
+| 1 | Party Roster | Roster is production-ready: import, display, edit, sync | In Progress |
+| 2 | Inventory Manager | Inventory is production-ready: add/edit, filters, totals, sync | In Progress |
 | 3 | Ship Schematic Viewer | Ships is production-ready: canonical SVGs, custom upload, annotations, sync | In Progress |
 | 4 | Trade Ledger | Trade is production-ready: full deal arc, profit calc, sync | In Progress |
 | 5 | Dice & Reference | Session-critical tools: dice roller + quick rulebook lookups | In Progress |
 | 6 | Polish & Resilience | Mobile layout, error handling, offline resilience | In Progress |
-| 7 | Depth | Trade route mapping, cargo generator, character advancement | In Progress |
+| 7 | Depth | Trade route mapping, cargo generator, character advancement | Backlog |
 
 ---
 
@@ -38,14 +40,15 @@ All four features are scaffolded and connected to Supabase. The build passes cle
 
 ### Tasks
 
-- [ ] Create `ship-schematics` Supabase storage bucket (Public)
-- [ ] Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` as GitHub Actions secrets
-- [ ] Commit and push `apps/`, `.github/`, `docs/` to trigger first deploy
-- [ ] Verify GitHub Pages deployment serves the app at `/<repo>/`
-- [ ] Install Vitest + React Testing Library
-- [ ] Write smoke tests: app renders without crashing, `SupabaseProvider` provides context, `SetupScreen` appears when unconfigured
-- [ ] Add test script to CI workflow (run on every PR)
-- [ ] Verify the CRT aesthetic renders correctly in Chrome and Firefox
+- [x] Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` as GitHub Actions secrets
+- [x] Commit and push app source to trigger GitHub Pages deploy
+- [x] Verify GitHub Pages deployment serves the app at `/travtools/`
+- [x] Install Vitest + React Testing Library
+- [x] Write smoke tests: app renders without crashing, `SupabaseProvider` provides context, `SetupScreen` appears when unconfigured
+- [x] Add test script to CI workflow
+- [x] Verify production build succeeds locally and in CI
+- [x] Add landing dashboard as the app index route
+- [ ] Verify the CRT aesthetic across Chrome and Firefox after the landing page and module updates
 
 ### Test targets (Milestone 0)
 
@@ -82,17 +85,20 @@ Four player characters were analyzed from XLSX spreadsheets before implementatio
 | Player | Character | UPP | Psionics |
 |--------|-----------|-----|---------|
 | Eric   | Zlata Gusova | 678CCB | none |
-| Graham | (unnamed) | 97B84+ | Awareness-1, Telepathy-0, Teleportation-0 |
-| Jesse  | (unnamed) | 468AA9 | Awareness-1, Clairvoyance-2, Telekinesis-0, Telepathy-0 |
-| Will   | (unnamed) | 97C996 | none |
+| Graham | Rafael Navarro | 9BB8A4 | Awareness-1, Telepathy-0, Teleportation-0 |
+| Jesse  | Jesse | 468AB9 | Awareness-1, Clairvoyance-2, Telekinesis-0, Telepathy-0 |
+| Will   | Will | 9BC996 | none |
 
 Key findings:
-- **PSI is a 7th characteristic** (separate from UPP) with its own DM; governs psionic checks
+- **PSI is an optional 7th characteristic** (separate from core UPP) with its own DM; show it only when the imported starting PSI value is greater than 0
 - **5 psionic disciplines**: Awareness, Clairvoyance, Telekinesis, Telepathy, Teleportation — each stored with a level
 - **Each skill has a governing characteristic** (e.g. Medic→EDU, Gun Combat→DEX) which must be added to the roll total
 - House-rule stats (CHR, MOR, LCK) are inconsistently named across sheets, but should be persisted and shown when present
 - Trained skills are level >= 0; untrained is -3 (shown as "--" in spreadsheet) — only show trained in the UI
 - XLSX sheets contain useful character-sheet data beyond stats: profile, homeworld, lifepath, armour, augments, equipment, finances, contacts, and background notes
+- BackgroundPersonality sheets contain additional appearance, personality, emotions, favourites, education/training, social class, and relationship/contact fields
+- The top-level title defaults to `Traveller`; numeric rank codes stay in lifepath rows and do not become the displayed title
+- `Subdermal Armour Protection` is an XLSX artifact from augment protection math and is not imported as armour
 - CSV parsing remains useful for fallback/import tooling, but the player-facing Milestone 1 import target is XLSX
 
 ### Data model changes
@@ -142,17 +148,22 @@ interface AttributeMods { str?: number; dex?: number; end_stat?: number; int_sta
 - [x] Verify manual add/edit/delete updates the local roster display immediately
 - [x] Verify portrait upload stores and displays a portrait without requiring a Storage bucket
 - [x] Verify temporary attribute modifiers change the displayed value and roll DM
+- [x] Verify default title is `Traveller` when no text title is present
+- [x] Verify text titles derived from term notes replace numeric rank codes where possible
+- [x] Verify PSI 0/null is omitted from the character sheet and UPP header
+- [x] Verify `Subdermal Armour Protection` is not imported as armour
 - [ ] Two browser tabs: character added in one appears in the other within ~1s
 - [x] Error case: importing a malformed XLSX surfaces a useful error, not a crash
 
 **Character sheet redesign**
 - [x] Show characteristic DM for each stat (+/-N format) derived from value
-- [x] Show PSI stat and DM in the characteristics grid when PSI exists
+- [x] Show PSI stat and DM in the characteristics grid only when starting PSI is greater than 0
 - [x] Show expanded attributes CHR, MOR, and LCK when present
 - [x] Show only trained skills (level >= 0), sorted alphabetically
 - [x] Psionic talents section: show only when character has psionic talents
 - [x] Roll button on each characteristic, skill, psionic talent, and weapon
 - [x] Render imported profile, homeworld, lifepath, armour, augments, equipment, finances, contacts, and background sections
+- [x] Render character-sheet sections in table order: Profile, Characteristics, Skills/Psionics, Weapons, Armor, Homeworld, Finances, Contacts, then everything else
 - [x] Add a right-side portrait column on the desktop character sheet and compact portrait slot on mobile cards
 - [x] Move character edit/delete actions behind a gear menu next to the character name
 
@@ -167,6 +178,8 @@ interface AttributeMods { str?: number; dex?: number; end_stat?: number; int_sta
 
 **UX improvements**
 - [x] Import XLSX sheets from the roster
+- [x] Refresh an existing character from a new XLSX file through the UI
+- [x] Bulk reimport local XLSX files through `scripts/reimport-characters.ts`
 - [x] Manual entry: UPP inputs validate 0-15; show the hex equivalent live as you type
 - [x] Add PSI, CHR, MOR, LCK fields and PsionicTalents field to manual entry form
 - [x] Add collapsible health and PSI trackers
@@ -181,6 +194,7 @@ interface AttributeMods { str?: number; dex?: number; end_stat?: number; int_sta
 - CharacteristicsSkills: STR/DEX/END/INT/EDU/SOC/PSI, CHR/MOR/LCK when present, skills, psionic talents
 - CombatEquipment: weapons, armour, augments, personal equipment, finances
 - BackgroundPersonality: personality/background text
+- BackgroundPersonality: appearance, personality, emotions, favourites, training, social role, relationship contacts
 - Campaign Notes: contacts
 
 **CSV format (parser utility, not current UI requirement)**
@@ -196,6 +210,7 @@ Skills and PsionicTalents: `SkillName-Level` comma-separated (e.g. `Awareness-1,
 - [x] `skillChar()` — exact match, parent-skill fallback, unknown -> null
 - [x] `parseSkillsCSV()` — skill names with spaces, level 0, malformed entries
 - [x] `parseCSV()` — happy path, PSI column, PsionicTalents column, portrait URL aliases, missing optional cols, quoted commas
+- [x] `parseXLSXCharacter()` — BackgroundPersonality fields, relationship contacts, text title extraction, default `Traveller` title, ignored Subdermal Armour artifact
 - [x] `npm run lint`
 - [x] `npm test`
 - [x] `npm run test:e2e`
@@ -228,6 +243,8 @@ Questions to answer:
 - [x] Owner and category filters are present and can be combined
 - [x] Summary cards show visible item count, total mass, and total value
 - [x] Inventory writes update the local display optimistically on add/edit/delete
+- [x] Core Rules equipment reference panel is available while the New Inventory Item form is open
+- [x] Equipment reference click-to-populate supports armour, augments, comms, weapons, computers, sensors, survival gear, drugs, tools, and related Core Rules items
 - [x] E2E smoke covers adding an inventory item and verifies multi-character text input
 
 **Correctness**
@@ -241,12 +258,14 @@ Questions to answer:
 - [x] Category chips on each row are visually distinct per category (colour-coded or icon)
 - [x] Inline quantity +/− buttons on each row (no need to open the edit form for a count change)
 - [x] Bulk delete: checkbox select + delete selected
+- [x] Equipment reference disappears when the New Inventory Item box is closed
 
 **Tests (TDD — write before implementing UX improvements)**
 - [x] Total weight aggregation: null weights excluded, quantity multiplied correctly
 - [x] Total value aggregation: same rules
 - [x] Filter logic: owner filter, category filter, combined filter, no filter
 - [x] `InventoryManager` renders item list; add form submits correctly (mocked Supabase)
+- [x] `InventoryManager` reference panel appears only with the item form
 - [x] E2E smoke: inventory add item, inline quantity increase, select item, bulk delete
 
 ### Milestone 2 Retrospective
@@ -275,7 +294,7 @@ Questions to answer:
 - [x] Character portraits are independent of Storage; only custom ship schematics require the `ship-schematics` bucket
 
 **PDF extraction (do first)**
-- [ ] Restore/source `docs/Traveller 2022 Core Rulebook 20-02-2026.pdf`; the current workspace only has character XLSX files, so page-level ship-plan audit remains blocked
+- [ ] Use `docs/Traveller 2022 Core Rulebook 20-02-2026.pdf` for a page-level ship-plan audit before changing canonical deck plans further
 - [ ] Read deck plan legend (p.189) — reference for icon meanings when auditing SVGs
 - [ ] Read Type-S Scout/Courier deck plan (p.191): 2 decks. Deck 2 (main): Bridge (1), Workshop (2), 4 staterooms, probe drone bay, airlock, iris valves, fuel/drives. Deck 1 (upper): Cargo Bay (3). Turret external. Confirm SVG matches this layout.
 - [ ] Read Type-A Free Trader deck plan (p.195): 2 decks. Deck 1 (main): Bridge (1), Cargo Bay (2), 20 low berths, drives/fuel. Deck 2 (upper): 10 staterooms + common area. Confirm SVG matches this layout.
@@ -376,6 +395,7 @@ Questions to answer:
 - [x] Roll result shows raw dice, modifiers, total, success/failure, and effect
 - [x] Roll history is persisted in `roll_log` and shown on the Roll Log route
 - [x] Roll log updates in realtime via Supabase database inserts
+- [x] Roll log can be cleared from the Roll Log route
 
 **Standalone Dice Roller**
 - [x] Always-available roll surface outside an individual character sheet
@@ -385,16 +405,17 @@ Questions to answer:
 - [x] Reuse the roster roll result visual language so players do not learn a second dice UI
 
 **Quick Reference Panel**
-- [ ] Trade goods table (Common, Uncommon, Illegal) from core rulebook — search by name or trade code
+- [x] Trade goods table (Common, Uncommon, Illegal) from core rulebook — search by name or trade code
+- [x] Equipment reference data from the Core Rules exposed from Inventory Manager while adding/editing an item
 - [x] Difficulty ladder (Routine 6+, Average 8+, Difficult 10+, Very Difficult 12+)
 - [x] Task chain reminder
 - [x] Accessible from any screen via a slide-out drawer or modal
 
 ### Tasks
 
-**PDF extraction (do first)**
-- [ ] Restore/source `docs/Traveller 2022 Core Rulebook 20-02-2026.pdf`; current workspace only has character XLSX files, so trade goods transcription remains blocked
-- [ ] Read Trade Goods table (p.244–245): D66 table with 18 entries (D66 11–36 confirmed on p.244; remainder on p.245). Columns: D66, Type, Availability, Tons, Base Price, Purchase DM, Sale DM, Examples. Transcribe all rows into `src/data/tradeGoods.ts` as a typed array.
+**PDF extraction**
+- [x] Read Trade Goods table (p.244–245): D66 table with 18 entries. Columns: D66, Type, Availability, Tons, Base Price, Purchase DM, Sale DM, Examples. Transcribed into `src/data/tradeGoods.ts` as a typed array.
+- [x] Read Core Rules equipment tables and transcribe reference items into `src/data/equipment.ts`
 - [ ] Note trade goods structure: `{ d66: number, type: string, availability: string, tons: string, basePrice: number, purchaseDM: string, saleDM: string, examples: string }[]`
 - [ ] Read Modified Price table (p.243): roll result → purchase % and sale % — useful for a future price calculator feature; record in a comment in `tradeGoods.ts` for now
 
@@ -404,7 +425,9 @@ Questions to answer:
 - [x] Decide whether standalone rolls write to persistent `roll_log` or broadcast ephemerally via Supabase `channel.send()`
 - [x] Scaffold `QuickRef` drawer component
 - [x] Transcribe trade goods table from p.244–245 into `src/data/tradeGoods.ts`
+- [x] Transcribe Core Rules equipment reference data into `src/data/equipment.ts`
 - [x] Write tests: roll distribution, modifier application, boon/bane logic
+- [x] Write Roll Log clear action test
 - [x] E2E smoke: global tools drawer logs a standalone roll and Roll Log displays it
 
 ### Milestone 5 Retrospective
@@ -425,7 +448,8 @@ Questions to answer:
 ### Tasks
 
 **Mobile layout**
-- [ ] Manual audit current screens at 375px viewport: Ships, Trade, Inventory, Roster, Roll Log, and any Milestone 5 dice/reference surface
+- [ ] Manual audit current screens at 375px viewport: Landing, Ships, Trade, Inventory, Roster, Roll Log, and global tools drawer
+- [x] Landing dashboard renders on mobile without text overlap
 - [x] Ship Viewer: sidebar collapses above the schematic on mobile
 - [x] Tables (Trade, Inventory): horizontal scroll or card view on narrow screens
 - [ ] Party Roster: cards, portrait slot, trackers, and temp modifier ribbon all remain usable at 375px
@@ -480,14 +504,14 @@ Questions to answer:
 | Unit | Vitest | Pure functions: `profit()`, `parseCSV()`, `upp()`, `toHex()`, dice logic, filter logic |
 | Component | React Testing Library | Renders correctly, form submission, filter interaction |
 | Integration | RTL + MSW | Supabase client calls return mocked data; full component data flow |
-| E2E (optional) | Playwright | Critical paths: add a trade deal, import a CSV roster |
+| E2E | Playwright | Critical paths: configured landing, ships, roster, trade, inventory, roll log, global tools |
 
 ### Rules
 
 - New logic ships with unit tests before the PR merges.
 - Bug fix = reproduction test first, then the fix.
 - Supabase calls are mocked at the client level (MSW or vi.mock); no live DB in tests.
-- CI runs `npm run lint && npm test` on every PR.
+- CI runs `npm test` and `npm run build` during GitHub Pages deploy; local changes should also run `npm run lint`.
 
 ---
 
