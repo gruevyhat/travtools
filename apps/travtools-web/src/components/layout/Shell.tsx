@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { Ship, TrendingUp, Package, Users, Wifi, WifiOff, Settings } from 'lucide-react';
+import { Ship, TrendingUp, Package, Users, ScrollText, Wifi, WifiOff, Settings } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
 
 const IMPERIAL_OFFSET = 1_000_000; // rough offset to 57th century Imperial years
@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { to: '/trade', label: 'TRADE', Icon: TrendingUp },
   { to: '/inventory', label: 'INVENTORY', Icon: Package },
   { to: '/roster', label: 'ROSTER', Icon: Users },
+  { to: '/log', label: 'ROLL LOG', Icon: ScrollText },
 ];
 
 export default function Shell() {

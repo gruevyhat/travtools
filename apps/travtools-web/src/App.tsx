@@ -6,6 +6,7 @@ import ShipViewer from './components/ships/ShipViewer';
 import TradeLedger from './components/trade/TradeLedger';
 import InventoryManager from './components/inventory/InventoryManager';
 import PartyRoster from './components/roster/PartyRoster';
+import RollLog from './components/log/RollLog';
 
 function AppRoutes() {
   const { isConfigured } = useSupabase();
@@ -21,6 +22,7 @@ function AppRoutes() {
           <Route path="trade" element={<TradeLedger />} />
           <Route path="inventory" element={<InventoryManager />} />
           <Route path="roster" element={<PartyRoster />} />
+          <Route path="log" element={<RollLog />} />
         </Route>
       </Routes>
     </HashRouter>

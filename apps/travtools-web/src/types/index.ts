@@ -55,9 +55,18 @@ export interface PsionicTalent {
   level: number;
 }
 
+export interface Weapon {
+  name: string;
+  skill: string;
+  range: string;
+  damage: string;
+  traits: string;
+}
+
 export interface Character {
   id: string;
   name: string;
+  player: string | null;
   str: number | null;
   dex: number | null;
   end_stat: number | null;
@@ -65,11 +74,35 @@ export interface Character {
   edu: number | null;
   soc: number | null;
   psi: number | null;
+  chr: number | null;
+  mor: number | null;
+  lck: number | null;
+  // health trackers (null = at full value)
+  str_cur: number | null;
+  dex_cur: number | null;
+  end_cur: number | null;
+  psi_cur: number | null;
   career: string | null;
   rank: string | null;
   homeworld: string | null;
   skills: Skill[];
   psionic_talents: PsionicTalent[];
+  weapons: Weapon[];
   notes: string | null;
+  created_at: string;
+}
+
+export interface RollLogEntry {
+  id: string;
+  character_name: string;
+  check_label: string;
+  d1: number;
+  d2: number;
+  char_dm: number;
+  skill_level: number;
+  total: number;
+  difficulty: number;
+  success: boolean;
+  effect: number;
   created_at: string;
 }

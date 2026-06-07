@@ -1,10 +1,11 @@
-import { Character, PsionicTalent, Skill } from '../types';
+import { Character, PsionicTalent, Skill, Weapon } from '../types';
 
-export type CharStat = 'str' | 'dex' | 'end_stat' | 'int_stat' | 'edu' | 'soc' | 'psi';
+export type CharStat = 'str' | 'dex' | 'end_stat' | 'int_stat' | 'edu' | 'soc' | 'psi' | 'chr' | 'mor' | 'lck';
 
 export const STAT_LABELS: Record<CharStat, string> = {
   str: 'STR', dex: 'DEX', end_stat: 'END',
   int_stat: 'INT', edu: 'EDU', soc: 'SOC', psi: 'PSI',
+  chr: 'CHR', mor: 'MOR', lck: 'LCK',
 };
 
 // Traveller 2022 characteristic DM table (p.7)
@@ -120,19 +121,33 @@ export function parseCSV(text: string): CharFormBase[] {
     values.push(cur);
     const get = (key: string) => values[headers.indexOf(key)]?.trim() ?? '';
     const num = (key: string) => { const v = parseInt(get(key)); return isNaN(v) ? null : v; };
+    const strVal = num('str'), dexVal = num('dex'), endVal = num('end'), psiVal = num('psi');
     return {
       name: get('name') || 'Unknown',
-      str: num('str'), dex: num('dex'), end_stat: num('end'),
+      player: get('player') || null,
+      str: strVal, dex: dexVal, end_stat: endVal,
       int_stat: num('int'), edu: num('edu'), soc: num('soc'),
-      psi: num('psi'),
+      psi: psiVal,
+      chr: num('chr'), mor: num('mor'), lck: num('lck'),
+      str_cur: strVal, dex_cur: dexVal, end_cur: endVal, psi_cur: psiVal,
       career: get('career') || null,
       rank: get('rank') || null,
       homeworld: get('homeworld') || null,
       skills: parseSkillsCSV(get('skills')),
       psionic_talents: parseTalentsCSV(get('psionictalents')),
+      weapons: [{ name: 'Unarmed', skill: 'Melee (Unarmed)', range: 'Melee', damage: '1D+STR DM', traits: '' }] as Weapon[],
       notes: get('notes') || null,
     };
   });
+}
+
+// Parses a weapon damage expression like "4D", "3D-3", "2D+2", "1D+STR DM".
+// STR DM notation is stripped — for melee weapons the caller adds STR DM separately.
+export function parseDamageExpr(expr: string): { dice: number; constant: number } {
+  const clean = expr.replace(/[+ ]*str dm/gi, '').trim();
+  const match = clean.match(/^(\d+)D([+-]\d+)?$/i);
+  if (!match) return { dice: 1, constant: 0 };
+  return { dice: parseInt(match[1]), constant: match[2] ? parseInt(match[2]) : 0 };
 }
 
 export const CSV_TEMPLATE =

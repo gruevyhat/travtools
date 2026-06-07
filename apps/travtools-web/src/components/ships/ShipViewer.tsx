@@ -161,25 +161,28 @@ export default function ShipViewer() {
         <ul className="flex-1 overflow-y-auto">
           {ships.map(ship => (
             <li key={ship.id}>
-              <button
-                onClick={() => { setSelected(ship); setAnnotating(false); setPendingPos(null); }}
+              <div
                 className={`w-full text-left px-3 py-2.5 border-b border-steel/30 flex items-center justify-between group transition-colors ${
                   selected?.id === ship.id ? 'bg-steel/30 text-amber' : 'text-body hover:bg-steel/20 hover:text-bright'
                 }`}
               >
-                <div>
+                <button
+                  onClick={() => { setSelected(ship); setAnnotating(false); setPendingPos(null); }}
+                  className="min-w-0 flex-1 text-left"
+                >
                   <div className="text-xs font-mono">{ship.name}</div>
                   <div className="text-[10px] text-body/60 mt-0.5">
                     {ship.schematic_type === 'canonical' ? `${ship.ship_class} · ${ship.tonnage}t` : 'Custom'}
                   </div>
-                </div>
+                </button>
                 <button
-                  onClick={e => { e.stopPropagation(); deleteShip(ship.id); }}
-                  className="opacity-0 group-hover:opacity-100 text-alert/60 hover:text-alert transition-all"
+                  onClick={() => deleteShip(ship.id)}
+                  className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-alert/60 hover:text-alert transition-all pl-3"
+                  aria-label={`Delete ${ship.name}`}
                 >
                   <Trash2 size={12} />
                 </button>
-              </button>
+              </div>
             </li>
           ))}
           {ships.length === 0 && (
