@@ -1,7 +1,15 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Plus, X, Check } from 'lucide-react';
+import { Download, Plus, X, Check } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
 import { TradeDeal } from '../../types';
+import {
+  dealsToCsv,
+  filterTradeDeals,
+  formatCr,
+  profit,
+  sortDeals,
+  tradeSummary,
+} from '../../lib/trade';
 
 type Status = 'all' | 'active' | 'completed' | 'cancelled';
 type DealForm = Omit<TradeDeal, 'id' | 'created_at' | 'updated_at'>;
@@ -17,20 +25,6 @@ const EMPTY: DealForm = {
   notes: null,
 };
 
-function formatCr(n: number | null) {
-  if (n === null) return '—';
-  return `Cr ${n.toLocaleString()}`;
-}
-
-function profit(deal: TradeDeal): number | null {
-  if (deal.buy_price === null || deal.sell_price === null) return null;
-  return (deal.sell_price - deal.buy_price) * deal.quantity;
-}
-
-function sortDeals(deals: TradeDeal[]): TradeDeal[] {
-  return [...deals].sort((a, b) => b.created_at.localeCompare(a.created_at));
-}
-
 function Field({ name, children }: { name: string; children: React.ReactNode }) {
   return (
     <label className="space-y-1 block">
@@ -44,15 +38,21 @@ export default function TradeLedger() {
   const { client } = useSupabase();
   const [deals, setDeals] = useState<TradeDeal[]>([]);
   const [filter, setFilter] = useState<Status>('all');
+  const [worldFilter, setWorldFilter] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<DealForm>(EMPTY);
   const [editing, setEditing] = useState<string | null>(null);
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [sellPrice, setSellPrice] = useState('');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const loadDeals = useCallback(async () => {
     if (!client) return;
-    const { data } = await client.from('trade_deals').select('*').order('created_at', { ascending: false });
+    const { data, error } = await client.from('trade_deals').select('*').order('created_at', { ascending: false });
+    if (error) {
+      setErrorMessage(`Trade deals could not be loaded: ${error.message}`);
+      return;
+    }
     if (data) setDeals(data as TradeDeal[]);
   }, [client]);
 
@@ -86,7 +86,7 @@ export default function TradeLedger() {
 
       const { data, error } = await client.from('trade_deals').update(payload).eq('id', editingId).select().single();
       if (error) {
-        console.error('Trade deal update failed:', error);
+        setErrorMessage(`Trade deal could not be updated: ${error.message}`);
         if (previous) setDeals(prev => sortDeals(prev.map(d => d.id === editingId ? previous : d)));
         loadDeals();
         return;
@@ -96,7 +96,7 @@ export default function TradeLedger() {
     } else {
       const { data, error } = await client.from('trade_deals').insert(form).select().single();
       if (error) {
-        console.error('Trade deal insert failed:', error);
+        setErrorMessage(`Trade deal could not be added: ${error.message}`);
         return;
       }
       if (data) setDeals(prev => sortDeals([data as TradeDeal, ...prev]));
@@ -111,7 +111,7 @@ export default function TradeLedger() {
     setDeals(prev => prev.filter(d => d.id !== id));
     const { error } = await client.from('trade_deals').delete().eq('id', id);
     if (error) {
-      console.error('Trade deal delete failed:', error);
+      setErrorMessage(`Trade deal could not be deleted: ${error.message}`);
       if (previous) setDeals(prev => sortDeals([...prev, previous]));
       loadDeals();
     }
@@ -119,11 +119,17 @@ export default function TradeLedger() {
 
   async function completeDeal(id: string) {
     if (!client || !sellPrice) return;
+    const parsedSellPrice = parseFloat(sellPrice);
+    if (Number.isNaN(parsedSellPrice)) {
+      setErrorMessage('Enter a valid sell price.');
+      return;
+    }
+
     const previous = deals.find(d => d.id === id);
     const updated_at = new Date().toISOString();
     const patch = {
       status: 'completed',
-      sell_price: parseFloat(sellPrice),
+      sell_price: parsedSellPrice,
       updated_at,
     } satisfies Partial<TradeDeal>;
 
@@ -133,7 +139,7 @@ export default function TradeLedger() {
 
     const { data, error } = await client.from('trade_deals').update(patch).eq('id', id).select().single();
     if (error) {
-      console.error('Trade deal completion failed:', error);
+      setErrorMessage(`Trade deal could not be completed: ${error.message}`);
       if (previous) setDeals(prev => sortDeals(prev.map(d => d.id === id ? previous : d)));
       loadDeals();
       return;
@@ -149,7 +155,7 @@ export default function TradeLedger() {
     setDeals(prev => sortDeals(prev.map(d => d.id === id ? { ...d, ...patch } : d)));
     const { data, error } = await client.from('trade_deals').update(patch).eq('id', id).select().single();
     if (error) {
-      console.error('Trade deal cancellation failed:', error);
+      setErrorMessage(`Trade deal could not be cancelled: ${error.message}`);
       if (previous) setDeals(prev => sortDeals(prev.map(d => d.id === id ? previous : d)));
       loadDeals();
       return;
@@ -167,22 +173,37 @@ export default function TradeLedger() {
     setShowForm(true);
   }
 
-  const visible = filter === 'all' ? deals : deals.filter(d => d.status === filter);
-  const totalProfit = deals
-    .filter(d => d.status === 'completed')
-    .reduce((sum, d) => sum + (profit(d) ?? 0), 0);
-  const activeValue = deals
-    .filter(d => d.status === 'active' && d.buy_price !== null)
-    .reduce((sum, d) => sum + (d.buy_price! * d.quantity), 0);
+  function exportCsv() {
+    const csv = dealsToCsv(visible);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'travtools-trade-ledger.csv';
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  const visible = filterTradeDeals(deals, { status: filter, world: worldFilter });
+  const summary = tradeSummary(deals);
 
   return (
     <div className="p-4 space-y-4 h-full overflow-auto">
+      {errorMessage && (
+        <div role="alert" className="border border-alert/40 bg-alert/10 px-3 py-2 text-xs text-alert flex items-center justify-between gap-3">
+          <span>{errorMessage}</span>
+          <button type="button" onClick={() => setErrorMessage(null)} aria-label="Dismiss trade error" className="hover:text-bright">
+            <X size={12} />
+          </button>
+        </div>
+      )}
+
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-4">
         {[
-          { label: 'ACTIVE CAPITAL', value: `Cr ${activeValue.toLocaleString()}`, color: 'text-amber' },
-          { label: 'REALISED PROFIT', value: `Cr ${totalProfit.toLocaleString()}`, color: totalProfit >= 0 ? 'text-safe' : 'text-alert' },
-          { label: 'TOTAL DEALS', value: String(deals.length), color: 'text-cyan-trav' },
+          { label: 'ACTIVE CAPITAL', value: formatCr(summary.activeCapital), color: 'text-amber' },
+          { label: 'REALISED PROFIT', value: formatCr(summary.realisedProfit), color: summary.realisedProfit >= 0 ? 'text-safe' : 'text-alert' },
+          { label: 'TOTAL DEALS', value: String(summary.totalDeals), color: 'text-cyan-trav' },
         ].map(({ label, value, color }) => (
           <div key={label} className="panel p-3">
             <div className="label mb-1">{label}</div>
@@ -192,8 +213,8 @@ export default function TradeLedger() {
       </div>
 
       {/* Controls */}
-      <div className="flex items-center justify-between">
-        <div className="flex gap-1">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           {(['all', 'active', 'completed', 'cancelled'] as Status[]).map(s => (
             <button
               key={s}
@@ -203,13 +224,32 @@ export default function TradeLedger() {
               {s.toUpperCase()}
             </button>
           ))}
+          <label className="flex items-center gap-2">
+            <span className="label">WORLD</span>
+            <input
+              aria-label="World Filter"
+              className="input w-44 py-1 text-xs"
+              value={worldFilter}
+              onChange={e => setWorldFilter(e.target.value)}
+              placeholder="Bought or sold"
+            />
+          </label>
         </div>
-        <button
-          onClick={() => { setForm(EMPTY); setEditing(null); setShowForm(v => !v); }}
-          className="btn-amber flex items-center gap-1"
-        >
-          <Plus size={13} /> NEW DEAL
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={exportCsv}
+            className="btn-steel flex items-center gap-1"
+          >
+            <Download size={13} /> EXPORT CSV
+          </button>
+          <button
+            onClick={() => { setForm(EMPTY); setEditing(null); setShowForm(v => !v); }}
+            className="btn-amber flex items-center gap-1"
+          >
+            <Plus size={13} /> NEW DEAL
+          </button>
+        </div>
       </div>
 
       {/* Form */}
@@ -222,7 +262,7 @@ export default function TradeLedger() {
             <input className="input" required value={form.item} onChange={e => setForm({ ...form, item: e.target.value })} />
           </Field>
           <Field name="Quantity">
-            <input className="input" type="number" min={1} value={form.quantity} onChange={e => setForm({ ...form, quantity: parseInt(e.target.value) || 1 })} />
+            <input className="input" type="number" min={0} value={form.quantity} onChange={e => setForm({ ...form, quantity: Math.max(0, parseInt(e.target.value) || 0) })} />
           </Field>
           <Field name="Buy Price (Cr/unit)">
             <input className="input" type="number" step="0.01" value={form.buy_price ?? ''} onChange={e => setForm({ ...form, buy_price: e.target.value ? parseFloat(e.target.value) : null })} />
@@ -281,7 +321,7 @@ export default function TradeLedger() {
                   <td className="table-cell">{formatCr(deal.buy_price)}</td>
                   <td className="table-cell">{formatCr(deal.sell_price)}</td>
                   <td className={`table-cell font-bold ${p === null ? 'text-body' : p >= 0 ? 'text-safe' : 'text-alert'}`}>
-                    {p === null ? '—' : `${p >= 0 ? '+' : ''}Cr ${p.toLocaleString()}`}
+                    {p === null ? '--' : `${p >= 0 ? '+' : ''}${formatCr(p)}`}
                   </td>
                   <td className="table-cell text-xs">
                     {deal.world_bought && <div className="text-body">{deal.world_bought}</div>}
@@ -308,8 +348,8 @@ export default function TradeLedger() {
                               onChange={e => setSellPrice(e.target.value)}
                               onKeyDown={e => { if (e.key === 'Enter') completeDeal(deal.id); if (e.key === 'Escape') setCompletingId(null); }}
                             />
-                            <button onClick={() => completeDeal(deal.id)} className="text-safe hover:text-safe"><Check size={13} /></button>
-                            <button onClick={() => setCompletingId(null)} className="text-body hover:text-amber"><X size={13} /></button>
+                            <button type="button" aria-label={`Complete sale for ${deal.item}`} onClick={() => completeDeal(deal.id)} className="text-safe hover:text-safe"><Check size={13} /></button>
+                            <button type="button" aria-label={`Cancel sale for ${deal.item}`} onClick={() => setCompletingId(null)} className="text-body hover:text-amber"><X size={13} /></button>
                           </div>
                         ) : (
                           <>

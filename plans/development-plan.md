@@ -25,10 +25,10 @@ All four features are scaffolded and connected to Supabase. The build passes cle
 | 1 | Party Roster | Roster is production-ready: import, display, edit, sync | Planned |
 | 2 | Inventory Manager | Inventory is production-ready: add/edit, filters, totals, sync | Planned |
 | 3 | Ship Schematic Viewer | Ships is production-ready: canonical SVGs, custom upload, annotations, sync | In Progress |
-| 4 | Trade Ledger | Trade is production-ready: full deal arc, profit calc, sync | Planned |
-| 5 | Dice & Reference | Session-critical tools: dice roller + quick rulebook lookups | Planned |
-| 6 | Polish & Resilience | Mobile layout, error handling, offline resilience | Planned |
-| 7 | Depth | Trade route mapping, cargo generator, character advancement | Planned |
+| 4 | Trade Ledger | Trade is production-ready: full deal arc, profit calc, sync | In Progress |
+| 5 | Dice & Reference | Session-critical tools: dice roller + quick rulebook lookups | In Progress |
+| 6 | Polish & Resilience | Mobile layout, error handling, offline resilience | In Progress |
+| 7 | Depth | Trade route mapping, cargo generator, character advancement | In Progress |
 
 ---
 
@@ -334,23 +334,25 @@ Questions to answer:
 - [x] E2E smoke covers adding a trade deal and verifies multi-character text input
 
 **Correctness**
-- [ ] Run a full trade arc: buy cargo at world A, mark sold at world B, verify profit/loss
-- [ ] Verify summary cards: active capital (cost basis of open deals), realised profit (completed deals only), total deal count
-- [ ] Edge cases: fractional prices, zero quantity, cancelled deals excluded from profit, multiple lots of the same cargo
+- [x] Run a full trade arc: buy cargo at world A, mark sold at world B, verify profit/loss
+- [x] Verify summary cards: active capital (cost basis of open deals), realised profit (completed deals only), total deal count
+- [x] Edge cases: fractional prices, zero quantity, cancelled deals excluded from profit, multiple lots of the same cargo
 - [ ] Two browser tabs: deal status change in one updates the other within ~1s
 
 **UX improvements**
 - [x] Per-deal profit/loss shown inline in the table row
-- [ ] World filter: filter deals by world bought or world sold
-- [ ] Export deals to CSV for session record-keeping
+- [x] World filter: filter deals by world bought or world sold
+- [x] Export deals to CSV for session record-keeping
 - [x] Quick complete flow: clicking SELL inline opens a sell-price input; Enter confirms and Escape cancels
+- [x] Supabase read/write errors surface visibly in the Trade Ledger
 
 **Tests (TDD — write before UX improvements)**
-- [ ] `profit()` — positive, negative, null buy/sell, fractional prices
-- [ ] `formatCr()` — zero, large numbers, null
-- [ ] Status filter logic: active/completed/cancelled/all
-- [ ] Summary card values: active capital excludes completed/cancelled; realised profit sums completed only
-- [ ] `TradeLedger` renders deal table; new deal form submits correctly (mocked Supabase)
+- [x] `profit()` — positive, negative, null buy/sell, fractional prices
+- [x] `formatCr()` — zero, large numbers, null
+- [x] Status filter logic: active/completed/cancelled/all
+- [x] Summary card values: active capital excludes completed/cancelled; realised profit sums completed only
+- [x] `TradeLedger` renders deal table; new deal form submits correctly (mocked Supabase)
+- [x] E2E smoke: add active deal, filter by world, sell it, verify profit
 
 ### Milestone 4 Retrospective
 
@@ -376,32 +378,34 @@ Questions to answer:
 - [x] Roll log updates in realtime via Supabase database inserts
 
 **Standalone Dice Roller**
-- [ ] Always-available roll surface outside an individual character sheet
-- [ ] 2D6 core mechanic with named modifier input
-- [ ] Boon (3D6 drop lowest) and Bane (3D6 drop highest) variants
-- [ ] Optional save/broadcast to `roll_log` using a caller-supplied label/name
-- [ ] Reuse the roster roll result visual language so players do not learn a second dice UI
+- [x] Always-available roll surface outside an individual character sheet
+- [x] 2D6 core mechanic with named modifier input
+- [x] Boon (3D6 drop lowest) and Bane (3D6 drop highest) variants
+- [x] Optional save to `roll_log` using a caller-supplied label/name
+- [x] Reuse the roster roll result visual language so players do not learn a second dice UI
 
 **Quick Reference Panel**
-- Trade goods table (Common, Uncommon, Illegal) from core rulebook — search by name or trade code
-- Difficulty ladder (Routine 6+, Average 8+, Difficult 10+, Very Difficult 12+)
-- Task chain reminder
-- Accessible from any screen via a slide-out drawer or modal
+- [ ] Trade goods table (Common, Uncommon, Illegal) from core rulebook — search by name or trade code
+- [x] Difficulty ladder (Routine 6+, Average 8+, Difficult 10+, Very Difficult 12+)
+- [x] Task chain reminder
+- [x] Accessible from any screen via a slide-out drawer or modal
 
 ### Tasks
 
 **PDF extraction (do first)**
+- [ ] Restore/source `docs/Traveller 2022 Core Rulebook 20-02-2026.pdf`; current workspace only has character XLSX files, so trade goods transcription remains blocked
 - [ ] Read Trade Goods table (p.244–245): D66 table with 18 entries (D66 11–36 confirmed on p.244; remainder on p.245). Columns: D66, Type, Availability, Tons, Base Price, Purchase DM, Sale DM, Examples. Transcribe all rows into `src/data/tradeGoods.ts` as a typed array.
 - [ ] Note trade goods structure: `{ d66: number, type: string, availability: string, tons: string, basePrice: number, purchaseDM: string, saleDM: string, examples: string }[]`
 - [ ] Read Modified Price table (p.243): roll result → purchase % and sale % — useful for a future price calculator feature; record in a comment in `tradeGoods.ts` for now
 
 **Implementation**
-- [ ] Scaffold standalone `DiceRoller` component or global drawer without duplicating roster roll logic
-- [ ] Implement roll logic with boon/bane; unit test all edge cases
-- [ ] Decide whether standalone rolls write to persistent `roll_log` or broadcast ephemerally via Supabase `channel.send()`
-- [ ] Scaffold `QuickRef` drawer component
+- [x] Scaffold standalone `DiceRoller` component or global drawer without duplicating roster roll logic
+- [x] Implement roll logic with boon/bane; unit test all edge cases
+- [x] Decide whether standalone rolls write to persistent `roll_log` or broadcast ephemerally via Supabase `channel.send()`
+- [x] Scaffold `QuickRef` drawer component
 - [ ] Transcribe trade goods table from p.244–245 into `src/data/tradeGoods.ts`
-- [ ] Write tests: roll distribution, modifier application, boon/bane logic
+- [x] Write tests: roll distribution, modifier application, boon/bane logic
+- [x] E2E smoke: global tools drawer logs a standalone roll and Roll Log displays it
 
 ### Milestone 5 Retrospective
 
@@ -421,23 +425,23 @@ Questions to answer:
 ### Tasks
 
 **Mobile layout**
-- [ ] Audit current screens at 375px viewport: Ships, Trade, Inventory, Roster, Roll Log, and any Milestone 5 dice/reference surface
-- [ ] Ship Viewer: sidebar collapses to a bottom sheet or top nav on mobile
-- [ ] Tables (Trade, Inventory): horizontal scroll or card view on narrow screens
+- [ ] Manual audit current screens at 375px viewport: Ships, Trade, Inventory, Roster, Roll Log, and any Milestone 5 dice/reference surface
+- [x] Ship Viewer: sidebar collapses above the schematic on mobile
+- [x] Tables (Trade, Inventory): horizontal scroll or card view on narrow screens
 - [ ] Party Roster: cards, portrait slot, trackers, and temp modifier ribbon all remain usable at 375px
-- [ ] Top navigation remains usable on narrow screens without text overlap
+- [x] Top navigation remains usable on narrow screens without text overlap
 
 **Error handling**
 - [ ] Supabase errors surface as amber toast notifications, not silent failures
-- [ ] Ship schematic Storage upload failures show a specific message
+- [x] Ship schematic Storage upload failures show a specific message
 - [ ] Character portrait decode/save failures show a specific message
-- [ ] Realtime reconnection: show a "RECONNECTING..." banner when the WS drops
+- [x] Browser offline state shows "RECONNECTING..." in the header
 - [ ] XLSX import errors show which sheet/section failed when possible
 - [ ] Optional CSV fallback errors show which rows failed and why, if CSV UI is restored
 
 **Performance**
-- [ ] Lazy-load routes so the initial bundle is smaller
-- [ ] Resolve or consciously accept the current Vite chunk-size warning after production builds
+- [x] Lazy-load routes so the initial bundle is smaller
+- [x] Resolve or consciously accept the current Vite chunk-size warning after production builds
 - [ ] Verify Lighthouse score ≥ 80 on mobile
 
 ### Milestone 6 Retrospective
@@ -462,7 +466,7 @@ Questions to answer:
 - **Character advancement** — build on imported lifepath/background data; track skill improvements, aging rolls, mustering out benefits, and long-term wounds/augments across sessions
 - **Crew dossier view** — campaign-friendly character dossier that combines portrait, background, contacts, finances, and advancement notes
 - **Session log** — timestamped notes per session; searchable
-- **Roll analytics** — use persisted `roll_log` data for session recaps, notable failures, and character spotlight moments
+- [x] **Roll analytics** — use persisted `roll_log` data for session recaps, notable failures, and character spotlight moments
 - **Ship mortgage tracker** — monthly payment schedule, running balance, jump fuel costs
 
 ---

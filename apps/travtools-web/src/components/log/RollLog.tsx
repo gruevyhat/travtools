@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useSupabase } from '../../lib/supabaseContext';
 import { RollLogEntry } from '../../types';
+import { rollAnalytics } from '../../lib/rollAnalytics';
 
 function fmtDM(n: number): string {
   return n >= 0 ? `+${n}` : String(n);
@@ -40,11 +41,29 @@ export default function RollLog() {
     return () => { client.removeChannel(channel); };
   }, [client, load]);
 
+  const analytics = rollAnalytics(entries);
+
   return (
     <div className="p-4 h-full overflow-auto space-y-3">
       <div className="text-body text-xs tracking-wider">
         {entries.length} ROLL{entries.length !== 1 ? 'S' : ''} RECORDED
       </div>
+
+      {entries.length > 0 && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {[
+            { label: 'SUCCESS RATE', value: `${analytics.successRate}%`, color: analytics.successRate >= 50 ? 'text-safe' : 'text-alert' },
+            { label: 'AVG EFFECT', value: fmtDM(Math.round(analytics.averageEffect * 10) / 10), color: analytics.averageEffect >= 0 ? 'text-safe' : 'text-alert' },
+            { label: 'BEST EFFECT', value: analytics.best ? fmtDM(analytics.best.effect) : '--', color: 'text-cyan-trav' },
+            { label: 'FAILURES', value: String(analytics.failureCount), color: analytics.failureCount === 0 ? 'text-safe' : 'text-alert' },
+          ].map(({ label, value, color }) => (
+            <div key={label} className="panel p-3">
+              <div className="label mb-1">{label}</div>
+              <div className={`text-lg font-mono font-bold ${color}`}>{value}</div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {entries.length === 0 && (
         <div className="text-center py-16 text-body/40 text-sm space-y-2">

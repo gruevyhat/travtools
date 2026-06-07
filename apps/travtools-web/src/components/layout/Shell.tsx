@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { Ship, TrendingUp, Package, Users, ScrollText, Wifi, WifiOff, Settings } from 'lucide-react';
+import { Dices, Ship, TrendingUp, Package, Users, ScrollText, Wifi, WifiOff, Settings } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
+import GlobalToolsDrawer from '../tools/GlobalToolsDrawer';
 
 const IMPERIAL_OFFSET = 1_000_000; // rough offset to 57th century Imperial years
 function imperialDate() {
@@ -21,28 +23,41 @@ const NAV_ITEMS = [
 
 export default function Shell() {
   const { isConfigured, reset } = useSupabase();
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [online, setOnline] = useState(() => navigator.onLine);
+
+  useEffect(() => {
+    const markOnline = () => setOnline(true);
+    const markOffline = () => setOnline(false);
+    window.addEventListener('online', markOnline);
+    window.addEventListener('offline', markOffline);
+    return () => {
+      window.removeEventListener('online', markOnline);
+      window.removeEventListener('offline', markOffline);
+    };
+  }, []);
 
   return (
     <div className="h-full flex flex-col bg-void scanlines">
       {/* Top nav */}
       <header className="border-b border-steel bg-panel flex-shrink-0">
-        <div className="flex items-center h-14 px-4 gap-6">
+        <div className="flex flex-wrap items-center min-h-14 px-3 md:px-4 py-2 md:py-0 gap-3 md:gap-6">
           {/* Brand */}
           <div className="flex items-center gap-2 select-none">
             <Ship size={18} className="text-amber" />
-            <span className="text-amber font-display font-bold text-lg tracking-[0.2em] glow-amber">
+            <span className="text-amber font-display font-bold text-base md:text-lg tracking-[0.2em] glow-amber">
               TRAVTOOLS
             </span>
           </div>
 
           {/* Module tabs */}
-          <nav className="flex items-stretch h-full gap-1 flex-1">
+          <nav className="order-3 md:order-none flex items-stretch h-10 md:h-14 gap-1 flex-1 w-full md:w-auto overflow-x-auto">
             {NAV_ITEMS.map(({ to, label, Icon }) => (
               <NavLink
                 key={to}
                 to={to}
                 className={({ isActive }) =>
-                  `flex items-center gap-2 px-4 text-xs tracking-widest font-mono border-b-2 transition-colors ${
+                  `flex items-center gap-2 px-3 md:px-4 text-xs tracking-widest font-mono border-b-2 transition-colors whitespace-nowrap ${
                     isActive
                       ? 'border-amber text-amber'
                       : 'border-transparent text-body hover:text-bright hover:border-steel'
@@ -56,12 +71,25 @@ export default function Shell() {
           </nav>
 
           {/* Status bar */}
-          <div className="flex items-center gap-4 text-xs font-mono">
+          <div className="ml-auto flex items-center gap-2 md:gap-4 text-xs font-mono">
+            <button
+              type="button"
+              onClick={() => setToolsOpen(true)}
+              className="btn-steel flex items-center gap-1 text-xs py-1"
+            >
+              <Dices size={13} />
+              TOOLS
+            </button>
             <span className="text-steel tracking-widest hidden md:block">
               IMP DATE: {imperialDate()}
             </span>
             <div className="flex items-center gap-1.5">
-              {isConfigured ? (
+              {!online ? (
+                <>
+                  <WifiOff size={13} className="text-amber" />
+                  <span className="text-amber">RECONNECTING</span>
+                </>
+              ) : isConfigured ? (
                 <>
                   <Wifi size={13} className="text-safe" />
                   <span className="text-safe">ONLINE</span>
@@ -90,6 +118,8 @@ export default function Shell() {
       <main className="flex-1 overflow-auto">
         <Outlet />
       </main>
+
+      <GlobalToolsDrawer open={toolsOpen} onClose={() => setToolsOpen(false)} />
     </div>
   );
 }

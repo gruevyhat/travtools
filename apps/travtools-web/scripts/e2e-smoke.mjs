@@ -420,6 +420,37 @@ async function checkShipInteractions(browser, baseUrl) {
   };
 }
 
+async function checkGlobalTools(browser, baseUrl) {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  await context.addInitScript(() => {
+    localStorage.setItem('tt_sb_url', 'https://smoke.supabase.co');
+    localStorage.setItem('tt_sb_key', 'smoke-key');
+  });
+
+  const page = await context.newPage();
+  const errors = collectPageErrors(page);
+
+  await installSupabaseMock(page);
+  await page.goto(`${baseUrl}#/ships`, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'TOOLS' }).click();
+  await replaceByTyping(page.getByLabel('CHECK LABEL'), 'Standalone Astrogation');
+  await replaceByTyping(page.getByLabel('Standalone Modifier'), '+2');
+  await page.getByRole('button', { name: 'ROLL 2D6' }).click();
+  await page.getByText('Logged to Roll Log').waitFor({ state: 'visible', timeout: 5_000 });
+  await page.getByLabel('Close session tools').click();
+
+  await page.goto(`${baseUrl}#/log`, { waitUntil: 'domcontentloaded' });
+  await page.getByText('Standalone Astrogation CHECK').waitFor({ state: 'visible', timeout: 5_000 });
+
+  await context.close();
+
+  return {
+    route: 'global-tools',
+    ok: true,
+    errors,
+  };
+}
+
 async function replaceByTyping(locator, value) {
   await locator.press('ControlOrMeta+A');
   await locator.type(value);
@@ -460,10 +491,18 @@ async function checkFormTyping(browser, baseUrl) {
   await page.goto(`${baseUrl}#/trade`, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'NEW DEAL' }).click();
   await replaceByTyping(page.getByLabel('Item / Cargo'), 'Advanced Electronics');
+  await replaceByTyping(page.getByLabel('Buy Price (Cr/unit)'), '1000');
   await replaceByTyping(page.getByLabel('World Bought'), 'Regina');
   await replaceByTyping(page.getByLabel('Notes'), 'Multi parsec arbitrage');
   await page.getByRole('button', { name: 'SAVE' }).click();
   await page.getByText('Advanced Electronics').waitFor({ state: 'visible', timeout: 5_000 });
+  await page.getByLabel('World Filter').fill('Regina');
+  await page.getByText('Advanced Electronics').waitFor({ state: 'visible', timeout: 5_000 });
+  const tradeRow = page.locator('tr', { hasText: 'Advanced Electronics' });
+  await tradeRow.getByRole('button', { name: 'SELL' }).click();
+  await tradeRow.getByPlaceholder('Sell price').type('1500');
+  await tradeRow.getByPlaceholder('Sell price').press('Enter');
+  await tradeRow.getByText('+Cr 500').waitFor({ state: 'visible', timeout: 5_000 });
 
   await page.goto(`${baseUrl}#/inventory`, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'ADD ITEM' }).click();
@@ -503,6 +542,7 @@ async function main() {
     const results = [
       await checkLanding(browser, baseUrl),
       await checkShipInteractions(browser, baseUrl),
+      await checkGlobalTools(browser, baseUrl),
       await checkRosterInteractions(browser, baseUrl),
       await checkFormTyping(browser, baseUrl),
       await checkConfiguredRoute(browser, baseUrl, 'log', 'ROLL LOG'),

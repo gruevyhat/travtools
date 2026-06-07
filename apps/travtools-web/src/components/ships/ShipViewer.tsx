@@ -247,9 +247,9 @@ export default function ShipViewer() {
   const canonicalAdded = new Set(ships.filter(s => s.schematic_type === 'canonical').map(s => s.canonical_id));
 
   return (
-    <div className="h-full flex">
+    <div className="h-full flex flex-col md:flex-row">
       {/* Sidebar */}
-      <aside className="w-64 flex-shrink-0 border-r border-steel flex flex-col bg-panel">
+      <aside className="w-full md:w-64 max-h-72 md:max-h-none flex-shrink-0 border-b md:border-b-0 md:border-r border-steel flex flex-col bg-panel">
         <div className="panel-header flex items-center justify-between">
           <span>SHIPS</span>
           <button
