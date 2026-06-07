@@ -254,7 +254,7 @@ function CharacterPortrait({
     setFailed(false);
   }, [src]);
 
-  const boxClass = size === 'sm' ? 'w-12 h-16' : 'w-24 h-32';
+  const boxClass = size === 'sm' ? 'w-12 h-16' : 'w-48 h-64';
   const textClass = size === 'sm' ? 'text-[8px]' : 'text-[10px]';
   const iconSize = size === 'sm' ? 9 : 12;
 
@@ -648,11 +648,12 @@ const PHYS_FIELDS = [
 ];
 
 function CharDetailContent({
-  char, onRollSave, onStatAdjust,
+  char, onRollSave, onStatAdjust, indentTopRows = false,
 }: {
   char: Character;
   onRollSave: (charName: string, result: { d1: number; d2: number; charDM: number; skillLevel: number; bonusDM: number; total: number }, checkLabel: string, difficulty: number) => void;
   onStatAdjust: (id: string, patch: Partial<Character>) => void;
+  indentTopRows?: boolean;
 }) {
   const [rollTarget, setRollTarget] = useState<RollTarget | null>(null);
   const [damageInput, setDamageInput] = useState('');
@@ -845,6 +846,240 @@ function CharDetailContent({
     setPsiInput('');
   }
 
+  const profileSection = profileRows.length > 0 ? (
+    <DetailSection title="PROFILE" className="order-1">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-xs font-mono">
+        {profileRows.map(([label, value]) => (
+          <div key={label} className="min-w-0">
+            <span className="text-body/35">{label}</span>
+            <span className="text-body/70 ml-2 break-words">{String(value)}</span>
+          </div>
+        ))}
+      </div>
+    </DetailSection>
+  ) : null;
+
+  const characteristicsSection = (
+    <div className="order-2">
+      <div className="flex items-center justify-between mb-2">
+        <div className="label">CHARACTERISTICS</div>
+        <div className="flex gap-1.5">
+          <button onClick={() => setTrackingTempMods(v => !v)}
+            className={`text-[10px] font-mono px-2 py-0.5 border transition-colors ${
+              trackingTempMods
+                ? 'border-safe/60 text-safe hover:border-steel hover:text-body/60'
+                : 'border-steel/40 text-body/40 hover:border-safe/50 hover:text-safe/70'
+            }`}>
+            {trackingTempMods ? 'HIDE MODS' : 'TEMP MODS'}
+          </button>
+          {hasPsionics && psiMax > 0 && (
+            <button onClick={togglePsi}
+              className={`text-[10px] font-mono px-2 py-0.5 border transition-colors ${
+                trackingPsi
+                  ? 'border-cyan-dim text-cyan-trav hover:border-steel hover:text-body/60'
+                  : 'border-steel/40 text-body/40 hover:border-cyan-dim hover:text-cyan-trav'
+              }`}>
+              {trackingPsi ? 'RESET PSI' : 'TRACK PSI'}
+            </button>
+          )}
+          <button onClick={toggleHealth}
+            className={`text-[10px] font-mono px-2 py-0.5 border transition-colors ${
+              trackingHealth
+                ? 'border-alert/60 text-alert hover:border-steel hover:text-body/60'
+                : 'border-steel/40 text-body/40 hover:border-amber/50 hover:text-amber/70'
+            }`}>
+            {trackingHealth ? 'RESET HEALTH' : 'TRACK HEALTH'}
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-1.5">
+        {allDisplayStats.map(key => {
+          const baseVal = char[key] as number | null;
+          const cv = curVal(key);
+          const ev = effectiveVal(key);
+          const mod = tempMod(key);
+          const isPhys = key === 'str' || key === 'dex' || key === 'end_stat';
+          const isPsiStat = key === 'psi';
+          const isExtra = EXTRA_STATS.includes(key);
+          const isTracked = (isPhys && trackingHealth) || (isPsiStat && trackingPsi);
+          const isReduced = (isTracked && cv !== null && baseVal !== null && cv < baseVal) || mod < 0;
+          const isBoosted = mod > 0 && !isReduced;
+          const isZero = ev === 0;
+          const dm = statDM(ev);
+
+          const borderClass = isZero
+            ? 'border-alert'
+            : isReduced
+              ? 'border-amber'
+              : isBoosted ? 'border-safe/60 hover:border-safe'
+              : isPsiStat ? 'border-cyan-dim/60 hover:border-cyan-trav/60'
+              : isExtra ? 'border-steel/30 hover:border-amber/50'
+              : 'border-steel/40 hover:border-amber/60';
+
+          const labelClass = isZero ? 'text-alert' : isReduced ? 'text-amber' :
+            isBoosted ? 'text-safe' :
+            isPsiStat ? 'text-cyan-trav/70' : isExtra ? 'text-body/50' : 'text-body';
+
+          const valClass = isZero ? 'text-alert' : isReduced ? 'text-amber' :
+            isBoosted ? 'text-safe' :
+            isPsiStat ? 'text-cyan-trav' : isExtra ? 'text-amber/70' : 'text-amber';
+
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => openStatRoll(key)}
+              aria-label={`Roll ${STAT_LABELS[key]} check`}
+              title={`Roll ${STAT_LABELS[key]} check`}
+              className={`text-center border transition-colors py-1.5 px-2.5 group min-w-[4rem] ${borderClass}`}
+            >
+              <div className={`text-xs ${labelClass} group-hover:text-amber/80`}>{STAT_LABELS[key]}</div>
+              <div className={`font-mono text-base font-bold ${valClass}`}>
+                {toHex(ev)}
+              </div>
+              {isTracked && (
+                <div className="text-[10px] text-body/35 font-mono leading-tight">
+                  {toHex(cv)}/{toHex(baseVal)}
+                </div>
+              )}
+              <div className="text-xs text-body/40">{fmtDM(dm)}</div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Temporary modifier controls */}
+      {trackingTempMods && (
+        <div className="mt-3 space-y-2 border-t border-steel/40 pt-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="label text-safe/80">TEMP MODIFIERS</div>
+            {hasTempMods && (
+              <button onClick={resetTempMods}
+                className="text-[10px] font-mono px-2 py-0.5 border border-steel/40 text-body/40 hover:border-amber/60 hover:text-amber transition-colors">
+                RESET
+              </button>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {allDisplayStats.map(key => {
+              const mod = tempMod(key);
+              return (
+                <div key={key} className="flex items-center border border-steel/40 font-mono text-[10px]">
+                  <span className="w-9 px-1.5 py-1 text-body/50 text-center">{STAT_LABELS[key]}</span>
+                  <button
+                    type="button"
+                    aria-label={`Decrease ${STAT_LABELS[key]} temporary modifier`}
+                    disabled={curVal(key) === null || mod <= TEMP_MOD_MIN}
+                    onClick={() => adjustTempMod(key, -1)}
+                    className="w-6 h-6 border-l border-steel/30 flex items-center justify-center text-body/40 hover:text-amber hover:bg-steel/20 disabled:opacity-20 disabled:cursor-not-allowed"
+                  >
+                    <Minus size={8} />
+                  </button>
+                  <span className={`w-8 text-center ${mod > 0 ? 'text-safe' : mod < 0 ? 'text-amber' : 'text-body/30'}`}>
+                    {fmtDM(mod)}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`Increase ${STAT_LABELS[key]} temporary modifier`}
+                    disabled={curVal(key) === null || mod >= TEMP_MOD_MAX}
+                    onClick={() => adjustTempMod(key, 1)}
+                    className="w-6 h-6 border-l border-steel/30 flex items-center justify-center text-body/40 hover:text-safe hover:bg-steel/20 disabled:opacity-20 disabled:cursor-not-allowed"
+                  >
+                    <Plus size={8} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Health tracking controls */}
+      {trackingHealth && (
+        <div className="mt-3 space-y-2 border-t border-steel/40 pt-3">
+          {pendingOverflow !== null ? (
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-alert font-mono">Overflow {pendingOverflow} dmg →</span>
+              <button onClick={() => applyOverflow('str_cur')}
+                className="px-3 py-1 border border-alert text-alert hover:bg-alert/10 font-mono transition-colors">
+                STR
+              </button>
+              <button onClick={() => applyOverflow('dex_cur')}
+                className="px-3 py-1 border border-alert text-alert hover:bg-alert/10 font-mono transition-colors">
+                DEX
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <input type="number" min={1} placeholder="Damage…"
+                value={damageInput}
+                onChange={e => setDamageInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') applyDamage(); }}
+                className="input text-xs w-28 py-1" />
+              <button onClick={applyDamage} className="btn-danger text-xs py-1">APPLY</button>
+              <span className="text-body/30 text-[10px] font-mono ml-1">END first, then STR or DEX</span>
+            </div>
+          )}
+          <div className="flex items-center gap-4">
+            {PHYS_FIELDS.map(({ key: fk, cur: ck, label: fl }) => {
+              const max = char[fk] as number ?? 0;
+              const cv2 = (char[ck] as number | null) ?? max;
+              return (
+                <div key={fl} className="flex items-center gap-1 text-xs font-mono">
+                  <span className="text-body/50 w-6">{fl}</span>
+                  <button onClick={() => adjustStat(ck, max, -1)} disabled={cv2 <= 0}
+                    className="w-5 h-5 border border-steel/60 text-body/50 hover:border-alert hover:text-alert disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center">
+                    <Minus size={8} />
+                  </button>
+                  <span className="text-amber w-8 text-center">{cv2}/{max}</span>
+                  <button onClick={() => adjustStat(ck, max, 1)} disabled={cv2 >= max}
+                    className="w-5 h-5 border border-steel/60 text-body/50 hover:border-safe hover:text-safe disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center">
+                    <Plus size={8} />
+                  </button>
+                </div>
+              );
+            })}
+            <span className={`text-xs font-mono ml-auto ${status.color}`}>{status.label}</span>
+          </div>
+          <div className="text-[10px] text-body/30 font-mono">
+            Natural healing: 1D+END DM hp/day (rest) · Unconscious when 2 stats at 0 · Dead when all 3 at 0
+          </div>
+        </div>
+      )}
+
+      {/* PSI tracking controls */}
+      {trackingPsi && hasPsionics && psiMax > 0 && (
+        <div className="mt-3 space-y-2 border-t border-steel/40 pt-3">
+          <div className="flex items-center gap-2">
+            <input type="number" min={1} placeholder="PSI cost…"
+              value={psiInput}
+              onChange={e => setPsiInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') applyPsiCost(); }}
+              className="input text-xs w-28 py-1" />
+            <button onClick={applyPsiCost} className="btn-steel text-xs py-1">SPEND</button>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1 text-xs font-mono">
+              <span className="text-cyan-trav/70 w-6">PSI</span>
+              <button onClick={() => adjustStat('psi_cur', psiMax, -1)} disabled={psiCur <= 0}
+                className="w-5 h-5 border border-steel/60 text-body/50 hover:border-alert hover:text-alert disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center">
+                <Minus size={8} />
+              </button>
+              <span className="text-cyan-trav w-8 text-center">{psiCur}/{psiMax}</span>
+              <button onClick={() => adjustStat('psi_cur', psiMax, 1)} disabled={psiCur >= psiMax}
+                className="w-5 h-5 border border-steel/60 text-body/50 hover:border-safe hover:text-safe disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center">
+                <Plus size={8} />
+              </button>
+            </div>
+            {psiCur === 0 && <span className="text-alert text-xs font-mono">EXHAUSTED</span>}
+          </div>
+          <div className="text-[10px] text-body/30 font-mono">Recovers with rest · cost = talent level + power cost</div>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <>
       {rollTarget && (
@@ -858,237 +1093,18 @@ function CharDetailContent({
       )}
 
       <div className="flex flex-col gap-4">
-        {/* Characteristics + track toggles */}
-        <div className="order-2">
-          <div className="flex items-center justify-between mb-2">
-            <div className="label">CHARACTERISTICS</div>
-            <div className="flex gap-1.5">
-              <button onClick={() => setTrackingTempMods(v => !v)}
-                className={`text-[10px] font-mono px-2 py-0.5 border transition-colors ${
-                  trackingTempMods
-                    ? 'border-safe/60 text-safe hover:border-steel hover:text-body/60'
-                    : 'border-steel/40 text-body/40 hover:border-safe/50 hover:text-safe/70'
-                }`}>
-                {trackingTempMods ? 'HIDE MODS' : 'TEMP MODS'}
-              </button>
-              {hasPsionics && psiMax > 0 && (
-                <button onClick={togglePsi}
-                  className={`text-[10px] font-mono px-2 py-0.5 border transition-colors ${
-                    trackingPsi
-                      ? 'border-cyan-dim text-cyan-trav hover:border-steel hover:text-body/60'
-                      : 'border-steel/40 text-body/40 hover:border-cyan-dim hover:text-cyan-trav'
-                  }`}>
-                  {trackingPsi ? 'RESET PSI' : 'TRACK PSI'}
-                </button>
-              )}
-              <button onClick={toggleHealth}
-                className={`text-[10px] font-mono px-2 py-0.5 border transition-colors ${
-                  trackingHealth
-                    ? 'border-alert/60 text-alert hover:border-steel hover:text-body/60'
-                    : 'border-steel/40 text-body/40 hover:border-amber/50 hover:text-amber/70'
-                }`}>
-                {trackingHealth ? 'RESET HEALTH' : 'TRACK HEALTH'}
-              </button>
+        {indentTopRows ? (
+          <div className="order-1">
+            <div className="flex flex-col gap-4 lg:pr-56">
+              {profileSection}
+              {characteristicsSection}
             </div>
           </div>
-
-          <div className="flex flex-wrap gap-1.5">
-            {allDisplayStats.map(key => {
-              const baseVal = char[key] as number | null;
-              const cv = curVal(key);
-              const ev = effectiveVal(key);
-              const mod = tempMod(key);
-              const isPhys = key === 'str' || key === 'dex' || key === 'end_stat';
-              const isPsiStat = key === 'psi';
-              const isExtra = EXTRA_STATS.includes(key);
-              const isTracked = (isPhys && trackingHealth) || (isPsiStat && trackingPsi);
-              const isReduced = (isTracked && cv !== null && baseVal !== null && cv < baseVal) || mod < 0;
-              const isBoosted = mod > 0 && !isReduced;
-              const isZero = ev === 0;
-              const dm = statDM(ev);
-
-              const borderClass = isZero
-                ? 'border-alert'
-                : isReduced
-                  ? 'border-amber'
-                  : isBoosted ? 'border-safe/60 hover:border-safe'
-                  : isPsiStat ? 'border-cyan-dim/60 hover:border-cyan-trav/60'
-                  : isExtra ? 'border-steel/30 hover:border-amber/50'
-                  : 'border-steel/40 hover:border-amber/60';
-
-              const labelClass = isZero ? 'text-alert' : isReduced ? 'text-amber' :
-                isBoosted ? 'text-safe' :
-                isPsiStat ? 'text-cyan-trav/70' : isExtra ? 'text-body/50' : 'text-body';
-
-              const valClass = isZero ? 'text-alert' : isReduced ? 'text-amber' :
-                isBoosted ? 'text-safe' :
-                isPsiStat ? 'text-cyan-trav' : isExtra ? 'text-amber/70' : 'text-amber';
-
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => openStatRoll(key)}
-                  aria-label={`Roll ${STAT_LABELS[key]} check`}
-                  title={`Roll ${STAT_LABELS[key]} check`}
-                  className={`text-center border transition-colors py-1.5 px-2.5 group min-w-[4rem] ${borderClass}`}
-                >
-                  <div className={`text-xs ${labelClass} group-hover:text-amber/80`}>{STAT_LABELS[key]}</div>
-                  <div className={`font-mono text-base font-bold ${valClass}`}>
-                    {toHex(ev)}
-                  </div>
-                  {isTracked && (
-                    <div className="text-[10px] text-body/35 font-mono leading-tight">
-                      {toHex(cv)}/{toHex(baseVal)}
-                    </div>
-                  )}
-                  <div className="text-xs text-body/40">{fmtDM(dm)}</div>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Temporary modifier controls */}
-          {trackingTempMods && (
-            <div className="mt-3 space-y-2 border-t border-steel/40 pt-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="label text-safe/80">TEMP MODIFIERS</div>
-                {hasTempMods && (
-                  <button onClick={resetTempMods}
-                    className="text-[10px] font-mono px-2 py-0.5 border border-steel/40 text-body/40 hover:border-amber/60 hover:text-amber transition-colors">
-                    RESET
-                  </button>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {allDisplayStats.map(key => {
-                  const mod = tempMod(key);
-                  return (
-                    <div key={key} className="flex items-center border border-steel/40 font-mono text-[10px]">
-                      <span className="w-9 px-1.5 py-1 text-body/50 text-center">{STAT_LABELS[key]}</span>
-                      <button
-                        type="button"
-                        aria-label={`Decrease ${STAT_LABELS[key]} temporary modifier`}
-                        disabled={curVal(key) === null || mod <= TEMP_MOD_MIN}
-                        onClick={() => adjustTempMod(key, -1)}
-                        className="w-6 h-6 border-l border-steel/30 flex items-center justify-center text-body/40 hover:text-amber hover:bg-steel/20 disabled:opacity-20 disabled:cursor-not-allowed"
-                      >
-                        <Minus size={8} />
-                      </button>
-                      <span className={`w-8 text-center ${mod > 0 ? 'text-safe' : mod < 0 ? 'text-amber' : 'text-body/30'}`}>
-                        {fmtDM(mod)}
-                      </span>
-                      <button
-                        type="button"
-                        aria-label={`Increase ${STAT_LABELS[key]} temporary modifier`}
-                        disabled={curVal(key) === null || mod >= TEMP_MOD_MAX}
-                        onClick={() => adjustTempMod(key, 1)}
-                        className="w-6 h-6 border-l border-steel/30 flex items-center justify-center text-body/40 hover:text-safe hover:bg-steel/20 disabled:opacity-20 disabled:cursor-not-allowed"
-                      >
-                        <Plus size={8} />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Health tracking controls */}
-          {trackingHealth && (
-            <div className="mt-3 space-y-2 border-t border-steel/40 pt-3">
-              {pendingOverflow !== null ? (
-                <div className="flex items-center gap-2 text-xs">
-                  <span className="text-alert font-mono">Overflow {pendingOverflow} dmg →</span>
-                  <button onClick={() => applyOverflow('str_cur')}
-                    className="px-3 py-1 border border-alert text-alert hover:bg-alert/10 font-mono transition-colors">
-                    STR
-                  </button>
-                  <button onClick={() => applyOverflow('dex_cur')}
-                    className="px-3 py-1 border border-alert text-alert hover:bg-alert/10 font-mono transition-colors">
-                    DEX
-                  </button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <input type="number" min={1} placeholder="Damage…"
-                    value={damageInput}
-                    onChange={e => setDamageInput(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') applyDamage(); }}
-                    className="input text-xs w-28 py-1" />
-                  <button onClick={applyDamage} className="btn-danger text-xs py-1">APPLY</button>
-                  <span className="text-body/30 text-[10px] font-mono ml-1">END first, then STR or DEX</span>
-                </div>
-              )}
-              <div className="flex items-center gap-4">
-                {PHYS_FIELDS.map(({ key: fk, cur: ck, label: fl }) => {
-                  const max = char[fk] as number ?? 0;
-                  const cv2 = (char[ck] as number | null) ?? max;
-                  return (
-                    <div key={fl} className="flex items-center gap-1 text-xs font-mono">
-                      <span className="text-body/50 w-6">{fl}</span>
-                      <button onClick={() => adjustStat(ck, max, -1)} disabled={cv2 <= 0}
-                        className="w-5 h-5 border border-steel/60 text-body/50 hover:border-alert hover:text-alert disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center">
-                        <Minus size={8} />
-                      </button>
-                      <span className="text-amber w-8 text-center">{cv2}/{max}</span>
-                      <button onClick={() => adjustStat(ck, max, 1)} disabled={cv2 >= max}
-                        className="w-5 h-5 border border-steel/60 text-body/50 hover:border-safe hover:text-safe disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center">
-                        <Plus size={8} />
-                      </button>
-                    </div>
-                  );
-                })}
-                <span className={`text-xs font-mono ml-auto ${status.color}`}>{status.label}</span>
-              </div>
-              <div className="text-[10px] text-body/30 font-mono">
-                Natural healing: 1D+END DM hp/day (rest) · Unconscious when 2 stats at 0 · Dead when all 3 at 0
-              </div>
-            </div>
-          )}
-
-          {/* PSI tracking controls */}
-          {trackingPsi && hasPsionics && psiMax > 0 && (
-            <div className="mt-3 space-y-2 border-t border-steel/40 pt-3">
-              <div className="flex items-center gap-2">
-                <input type="number" min={1} placeholder="PSI cost…"
-                  value={psiInput}
-                  onChange={e => setPsiInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') applyPsiCost(); }}
-                  className="input text-xs w-28 py-1" />
-                <button onClick={applyPsiCost} className="btn-steel text-xs py-1">SPEND</button>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-1 text-xs font-mono">
-                  <span className="text-cyan-trav/70 w-6">PSI</span>
-                  <button onClick={() => adjustStat('psi_cur', psiMax, -1)} disabled={psiCur <= 0}
-                    className="w-5 h-5 border border-steel/60 text-body/50 hover:border-alert hover:text-alert disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center">
-                    <Minus size={8} />
-                  </button>
-                  <span className="text-cyan-trav w-8 text-center">{psiCur}/{psiMax}</span>
-                  <button onClick={() => adjustStat('psi_cur', psiMax, 1)} disabled={psiCur >= psiMax}
-                    className="w-5 h-5 border border-steel/60 text-body/50 hover:border-safe hover:text-safe disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center">
-                    <Plus size={8} />
-                  </button>
-                </div>
-                {psiCur === 0 && <span className="text-alert text-xs font-mono">EXHAUSTED</span>}
-              </div>
-              <div className="text-[10px] text-body/30 font-mono">Recovers with rest · cost = talent level + power cost</div>
-            </div>
-          )}
-        </div>
-
-        {profileRows.length > 0 && (
-          <DetailSection title="PROFILE" className="order-1">
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-xs font-mono">
-              {profileRows.map(([label, value]) => (
-                <div key={label} className="min-w-0">
-                  <span className="text-body/35">{label}</span>
-                  <span className="text-body/70 ml-2 break-words">{String(value)}</span>
-                </div>
-              ))}
-            </div>
-          </DetailSection>
+        ) : (
+          <>
+            {profileSection}
+            {characteristicsSection}
+          </>
         )}
 
         {homeworldRows.length > 0 && (
@@ -1995,50 +2011,50 @@ export default function PartyRoster() {
             <div className="p-4 max-w-2xl">{charForm}</div>
           ) : selectedChar ? (
             <div className="p-5">
-              <div className="flex items-start gap-5">
-                <div className="min-w-0 flex-1">
-                  {/* Character header */}
-                  <div className="flex items-start justify-between gap-4 mb-5 pb-4 border-b border-steel/50">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <div className="text-bright font-bold font-mono text-xl truncate">{charDisplayName(selectedChar)}</div>
-                        <CharacterActionsMenu
-                          onEdit={() => startEdit(selectedChar)}
-                          onDelete={() => deleteChar(selectedChar.id)}
-                          onRefreshXLSX={() => { setRefreshTargetId(selectedChar.id); refreshFileRef.current?.click(); }}
-                        />
-                      </div>
-                      <div className="text-xs text-body/50 mt-1 flex flex-wrap gap-x-2">
-                        {selectedChar.rank && <span className="text-amber">{selectedChar.rank}</span>}
-                        {selectedChar.career && <span>· {selectedChar.career}</span>}
-                        {selectedChar.homeworld && <span>· {selectedChar.homeworld}</span>}
-                        {selectedChar.player && <span className="text-steel">· [{selectedChar.player}]</span>}
-                      </div>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <div className="font-mono text-2xl text-amber tracking-widest glow-amber">{upp(selectedChar)}</div>
-                      <div className={`text-xs font-mono mt-0.5 ${physicalStatus(selectedChar).color}`}>
-                        {physicalStatus(selectedChar).label}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* key resets all local state (tracking, damage input, etc.) when switching characters */}
-                  <CharDetailContent
-                    key={selectedChar.id}
-                    char={selectedChar}
-                    onRollSave={saveRoll}
-                    onStatAdjust={handleStatAdjust}
-                  />
-                </div>
-                <aside className="w-32 flex-shrink-0 border-l border-steel/50 pl-4">
+              <div className="relative min-w-0">
+                <div className="absolute right-0 top-0 hidden lg:block">
                   <CharacterPortrait
                     char={selectedChar}
                     editable
                     uploading={uploadingPortraitId === selectedChar.id}
                     onUpload={file => uploadPortrait(selectedChar, file)}
                   />
-                </aside>
+                </div>
+
+                {/* Character header */}
+                <div className="flex items-start justify-between gap-4 mb-5 pb-4 border-b border-steel/50 lg:pr-56">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <div className="text-bright font-bold font-mono text-xl truncate">{charDisplayName(selectedChar)}</div>
+                      <CharacterActionsMenu
+                        onEdit={() => startEdit(selectedChar)}
+                        onDelete={() => deleteChar(selectedChar.id)}
+                        onRefreshXLSX={() => { setRefreshTargetId(selectedChar.id); refreshFileRef.current?.click(); }}
+                      />
+                    </div>
+                    <div className="text-xs text-body/50 mt-1 flex flex-wrap gap-x-2">
+                      {selectedChar.rank && <span className="text-amber">{selectedChar.rank}</span>}
+                      {selectedChar.career && <span>· {selectedChar.career}</span>}
+                      {selectedChar.homeworld && <span>· {selectedChar.homeworld}</span>}
+                      {selectedChar.player && <span className="text-steel">· [{selectedChar.player}]</span>}
+                    </div>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <div className="font-mono text-2xl text-amber tracking-widest glow-amber">{upp(selectedChar)}</div>
+                    <div className={`text-xs font-mono mt-0.5 ${physicalStatus(selectedChar).color}`}>
+                      {physicalStatus(selectedChar).label}
+                    </div>
+                  </div>
+                </div>
+
+                {/* key resets all local state (tracking, damage input, etc.) when switching characters */}
+                <CharDetailContent
+                  key={selectedChar.id}
+                  char={selectedChar}
+                  onRollSave={saveRoll}
+                  onStatAdjust={handleStatAdjust}
+                  indentTopRows
+                />
               </div>
             </div>
           ) : (
