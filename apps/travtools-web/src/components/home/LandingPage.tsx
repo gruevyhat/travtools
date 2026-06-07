@@ -153,7 +153,7 @@ export default function LandingPage() {
           </div>
 
           <div className="relative min-h-[24rem] flex items-end lg:items-center">
-            <div className="w-full border-y border-steel/70 bg-void/80 backdrop-blur-sm py-5">
+            <div className="w-full border border-steel/70 bg-void/80 backdrop-blur-sm py-5">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-0">
                 {MODULES.map(({ to, label, signal, Icon }) => (
                   <Link
