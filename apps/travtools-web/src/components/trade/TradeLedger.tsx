@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { Download, Plus, X, Check } from 'lucide-react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { Download, Plus, Search, Upload, X, Check } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
 import { TradeDeal } from '../../types';
 import {
@@ -10,6 +10,8 @@ import {
   sortDeals,
   tradeSummary,
 } from '../../lib/trade';
+import { downloadCsv, parseCsvRows } from '../../lib/csv';
+import { TRADE_GOODS, searchTradeGoods, formatBasePrice } from '../../data/tradeGoods';
 
 type Status = 'all' | 'active' | 'completed' | 'cancelled';
 type DealForm = Omit<TradeDeal, 'id' | 'created_at' | 'updated_at'>;
@@ -45,6 +47,9 @@ export default function TradeLedger() {
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [sellPrice, setSellPrice] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [tradeQuery, setTradeQuery] = useState('');
+  const [showTradeGoods, setShowTradeGoods] = useState(false);
+  const csvImportRef = useRef<HTMLInputElement>(null);
 
   const loadDeals = useCallback(async () => {
     if (!client) return;
@@ -174,14 +179,47 @@ export default function TradeLedger() {
   }
 
   function exportCsv() {
-    const csv = dealsToCsv(visible);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'travtools-trade-ledger.csv';
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadCsv('travtools-trade-ledger.csv', dealsToCsv(visible));
+  }
+
+  async function handleCsvImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !client) return;
+    const text = await file.text();
+    const rows = parseCsvRows(text);
+    if (rows.length < 2) return;
+    const headers = rows[0].map(h => h.toLowerCase().replace(/[^a-z]/g, ''));
+    const idx = (name: string) => headers.indexOf(name);
+    const get = (row: string[], name: string) => row[idx(name)] ?? '';
+    const newDeals: Omit<TradeDeal, 'id' | 'created_at' | 'updated_at'>[] = rows.slice(1).flatMap(row => {
+      const item = get(row, 'item');
+      if (!item) return [];
+      const qty = parseInt(get(row, 'quantity'));
+      const buyRaw = get(row, 'buyprice');
+      const sellRaw = get(row, 'sellprice');
+      const statusRaw = get(row, 'status');
+      const validStatus = ['active', 'completed', 'cancelled'];
+      return [{
+        item,
+        quantity: isNaN(qty) ? 1 : qty,
+        buy_price: buyRaw ? parseFloat(buyRaw) : null,
+        sell_price: sellRaw ? parseFloat(sellRaw) : null,
+        status: (validStatus.includes(statusRaw) ? statusRaw : 'active') as TradeDeal['status'],
+        world_bought: get(row, 'worldbought') || null,
+        world_sold: get(row, 'worldsold') || null,
+        notes: get(row, 'notes') || null,
+      }];
+    });
+    if (newDeals.length === 0) return;
+    const { error } = await client.from('trade_deals').insert(newDeals);
+    if (error) setErrorMessage(`CSV import failed: ${error.message}`);
+  }
+
+  function populateDealFromTradeGood(type: string, basePrice: number | null) {
+    setForm({ ...EMPTY, item: type, buy_price: basePrice });
+    setEditing(null);
+    setShowForm(true);
   }
 
   const visible = filterTradeDeals(deals, { status: filter, world: worldFilter });
@@ -189,6 +227,7 @@ export default function TradeLedger() {
 
   return (
     <div className="p-4 space-y-4 h-full overflow-auto">
+      <input ref={csvImportRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleCsvImport} />
       {errorMessage && (
         <div role="alert" className="border border-alert/40 bg-alert/10 px-3 py-2 text-xs text-alert flex items-center justify-between gap-3">
           <span>{errorMessage}</span>
@@ -236,6 +275,9 @@ export default function TradeLedger() {
           </label>
         </div>
         <div className="flex items-center gap-2">
+          <button type="button" onClick={() => csvImportRef.current?.click()} className="btn-steel flex items-center gap-1">
+            <Upload size={13} /> IMPORT CSV
+          </button>
           <button
             type="button"
             onClick={exportCsv}
@@ -292,6 +334,67 @@ export default function TradeLedger() {
           </div>
         </form>
       )}
+
+      {/* Trade Goods Reference */}
+      <div className="panel">
+        <button
+          type="button"
+          onClick={() => setShowTradeGoods(v => !v)}
+          className="w-full flex items-center justify-between px-3 py-2 text-xs font-mono tracking-wider text-amber hover:text-amber-bright"
+        >
+          <span>TRADE GOODS REFERENCE — {TRADE_GOODS.length} ENTRIES · p.244–245</span>
+          <span className="text-body/50">{showTradeGoods ? '▲' : '▼'}</span>
+        </button>
+        {showTradeGoods && (
+          <div className="border-t border-steel/40 p-3 space-y-2">
+            <div className="relative">
+              <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-body/40 pointer-events-none" />
+              <input
+                className="input pl-6 text-xs"
+                placeholder="Search type, trade code, d66…"
+                value={tradeQuery}
+                onChange={e => setTradeQuery(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5 max-h-96 overflow-y-auto pr-1">
+              {searchTradeGoods(tradeQuery).map(g => (
+                <button
+                  key={g.d66}
+                  type="button"
+                  onClick={() => populateDealFromTradeGood(g.type, g.basePrice)}
+                  className="w-full text-left border border-steel/40 rounded p-2 text-xs space-y-1 hover:border-amber/60 hover:bg-steel/20 transition-colors group"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-body/50 w-6">{g.d66}</span>
+                    <span className="font-mono text-bright flex-1 group-hover:text-amber">{g.type}</span>
+                    {g.illegal && <span className="text-[9px] font-mono text-alert border border-alert/50 px-1">ILLEGAL</span>}
+                    {g.exotic && <span className="text-[9px] font-mono text-cyan-trav border border-cyan-trav/50 px-1">EXOTIC</span>}
+                    <span className="text-[9px] text-body/30 font-mono">CLICK TO LOG</span>
+                  </div>
+                  <div className="flex gap-4 text-[10px] pl-8">
+                    <span className="text-body/40">{g.availability}</span>
+                    {!g.exotic && (
+                      <>
+                        <span className="text-body/50">TONS <span className="text-bright">{g.tons}</span></span>
+                        <span className="text-body/50">BASE <span className="text-cyan-trav">{formatBasePrice(g.basePrice)}</span></span>
+                      </>
+                    )}
+                  </div>
+                  {!g.exotic && (
+                    <div className="text-[10px] pl-8 space-y-0.5">
+                      <div><span className="text-body/30">BUY </span><span className="text-body/60">{g.purchaseDM}</span></div>
+                      <div><span className="text-body/30">SELL </span><span className="text-body/60">{g.saleDM}</span></div>
+                    </div>
+                  )}
+                </button>
+              ))}
+              {searchTradeGoods(tradeQuery).length === 0 && (
+                <div className="text-body/40 text-center py-4">No matching trade goods.</div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Table */}
       <div className="panel overflow-x-auto">

@@ -1,7 +1,8 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { Minus, Plus, Trash2, X } from 'lucide-react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { Download, Minus, Plus, Trash2, Upload, X } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
 import { InventoryItem } from '../../types';
+import { csvRow, downloadCsv, parseCsvRows } from '../../lib/csv';
 import {
   categoryChipClass,
   filterInventoryItems,
@@ -42,6 +43,7 @@ export default function InventoryManager() {
   const [filterCat, setFilterCat] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const csvImportRef = useRef<HTMLInputElement>(null);
 
   const loadItems = useCallback(async () => {
     if (!client) return;
@@ -170,6 +172,44 @@ export default function InventoryManager() {
     setShowForm(true);
   }
 
+  function exportCsv() {
+    const header = csvRow(['Name', 'Category', 'Quantity', 'Weight (kg)', 'Value (Cr)', 'Owner', 'Location', 'Notes']);
+    const rows = visible.map(i => csvRow([i.name, i.category, i.quantity, i.weight_kg, i.value_cr, i.owner, i.location, i.notes]));
+    downloadCsv('travtools-inventory.csv', [header, ...rows].join('\n'));
+  }
+
+  async function handleCsvImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !client) return;
+    const text = await file.text();
+    const rows = parseCsvRows(text);
+    if (rows.length < 2) return;
+    const headers = rows[0].map(h => h.toLowerCase().replace(/[^a-z]/g, ''));
+    const idx = (name: string) => headers.indexOf(name);
+    const get = (row: string[], name: string) => row[idx(name)] ?? '';
+    const newItems: Omit<InventoryItem, 'id' | 'created_at'>[] = rows.slice(1).flatMap(row => {
+      const name = get(row, 'name');
+      if (!name) return [];
+      const qty = parseInt(get(row, 'quantity'));
+      const wt = parseFloat(get(row, 'weightkg'));
+      const val = parseFloat(get(row, 'valuecr'));
+      return [{
+        name,
+        category: get(row, 'category') || null,
+        quantity: isNaN(qty) ? 1 : qty,
+        weight_kg: isNaN(wt) ? null : wt,
+        value_cr: isNaN(val) ? null : val,
+        owner: get(row, 'owner') || null,
+        location: get(row, 'location') || null,
+        notes: get(row, 'notes') || null,
+      }];
+    });
+    if (newItems.length === 0) return;
+    const { error } = await client.from('inventory_items').insert(newItems);
+    if (error) setErrorMessage(`CSV import failed: ${error.message}`);
+  }
+
   const owners = [...new Set(items.map(i => i.owner).filter(Boolean))] as string[];
 
   const visible = filterInventoryItems(items, { owner: filterOwner, category: filterCat });
@@ -190,6 +230,7 @@ export default function InventoryManager() {
 
   return (
     <div className="p-4 space-y-4 h-full overflow-auto">
+      <input ref={csvImportRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleCsvImport} />
       {/* Summary */}
       <div className="grid grid-cols-3 gap-4">
         {[
@@ -220,6 +261,12 @@ export default function InventoryManager() {
           </button>
         )}
         <div className="flex-1" />
+        <button type="button" onClick={() => csvImportRef.current?.click()} className="btn-steel flex items-center gap-1">
+          <Upload size={13} /> IMPORT CSV
+        </button>
+        <button type="button" onClick={exportCsv} className="btn-steel flex items-center gap-1">
+          <Download size={13} /> EXPORT CSV
+        </button>
         <button
           onClick={() => { setForm(EMPTY); setEditing(null); setShowForm(v => !v); }}
           className="btn-amber flex items-center gap-1"

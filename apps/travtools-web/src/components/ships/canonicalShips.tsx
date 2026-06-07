@@ -131,7 +131,7 @@ export function ScoutCourierSVG() {
       <Room id={id} x={470} y={128} w={38} h={124} label="LOCK" fontSize={8} />
       <path d="M 508 95 L 508 285 L 592 190 Z" fill="#0A2040" stroke={AMBER} strokeWidth="1.5" />
       <text x="542" y="185" textAnchor="middle" fill={AMBER} fontSize="11" fontFamily="'Share Tech Mono', monospace">BRIDGE</text>
-      <text x="542" y="202" textAnchor="middle" fill={CYAN} fontSize="8.5" fontFamily="'Share Tech Mono', monospace">4t</text>
+      <text x="542" y="202" textAnchor="middle" fill={CYAN} fontSize="8.5" fontFamily="'Share Tech Mono', monospace">10t</text>
       {[
         [330, 88], [470, 88], [330, 291], [470, 291],
       ].map(([x, y], i) => (
@@ -170,10 +170,10 @@ export function FreeTraderSVG() {
 
       <DeckTitle x={295} y={50} title="DECK 1 - MAIN" />
       <path d="M 35 78 L 35 318 L 500 318 L 625 198 L 500 78 Z" fill="none" stroke={AMBER} strokeWidth="2.4" filter={`url(#${id}-glow)`} />
-      <Room id={id} x={55} y={96} w={90} h={200} fill="#091520" label="FUEL" sublabel="40t" />
+      <Room id={id} x={55} y={96} w={90} h={200} fill="#091520" label="FUEL" sublabel="21t" />
       <Room id={id} x={145} y={96} w={105} h={100} fill={ENG_BG} stroke={CYAN} label="DRIVES" sublabel="J/M" />
       <Room id={id} x={145} y={196} w={105} h={100} fill={ENG_BG} stroke={CYAN} label="POWER" sublabel="PLANT" />
-      <Room id={id} x={250} y={96} w={130} h={200} fill={CARGO_BG} label="CARGO BAY" sublabel="82t" fontSize={12} />
+      <Room id={id} x={250} y={96} w={130} h={200} fill={CARGO_BG} label="CARGO BAY" sublabel="81t" fontSize={12} />
       <Room id={id} x={380} y={96} w={116} h={132} fill={LIFE_BG} stroke={CYAN} label="20 LOW" sublabel="BERTHS" />
       <LowBerthGrid x={391} y={134} cols={4} rows={5} id={id} />
       <Room id={id} x={380} y={228} w={116} h={68} label="LOCK" sublabel="LIFT" />

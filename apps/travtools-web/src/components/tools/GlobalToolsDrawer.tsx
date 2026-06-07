@@ -202,10 +202,6 @@ export default function GlobalToolsDrawer({ open, onClose }: GlobalToolsDrawerPr
               <div>Bane: roll 3D6 and keep the worst two dice.</div>
             </section>
 
-            <section className="panel p-3 text-xs text-body/60">
-              <div className="label mb-2">TRADE GOODS</div>
-              <div>Rulebook trade goods table is not loaded in this workspace.</div>
-            </section>
           </div>
         )}
       </aside>

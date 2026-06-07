@@ -1,12 +1,114 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Plus, Trash2, Upload, Tag, X } from 'lucide-react';
+import { Pencil, Plus, Trash2, Upload, Tag, X } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
-import { Ship, Annotation } from '../../types';
+import { Ship, ShipSpecs, Annotation } from '../../types';
 import { CANONICAL_SHIPS } from './canonicalShips';
 import { annotationPosition, removeAnnotationById, sortShips } from '../../lib/ships';
 
 function uuid() {
   return crypto.randomUUID();
+}
+
+const SPECS_FIELDS: { key: keyof ShipSpecs; label: string; type: 'number' | 'text' }[] = [
+  { key: 'tech_level', label: 'Tech Level', type: 'number' },
+  { key: 'hull_config', label: 'Hull Config', type: 'text' },
+  { key: 'hull_rating', label: 'Hull Rating', type: 'number' },
+  { key: 'm_drive', label: 'M-Drive Thrust', type: 'number' },
+  { key: 'j_drive', label: 'J-Drive Rating', type: 'number' },
+  { key: 'power_plant', label: 'Power Plant', type: 'number' },
+  { key: 'fuel_tons', label: 'Fuel (tons)', type: 'number' },
+  { key: 'bridge_tons', label: 'Bridge (tons)', type: 'number' },
+  { key: 'cargo_tons', label: 'Cargo (tons)', type: 'number' },
+  { key: 'staterooms', label: 'Staterooms', type: 'number' },
+  { key: 'low_berths', label: 'Low Berths', type: 'number' },
+  { key: 'armour_rating', label: 'Armour', type: 'number' },
+  { key: 'turrets', label: 'Turrets', type: 'number' },
+  { key: 'monthly_maintenance_cr', label: 'Maintenance (Cr/mo)', type: 'number' },
+  { key: 'purchase_price_mcr', label: 'Purchase Price (MCr)', type: 'number' },
+];
+
+interface ShipSpecsPanelProps {
+  specs: ShipSpecs | null;
+  editing: boolean;
+  form: ShipSpecs;
+  onFormChange: (s: ShipSpecs) => void;
+  onEdit: () => void;
+  onSave: () => void;
+  onCancel: () => void;
+}
+
+function ShipSpecsPanel({ specs, editing, form, onFormChange, onEdit, onSave, onCancel }: ShipSpecsPanelProps) {
+  const hasSpecs = specs && Object.values(specs).some(v => v != null);
+
+  if (editing) {
+    return (
+      <div className="panel p-3 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="label">SHIP SPECS</div>
+          <div className="flex gap-2">
+            <button type="button" onClick={onSave} className="btn-amber text-xs">SAVE</button>
+            <button type="button" onClick={onCancel} className="btn-steel text-xs">CANCEL</button>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          {SPECS_FIELDS.map(({ key, label, type }) => (
+            <label key={key} className="space-y-0.5 block">
+              <span className="text-body/60 font-mono text-[10px] tracking-wider">{label.toUpperCase()}</span>
+              <input
+                className="input py-1 text-xs"
+                type={type}
+                step={key === 'purchase_price_mcr' ? '0.001' : '1'}
+                value={(form[key] as string | number | null | undefined) ?? ''}
+                onChange={e => {
+                  const raw = e.target.value;
+                  const val = raw === '' ? null : type === 'number' ? parseFloat(raw) : raw;
+                  onFormChange({ ...form, [key]: val });
+                }}
+              />
+            </label>
+          ))}
+          <div className="col-span-2">
+            <label className="space-y-0.5 block">
+              <span className="text-body/60 font-mono text-[10px] tracking-wider">CREW NOTES</span>
+              <input className="input py-1 text-xs" type="text"
+                value={form.crew_notes ?? ''}
+                onChange={e => onFormChange({ ...form, crew_notes: e.target.value || null })}
+              />
+            </label>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="panel p-3">
+      <div className="flex items-center justify-between mb-2">
+        <div className="label">SHIP SPECS</div>
+        <button type="button" onClick={onEdit} className="btn-steel text-xs flex items-center gap-1">
+          <Pencil size={10} /> EDIT
+        </button>
+      </div>
+      {hasSpecs ? (
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+          {SPECS_FIELDS.filter(f => specs[f.key] != null).map(({ key, label }) => (
+            <div key={key} className="flex justify-between border-b border-steel/20 pb-0.5">
+              <span className="text-body/50">{label}</span>
+              <span className="text-amber font-mono">{String(specs[key])}</span>
+            </div>
+          ))}
+          {specs.crew_notes && (
+            <div className="col-span-2 flex justify-between border-b border-steel/20 pb-0.5">
+              <span className="text-body/50">Crew</span>
+              <span className="text-amber font-mono">{specs.crew_notes}</span>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="text-xs text-body/30 text-center py-2">No specs recorded. Click EDIT to add.</div>
+      )}
+    </div>
+  );
 }
 
 export default function ShipViewer() {
@@ -20,6 +122,8 @@ export default function ShipViewer() {
   const [newShipName, setNewShipName] = useState('');
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [editingSpecs, setEditingSpecs] = useState(false);
+  const [specsForm, setSpecsForm] = useState<ShipSpecs>({});
   const schematicRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -191,6 +295,23 @@ export default function ShipViewer() {
     const { error } = await client.from('ships').update({ notes }).eq('id', selected.id);
     if (error) {
       setErrorMessage(`Ship notes could not be saved: ${error.message}`);
+      loadShips();
+    }
+  }
+
+  function startEditSpecs() {
+    setSpecsForm(selected?.specs ?? {});
+    setEditingSpecs(true);
+  }
+
+  async function saveSpecs() {
+    if (!client || !selected) return;
+    const specs = Object.values(specsForm).some(v => v != null) ? specsForm : null;
+    updateShipInState({ ...selected, specs });
+    setEditingSpecs(false);
+    const { error } = await client.from('ships').update({ specs }).eq('id', selected.id);
+    if (error) {
+      setErrorMessage(`Ship specs could not be saved: ${error.message}`);
       loadShips();
     }
   }
@@ -405,6 +526,15 @@ export default function ShipViewer() {
                       onBlur={saveNotes}
                     />
                   </div>
+                  <ShipSpecsPanel
+                    specs={selected.specs}
+                    editing={editingSpecs}
+                    form={specsForm}
+                    onFormChange={setSpecsForm}
+                    onEdit={startEditSpecs}
+                    onSave={saveSpecs}
+                    onCancel={() => setEditingSpecs(false)}
+                  />
                 </div>
               ) : selected.image_url ? (
                 <div className="space-y-3">
@@ -431,6 +561,15 @@ export default function ShipViewer() {
                       onBlur={saveNotes}
                     />
                   </div>
+                  <ShipSpecsPanel
+                    specs={selected.specs}
+                    editing={editingSpecs}
+                    form={specsForm}
+                    onFormChange={setSpecsForm}
+                    onEdit={startEditSpecs}
+                    onSave={saveSpecs}
+                    onCancel={() => setEditingSpecs(false)}
+                  />
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -448,6 +587,15 @@ export default function ShipViewer() {
                       onBlur={saveNotes}
                     />
                   </div>
+                  <ShipSpecsPanel
+                    specs={selected.specs}
+                    editing={editingSpecs}
+                    form={specsForm}
+                    onFormChange={setSpecsForm}
+                    onEdit={startEditSpecs}
+                    onSave={saveSpecs}
+                    onCancel={() => setEditingSpecs(false)}
+                  />
                 </div>
               )}
                     </div>

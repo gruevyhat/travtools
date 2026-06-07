@@ -143,7 +143,7 @@ interface AttributeMods { str?: number; dex?: number; end_stat?: number; int_sta
 - [x] Verify portrait upload stores and displays a portrait without requiring a Storage bucket
 - [x] Verify temporary attribute modifiers change the displayed value and roll DM
 - [ ] Two browser tabs: character added in one appears in the other within ~1s
-- [ ] Error case: importing a malformed XLSX surfaces a useful error, not a crash
+- [x] Error case: importing a malformed XLSX surfaces a useful error, not a crash
 
 **Character sheet redesign**
 - [x] Show characteristic DM for each stat (+/-N format) derived from value
@@ -173,7 +173,7 @@ interface AttributeMods { str?: number; dex?: number; end_stat?: number; int_sta
 - [x] Add collapsible temporary modifier ribbon
 - [x] Add portrait upload from the portrait box
 - [x] Keep manual entry inputs usable for multi-character typing across roster, trade, and inventory forms
-- [ ] Show a per-character total trained-skill count in the collapsed mobile card header
+- [x] Show a per-character total trained-skill count in the collapsed mobile card header
 - [ ] Optional fallback: expose CSV import/template in UI if still desired after XLSX import proves sufficient
 
 **XLSX format (primary import)**
@@ -403,7 +403,7 @@ Questions to answer:
 - [x] Implement roll logic with boon/bane; unit test all edge cases
 - [x] Decide whether standalone rolls write to persistent `roll_log` or broadcast ephemerally via Supabase `channel.send()`
 - [x] Scaffold `QuickRef` drawer component
-- [ ] Transcribe trade goods table from p.244–245 into `src/data/tradeGoods.ts`
+- [x] Transcribe trade goods table from p.244–245 into `src/data/tradeGoods.ts`
 - [x] Write tests: roll distribution, modifier application, boon/bane logic
 - [x] E2E smoke: global tools drawer logs a standalone roll and Roll Log displays it
 
@@ -432,11 +432,11 @@ Questions to answer:
 - [x] Top navigation remains usable on narrow screens without text overlap
 
 **Error handling**
-- [ ] Supabase errors surface as amber toast notifications, not silent failures
+- [x] Supabase errors surface as amber inline banners, not silent failures (roster, inventory, trade, tools)
 - [x] Ship schematic Storage upload failures show a specific message
 - [ ] Character portrait decode/save failures show a specific message
 - [x] Browser offline state shows "RECONNECTING..." in the header
-- [ ] XLSX import errors show which sheet/section failed when possible
+- [x] XLSX import errors show which sheet/section failed when possible
 - [ ] Optional CSV fallback errors show which rows failed and why, if CSV UI is restored
 
 **Performance**

@@ -5,6 +5,25 @@ export interface Annotation {
   label: string;
 }
 
+export interface ShipSpecs {
+  tech_level?: number | null;
+  hull_config?: string | null;
+  hull_rating?: number | null;
+  m_drive?: number | null;
+  j_drive?: number | null;
+  power_plant?: number | null;
+  fuel_tons?: number | null;
+  bridge_tons?: number | null;
+  cargo_tons?: number | null;
+  staterooms?: number | null;
+  low_berths?: number | null;
+  armour_rating?: number | null;
+  turrets?: number | null;
+  crew_notes?: string | null;
+  monthly_maintenance_cr?: number | null;
+  purchase_price_mcr?: number | null;
+}
+
 export interface Ship {
   id: string;
   name: string;
@@ -15,6 +34,7 @@ export interface Ship {
   canonical_id: string | null;
   annotations: Annotation[];
   notes: string | null;
+  specs: ShipSpecs | null;
   created_at: string;
 }
 

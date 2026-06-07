@@ -426,8 +426,13 @@ function extractWeapons(ws: XLSX.WorkSheet): Weapon[] {
   return weapons;
 }
 
-export function parseXLSXCharacter(buffer: ArrayBuffer, playerName?: string): CharFormBase | null {
-  const wb = XLSX.read(buffer, { type: 'array' });
+export function parseXLSXCharacter(buffer: ArrayBuffer, playerName?: string): CharFormBase {
+  let wb: XLSX.WorkBook;
+  try {
+    wb = XLSX.read(buffer, { type: 'array' });
+  } catch {
+    throw new Error('File could not be read. Ensure it is a valid .xlsx file.');
+  }
 
   // ── Profile sheet ────────────────────────────────────────────────────────────
   let characterName: string | null = null;
@@ -464,7 +469,12 @@ export function parseXLSXCharacter(buffer: ArrayBuffer, playerName?: string): Ch
   // ── CharacteristicsSkills sheet ──────────────────────────────────────────────
   const csName = wb.SheetNames.find(n => n.toLowerCase().includes('characteristic')) ?? wb.SheetNames[1];
   const ws = wb.Sheets[csName];
-  if (!ws) return null;
+  if (!ws) {
+    const found = wb.SheetNames.join(', ') || '(none)';
+    throw new Error(
+      `CharacteristicsSkills sheet not found. Expected a sheet whose name contains "characteristic". Sheets in this file: ${found}.`,
+    );
+  }
 
   const rows = rowsFrom(ws);
 

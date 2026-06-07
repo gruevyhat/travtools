@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   toHex, upp, statDM, skillChar, parseSkillsCSV, parseTalentsCSV, parseCSV,
 } from '../lib/traveller';
+import { parseXLSXCharacter } from '../lib/parseXLSX';
 import type { Character } from '../types';
 
 const baseChar: Character = {
@@ -190,5 +191,28 @@ describe('parseCSV', () => {
 
   it('returns empty array for header-only input', () => {
     expect(parseCSV('Name,STR,DEX')).toEqual([]);
+  });
+});
+
+describe('parseXLSXCharacter error handling', () => {
+  it('throws with a useful message when the characteristics sheet is missing', () => {
+    // XLSX.read can parse many buffers without throwing; the error surfaces
+    // when the expected "CharacteristicsSkills" sheet is not found.
+    const garbage = new TextEncoder().encode('this is not an xlsx file').buffer;
+    expect(() => parseXLSXCharacter(garbage as ArrayBuffer)).toThrow(
+      /CharacteristicsSkills/,
+    );
+  });
+
+  it('error message names the sheets that were found', () => {
+    const garbage = new TextEncoder().encode('plain text').buffer;
+    try {
+      parseXLSXCharacter(garbage as ArrayBuffer);
+      expect.fail('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(Error);
+      // Message must contain either the sheet name hint or the file-read hint
+      expect((err as Error).message).toMatch(/CharacteristicsSkills|valid \.xlsx/i);
+    }
   });
 });

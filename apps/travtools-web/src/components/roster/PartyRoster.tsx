@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { Plus, Upload, ChevronDown, ChevronUp, X, Minus, Settings, Pencil, Trash2 } from 'lucide-react';
+import { Download, Plus, Upload, ChevronDown, ChevronUp, X, Minus, Settings, Pencil, Trash2 } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
 import { AttributeMods, Character, Weapon } from '../../types';
 import {
@@ -7,6 +7,7 @@ import {
   STAT_LABELS, CharStat, parseDamageExpr,
 } from '../../lib/traveller';
 import { parseXLSXCharacter } from '../../lib/parseXLSX';
+import { csvRow, downloadCsv } from '../../lib/csv';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -1306,6 +1307,9 @@ function CharCard({
           <div className="text-right">
             <div className="font-mono text-lg text-amber tracking-widest glow-amber">{upp(char)}</div>
             <div className={`text-xs font-mono ${status.color}`}>{status.label}</div>
+            <div className="text-[10px] font-mono text-body/40">
+              {char.skills.filter(s => s.level >= 0).length} SKILLS
+            </div>
           </div>
           {expanded ? <ChevronUp size={14} className="text-body" /> : <ChevronDown size={14} className="text-body" />}
         </div>
@@ -1369,6 +1373,7 @@ export default function PartyRoster() {
   const [talentsRaw, setTalentsRaw] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [uploadingPortraitId, setUploadingPortraitId] = useState<string | null>(null);
+  const [rosterError, setRosterError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const loadChars = useCallback(async () => {
@@ -1410,7 +1415,7 @@ export default function PartyRoster() {
 
       const { data, error } = await client.from('characters').update(payload).eq('id', editingId).select().single();
       if (error) {
-        console.error('Character update failed:', error);
+        setRosterError(`Character update failed: ${error.message}`);
         if (previous) {
           setChars(prev => sortCharacters(prev.map(c => c.id === editingId ? previous : c)));
         }
@@ -1424,7 +1429,7 @@ export default function PartyRoster() {
     } else {
       const { data, error } = await client.from('characters').insert(payload).select().single();
       if (error) {
-        console.error('Character insert failed:', error);
+        setRosterError(`Character could not be saved: ${error.message}`);
         return;
       }
       if (data) {
@@ -1443,7 +1448,7 @@ export default function PartyRoster() {
     if (selectedId === id) setSelectedId(null);
     const { error } = await client.from('characters').delete().eq('id', id);
     if (error) {
-      console.error('Character delete failed:', error);
+      setRosterError(`Character could not be deleted: ${error.message}`);
       if (previous) setChars(prev => sortCharacters([...prev, previous]));
       loadChars();
     }
@@ -1501,7 +1506,7 @@ export default function PartyRoster() {
     setChars(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c));
     const { error } = await client.from('characters').update(patch).eq('id', id);
     if (error) {
-      console.error('Stat update failed:', error);
+      setRosterError(`Stat update failed: ${error.message}`);
       const isTempModOnly = Object.keys(patch).length === 1 && Object.prototype.hasOwnProperty.call(patch, 'temp_mods');
       if (!isTempModOnly) loadChars();
     }
@@ -1521,13 +1526,11 @@ export default function PartyRoster() {
 
       const { error: updateError } = await client.from('characters').update({ portrait_url }).eq('id', char.id);
       if (updateError) {
-        console.error('Portrait update failed:', updateError);
-        alert('Portrait could not be saved: ' + updateError.message);
+        setRosterError(`Portrait could not be saved: ${updateError.message}`);
         loadChars();
       }
     } catch (error) {
-      console.error('Portrait upload failed:', error);
-      alert(error instanceof Error ? error.message : 'Portrait upload failed.');
+      setRosterError(error instanceof Error ? error.message : 'Portrait upload failed.');
     } finally {
       setUploadingPortraitId(null);
     }
@@ -1536,13 +1539,20 @@ export default function PartyRoster() {
   async function handleXLSX(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file || !client) return;
-    const buffer = await file.arrayBuffer();
-    const playerName = file.name.replace(/\.[^.]+$/, '');
-    const parsed = parseXLSXCharacter(buffer, playerName);
-    if (!parsed) { alert('Could not parse character sheet. Check the file format.'); return; }
+    e.target.value = '';
+    setRosterError(null);
+    let parsed;
+    try {
+      const buffer = await file.arrayBuffer();
+      const playerName = file.name.replace(/\.[^.]+$/, '');
+      parsed = parseXLSXCharacter(buffer, playerName);
+    } catch (err) {
+      setRosterError(err instanceof Error ? err.message : 'Could not parse character sheet.');
+      return;
+    }
     const { data, error } = await client.from('characters').insert(parsed).select().single();
     if (error) {
-      console.error('Character import failed:', error);
+      setRosterError(`Character import failed: ${error.message}`);
       return;
     }
     if (data) {
@@ -1550,7 +1560,18 @@ export default function PartyRoster() {
       setChars(prev => sortCharacters([...prev, inserted]));
       setSelectedId(inserted.id);
     }
-    e.target.value = '';
+  }
+
+  function exportCsv() {
+    const header = csvRow(['Name', 'Player', 'Career', 'Rank', 'Homeworld', 'STR', 'DEX', 'END', 'INT', 'EDU', 'SOC', 'PSI', 'CHR', 'MOR', 'LCK', 'Skills', 'PsionicTalents', 'Notes']);
+    const rows = chars.map(c => csvRow([
+      c.name, c.player, c.career, c.rank, c.homeworld,
+      c.str, c.dex, c.end_stat, c.int_stat, c.edu, c.soc, c.psi, c.chr, c.mor, c.lck,
+      c.skills.map(s => `${s.name}-${s.level}`).join(', '),
+      c.psionic_talents.map(t => `${t.name}-${t.level}`).join(', '),
+      c.notes,
+    ]));
+    downloadCsv('travtools-roster.csv', [header, ...rows].join('\n'));
   }
 
   const selectedChar = chars.find(c => c.id === selectedId) ?? null;
@@ -1627,6 +1648,121 @@ export default function PartyRoster() {
         <textarea className="input resize-none h-16" value={form.notes ?? ''}
           onChange={e => setForm({ ...form, notes: e.target.value || null })} />
       </Field>
+
+      {/* ── Profile Details ──────────────────────────────────────────────── */}
+      <details className="group">
+        <summary className="label cursor-pointer hover:text-amber list-none flex items-center justify-between">
+          <span>PROFILE DETAILS</span>
+          <ChevronDown size={12} className="group-open:hidden" />
+          <ChevronUp size={12} className="hidden group-open:block" />
+        </summary>
+        <div className="mt-2 grid grid-cols-2 gap-3">
+          <Field name="Species">
+            <input className="input" value={form.profile_details?.species ?? ''}
+              onChange={e => setForm({ ...form, profile_details: { ...form.profile_details, species: e.target.value || null } })} />
+          </Field>
+          <Field name="Age">
+            <input className="input" value={form.profile_details?.age ?? ''}
+              onChange={e => setForm({ ...form, profile_details: { ...form.profile_details, age: e.target.value || null } })} />
+          </Field>
+          <Field name="Gender">
+            <input className="input" value={form.profile_details?.gender ?? ''}
+              onChange={e => setForm({ ...form, profile_details: { ...form.profile_details, gender: e.target.value || null } })} />
+          </Field>
+          <Field name="Height">
+            <input className="input" value={form.profile_details?.height ?? ''}
+              onChange={e => setForm({ ...form, profile_details: { ...form.profile_details, height: e.target.value || null } })} />
+          </Field>
+          <Field name="Weight">
+            <input className="input" value={form.profile_details?.weight ?? ''}
+              onChange={e => setForm({ ...form, profile_details: { ...form.profile_details, weight: e.target.value || null } })} />
+          </Field>
+          <div className="col-span-2">
+            <Field name="Appearance">
+              <textarea className="input resize-none h-16" value={form.profile_details?.appearance ?? ''}
+                onChange={e => setForm({ ...form, profile_details: { ...form.profile_details, appearance: e.target.value || null } })} />
+            </Field>
+          </div>
+        </div>
+      </details>
+
+      {/* ── Homeworld Details ─────────────────────────────────────────────── */}
+      <details className="group">
+        <summary className="label cursor-pointer hover:text-amber list-none flex items-center justify-between">
+          <span>HOMEWORLD DETAILS</span>
+          <ChevronDown size={12} className="group-open:hidden" />
+          <ChevronUp size={12} className="hidden group-open:block" />
+        </summary>
+        <div className="mt-2 grid grid-cols-2 gap-3">
+          <Field name="Sector">
+            <input className="input" value={form.homeworld_details?.sector ?? ''}
+              onChange={e => setForm({ ...form, homeworld_details: { ...form.homeworld_details, sector: e.target.value || null } })} />
+          </Field>
+          <Field name="Subsector">
+            <input className="input" value={form.homeworld_details?.subsector ?? ''}
+              onChange={e => setForm({ ...form, homeworld_details: { ...form.homeworld_details, subsector: e.target.value || null } })} />
+          </Field>
+          <Field name="UWP">
+            <input className="input font-mono" value={form.homeworld_details?.uwp ?? ''}
+              onChange={e => setForm({ ...form, homeworld_details: { ...form.homeworld_details, uwp: e.target.value || null } })} />
+          </Field>
+          <Field name="Trade Codes">
+            <input className="input" value={form.homeworld_details?.trade_codes ?? ''}
+              onChange={e => setForm({ ...form, homeworld_details: { ...form.homeworld_details, trade_codes: e.target.value || null } })} />
+          </Field>
+        </div>
+      </details>
+
+      {/* ── Finances ─────────────────────────────────────────────────────── */}
+      <details className="group">
+        <summary className="label cursor-pointer hover:text-amber list-none flex items-center justify-between">
+          <span>FINANCES</span>
+          <ChevronDown size={12} className="group-open:hidden" />
+          <ChevronUp size={12} className="hidden group-open:block" />
+        </summary>
+        <div className="mt-2 grid grid-cols-2 gap-3">
+          {[
+            { key: 'cash_on_hand', label: 'Cash on Hand (Cr)' },
+            { key: 'yearly_pension', label: 'Yearly Pension (Cr)' },
+            { key: 'monthly_salary', label: 'Monthly Salary (Cr)' },
+            { key: 'ship_operating_costs', label: 'Ship Operating Costs (Cr/mo)' },
+            { key: 'monthly_debt_payments', label: 'Debt Payments (Cr/mo)' },
+            { key: 'total_debts', label: 'Total Debts (Cr)' },
+          ].map(({ key, label }) => (
+            <Field key={key} name={label}>
+              <input className="input" type="number" step="1"
+                value={(form.finances as Record<string, number | null | undefined>)?.[key] ?? ''}
+                onChange={e => setForm({ ...form, finances: { ...form.finances, [key]: e.target.value ? parseFloat(e.target.value) : null } })} />
+            </Field>
+          ))}
+        </div>
+      </details>
+
+      {/* ── Background ───────────────────────────────────────────────────── */}
+      <details className="group">
+        <summary className="label cursor-pointer hover:text-amber list-none flex items-center justify-between">
+          <span>BACKGROUND</span>
+          <ChevronDown size={12} className="group-open:hidden" />
+          <ChevronUp size={12} className="hidden group-open:block" />
+        </summary>
+        <div className="mt-2 space-y-3">
+          {[
+            { key: 'short_term_goals', label: 'Short-Term Goals' },
+            { key: 'long_term_goals', label: 'Long-Term Goals' },
+            { key: 'good_traits', label: 'Good Traits' },
+            { key: 'bad_traits', label: 'Bad Traits' },
+            { key: 'mannerisms', label: 'Mannerisms' },
+            { key: 'background_story', label: 'Background Story' },
+          ].map(({ key, label }) => (
+            <Field key={key} name={label}>
+              <textarea className="input resize-none h-16"
+                value={(form.background as Record<string, string | null | undefined>)?.[key] ?? ''}
+                onChange={e => setForm({ ...form, background: { ...form.background, [key]: e.target.value || null } })} />
+            </Field>
+          ))}
+        </div>
+      </details>
+
       <div className="flex gap-2 justify-end">
         <button type="button" onClick={() => setShowForm(false)} className="btn-steel">CANCEL</button>
         <button type="submit" className="btn-amber">{editing ? 'UPDATE' : 'SAVE'}</button>
@@ -1636,6 +1772,13 @@ export default function PartyRoster() {
 
   return (
     <div className="h-full flex flex-col lg:flex-row overflow-hidden">
+      {rosterError && (
+        <div role="alert" className="border-b border-alert/40 bg-alert/10 px-3 py-2 text-xs text-alert flex items-center justify-between gap-3 flex-shrink-0">
+          <span>{rosterError}</span>
+          <button type="button" onClick={() => setRosterError(null)} aria-label="Dismiss roster error"><X size={12} /></button>
+        </div>
+      )}
+
       {/* Hidden file input — lives outside both layouts so it's always in the DOM */}
       <input ref={fileRef} type="file"
         accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -1650,6 +1793,9 @@ export default function PartyRoster() {
           <div className="flex gap-2">
             <button onClick={() => fileRef.current?.click()} className="btn-steel flex items-center gap-1">
               <Upload size={13} /> IMPORT XLSX
+            </button>
+            <button onClick={exportCsv} className="btn-steel flex items-center gap-1">
+              <Download size={13} /> EXPORT CSV
             </button>
             <button
               onClick={() => { setForm(EMPTY); setSkillsRaw(''); setTalentsRaw(''); setEditing(null); setShowForm(v => !v); }}
@@ -1691,6 +1837,10 @@ export default function PartyRoster() {
             <button onClick={() => fileRef.current?.click()}
               className="btn-steel w-full flex items-center justify-center gap-1 text-xs">
               <Upload size={12} /> IMPORT XLSX
+            </button>
+            <button onClick={exportCsv}
+              className="btn-steel w-full flex items-center justify-center gap-1 text-xs">
+              <Download size={12} /> EXPORT CSV
             </button>
             <button
               onClick={() => { setForm(EMPTY); setSkillsRaw(''); setTalentsRaw(''); setEditing(null); setShowForm(true); setSelectedId(null); }}

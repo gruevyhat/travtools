@@ -117,6 +117,7 @@ alter table characters add column if not exists personal_equipment jsonb not nul
 alter table characters add column if not exists finances jsonb not null default '{}'::jsonb;
 alter table characters add column if not exists contacts jsonb not null default '[]'::jsonb;
 alter table characters add column if not exists background jsonb not null default '{}'::jsonb;
+alter table ships add column if not exists specs jsonb default null;
 
 -- ============================================================
 -- Row Level Security
