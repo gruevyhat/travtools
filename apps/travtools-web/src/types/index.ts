@@ -172,6 +172,23 @@ export interface CharacterContact {
 }
 
 export interface CharacterBackground {
+  personality_descriptors?: string | null;
+  basic_description?: string | null;
+  visual_age?: string | null;
+  body_build?: string | null;
+  attractiveness?: string | null;
+  posture?: string | null;
+  distinguishing_marks?: string | null;
+  eye_colour?: string | null;
+  hair_colour?: string | null;
+  shape_of_face?: string | null;
+  hair_style?: string | null;
+  skin_tone?: string | null;
+  facial_hair?: string | null;
+  everyday_clothes?: string | null;
+  combat_ready_gear?: string | null;
+  jewellery_accessories?: string | null;
+  general_description?: string | null;
   short_term_goals?: string | null;
   long_term_goals?: string | null;
   good_traits?: string | null;
@@ -183,12 +200,40 @@ export interface CharacterBackground {
   typical_mood?: string | null;
   sense_of_humour?: string | null;
   greatest_joys?: string | null;
+  greatest_fears?: string | null;
+  most_at_ease?: string | null;
+  least_at_ease?: string | null;
   background_story?: string | null;
+  birthday?: string | null;
+  important_childhood_memory?: string | null;
+  childhood_hero?: string | null;
+  childhood_enemies?: string | null;
+  personality_shaping_events?: string | null;
+  ever_arrested?: string | null;
+  served_in_military?: string | null;
+  prominent_education?: string | null;
+  teachers?: string | null;
+  trained_skills?: string | null;
+  training_where?: string | null;
+  training_when?: string | null;
+  training_why?: string | null;
+  training_how?: string | null;
+  upbringing_worldview?: string | null;
+  social_class_growing_up?: string | null;
+  current_social_class?: string | null;
   soft_spots?: string | null;
   enraged_when?: string | null;
   depressed_when?: string | null;
+  biggest_accomplishment?: string | null;
+  biggest_regret?: string | null;
   darkest_secrets?: string | null;
+  lie_you_believe?: string | null;
+  favourite_colours?: string | null;
+  favourite_foods?: string | null;
+  favourite_music?: string | null;
   favourite_joke?: string | null;
+  spending_habits?: string | null;
+  most_prized_possessions?: string | null;
   hobbies?: string | null;
 }
 

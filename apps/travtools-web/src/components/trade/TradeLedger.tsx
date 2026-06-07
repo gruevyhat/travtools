@@ -88,6 +88,7 @@ export default function TradeLedger() {
       setEditing(null);
       setForm(EMPTY);
       setShowForm(false);
+      setShowTradeGoods(false);
 
       const { data, error } = await client.from('trade_deals').update(payload).eq('id', editingId).select().single();
       if (error) {
@@ -108,6 +109,7 @@ export default function TradeLedger() {
     }
     setForm(EMPTY);
     setShowForm(false);
+    setShowTradeGoods(false);
   }
 
   async function deleteDeal(id: string) {
@@ -286,7 +288,7 @@ export default function TradeLedger() {
             <Download size={13} /> EXPORT CSV
           </button>
           <button
-            onClick={() => { setForm(EMPTY); setEditing(null); setShowForm(v => !v); }}
+            onClick={() => { setForm(EMPTY); setEditing(null); setShowForm(v => { setShowTradeGoods(!v); return !v; }); }}
             className="btn-amber flex items-center gap-1"
           >
             <Plus size={13} /> NEW DEAL
@@ -294,59 +296,10 @@ export default function TradeLedger() {
         </div>
       </div>
 
-      {/* Form */}
-      {showForm && (
-        <form onSubmit={saveDeal} className="panel p-4 grid grid-cols-2 gap-3">
-          <div className="col-span-2 panel-header -mx-4 -mt-4 mb-1">
-            {editing ? 'EDIT DEAL' : 'NEW TRADE DEAL'}
-          </div>
-          <Field name="Item / Cargo">
-            <input className="input" required value={form.item} onChange={e => setForm({ ...form, item: e.target.value })} />
-          </Field>
-          <Field name="Quantity">
-            <input className="input" type="number" min={0} value={form.quantity} onChange={e => setForm({ ...form, quantity: Math.max(0, parseInt(e.target.value) || 0) })} />
-          </Field>
-          <Field name="Buy Price (Cr/unit)">
-            <input className="input" type="number" step="0.01" value={form.buy_price ?? ''} onChange={e => setForm({ ...form, buy_price: e.target.value ? parseFloat(e.target.value) : null })} />
-          </Field>
-          <Field name="Sell Price (Cr/unit)">
-            <input className="input" type="number" step="0.01" value={form.sell_price ?? ''} onChange={e => setForm({ ...form, sell_price: e.target.value ? parseFloat(e.target.value) : null })} />
-          </Field>
-          <Field name="World Bought">
-            <input className="input" value={form.world_bought ?? ''} onChange={e => setForm({ ...form, world_bought: e.target.value || null })} />
-          </Field>
-          <Field name="World Sold">
-            <input className="input" value={form.world_sold ?? ''} onChange={e => setForm({ ...form, world_sold: e.target.value || null })} />
-          </Field>
-          <Field name="Status">
-            <select className="select" value={form.status} onChange={e => setForm({ ...form, status: e.target.value as TradeDeal['status'] })}>
-              <option value="active">Active</option>
-              <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-          </Field>
-          <Field name="Notes">
-            <input className="input" value={form.notes ?? ''} onChange={e => setForm({ ...form, notes: e.target.value || null })} />
-          </Field>
-          <div className="col-span-2 flex gap-2 justify-end">
-            <button type="button" onClick={() => setShowForm(false)} className="btn-steel">CANCEL</button>
-            <button type="submit" className="btn-amber">{editing ? 'UPDATE' : 'SAVE'}</button>
-          </div>
-        </form>
-      )}
-
-      {/* Trade Goods Reference */}
-      <div className="panel">
-        <button
-          type="button"
-          onClick={() => setShowTradeGoods(v => !v)}
-          className="w-full flex items-center justify-between px-3 py-2 text-xs font-mono tracking-wider text-amber hover:text-amber-bright"
-        >
-          <span>TRADE GOODS REFERENCE — {TRADE_GOODS.length} ENTRIES · p.244–245</span>
-          <span className="text-body/50">{showTradeGoods ? '▲' : '▼'}</span>
-        </button>
-        {showTradeGoods && (
-          <div className="border-t border-steel/40 p-3 space-y-2">
+      {/* Trade goods list — extracted so it can appear in two positions */}
+      {(() => {
+        const goodsList = (
+          <div className="space-y-2">
             <div className="relative">
               <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-body/40 pointer-events-none" />
               <input
@@ -356,7 +309,7 @@ export default function TradeLedger() {
                 onChange={e => setTradeQuery(e.target.value)}
               />
             </div>
-            <div className="space-y-1.5 max-h-96 overflow-y-auto pr-1">
+            <div className="space-y-1.5 overflow-y-auto pr-1" style={{ maxHeight: showForm ? '28rem' : '24rem' }}>
               {searchTradeGoods(tradeQuery).map(g => (
                 <button
                   key={g.d66}
@@ -369,7 +322,6 @@ export default function TradeLedger() {
                     <span className="font-mono text-bright flex-1 group-hover:text-amber">{g.type}</span>
                     {g.illegal && <span className="text-[9px] font-mono text-alert border border-alert/50 px-1">ILLEGAL</span>}
                     {g.exotic && <span className="text-[9px] font-mono text-cyan-trav border border-cyan-trav/50 px-1">EXOTIC</span>}
-                    <span className="text-[9px] text-body/30 font-mono">CLICK TO LOG</span>
                   </div>
                   <div className="flex gap-4 text-[10px] pl-8">
                     <span className="text-body/40">{g.availability}</span>
@@ -393,8 +345,77 @@ export default function TradeLedger() {
               )}
             </div>
           </div>
-        )}
-      </div>
+        );
+
+        if (showForm) {
+          return (
+            <div className="flex gap-4 items-start">
+              {/* Deal form */}
+              <form onSubmit={saveDeal} className="panel p-4 grid grid-cols-2 gap-3 flex-1 min-w-0">
+                <div className="col-span-2 panel-header -mx-4 -mt-4 mb-1">
+                  {editing ? 'EDIT DEAL' : 'NEW TRADE DEAL'}
+                </div>
+                <Field name="Item / Cargo">
+                  <input className="input" required value={form.item} onChange={e => setForm({ ...form, item: e.target.value })} />
+                </Field>
+                <Field name="Quantity">
+                  <input className="input" type="number" min={0} value={form.quantity} onChange={e => setForm({ ...form, quantity: Math.max(0, parseInt(e.target.value) || 0) })} />
+                </Field>
+                <Field name="Buy Price (Cr/unit)">
+                  <input className="input" type="number" step="0.01" value={form.buy_price ?? ''} onChange={e => setForm({ ...form, buy_price: e.target.value ? parseFloat(e.target.value) : null })} />
+                </Field>
+                <Field name="Sell Price (Cr/unit)">
+                  <input className="input" type="number" step="0.01" value={form.sell_price ?? ''} onChange={e => setForm({ ...form, sell_price: e.target.value ? parseFloat(e.target.value) : null })} />
+                </Field>
+                <Field name="World Bought">
+                  <input className="input" value={form.world_bought ?? ''} onChange={e => setForm({ ...form, world_bought: e.target.value || null })} />
+                </Field>
+                <Field name="World Sold">
+                  <input className="input" value={form.world_sold ?? ''} onChange={e => setForm({ ...form, world_sold: e.target.value || null })} />
+                </Field>
+                <Field name="Status">
+                  <select className="select" value={form.status} onChange={e => setForm({ ...form, status: e.target.value as TradeDeal['status'] })}>
+                    <option value="active">Active</option>
+                    <option value="completed">Completed</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                </Field>
+                <Field name="Notes">
+                  <input className="input" value={form.notes ?? ''} onChange={e => setForm({ ...form, notes: e.target.value || null })} />
+                </Field>
+                <div className="col-span-2 flex gap-2 justify-end">
+                  <button type="button" onClick={() => { setShowForm(false); setShowTradeGoods(false); }} className="btn-steel">CANCEL</button>
+                  <button type="submit" className="btn-amber">{editing ? 'UPDATE' : 'SAVE'}</button>
+                </div>
+              </form>
+
+              {/* Trade goods side panel */}
+              <div className="panel w-72 flex-shrink-0 p-3 space-y-2">
+                <div className="label">TRADE GOODS · p.244–245</div>
+                {goodsList}
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div className="panel">
+            <button
+              type="button"
+              onClick={() => setShowTradeGoods(v => !v)}
+              className="w-full flex items-center justify-between px-3 py-2 text-xs font-mono tracking-wider text-amber hover:text-amber-bright"
+            >
+              <span>TRADE GOODS REFERENCE — {TRADE_GOODS.length} ENTRIES · p.244–245</span>
+              <span className="text-body/50">{showTradeGoods ? '▲' : '▼'}</span>
+            </button>
+            {showTradeGoods && (
+              <div className="border-t border-steel/40 p-3">
+                {goodsList}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Table */}
       <div className="panel overflow-x-auto">

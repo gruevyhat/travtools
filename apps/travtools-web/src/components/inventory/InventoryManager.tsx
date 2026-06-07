@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Download, Minus, Plus, Trash2, Upload, X } from 'lucide-react';
+import { Download, Minus, Plus, Search, Trash2, Upload, X } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
 import { InventoryItem } from '../../types';
 import { csvRow, downloadCsv, parseCsvRows } from '../../lib/csv';
@@ -10,6 +10,15 @@ import {
   INVENTORY_CATEGORIES,
   sortItems,
 } from '../../lib/inventory';
+import {
+  CORE_EQUIPMENT,
+  CORE_EQUIPMENT_SECTIONS,
+  CoreEquipmentSection,
+  equipmentInventoryNotes,
+  formatEquipmentCost,
+  formatEquipmentMass,
+  searchCoreEquipment,
+} from '../../data/equipment';
 
 type ItemForm = Omit<InventoryItem, 'id' | 'created_at'>;
 
@@ -43,6 +52,9 @@ export default function InventoryManager() {
   const [filterCat, setFilterCat] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [equipmentQuery, setEquipmentQuery] = useState('');
+  const [equipmentSection, setEquipmentSection] = useState<CoreEquipmentSection | ''>('');
+  const [showEquipmentReference, setShowEquipmentReference] = useState(false);
   const csvImportRef = useRef<HTMLInputElement>(null);
 
   const loadItems = useCallback(async () => {
@@ -82,6 +94,7 @@ export default function InventoryManager() {
       setEditing(null);
       setForm(EMPTY);
       setShowForm(false);
+      setShowEquipmentReference(false);
 
       const { data, error } = await client.from('inventory_items').update(form).eq('id', editingId).select().single();
       if (error) {
@@ -104,6 +117,7 @@ export default function InventoryManager() {
     }
     setForm(EMPTY);
     setShowForm(false);
+    setShowEquipmentReference(false);
   }
 
   async function deleteItem(id: string) {
@@ -169,6 +183,21 @@ export default function InventoryManager() {
       location: item.location, notes: item.notes,
     });
     setEditing(item.id);
+    setShowEquipmentReference(false);
+    setShowForm(true);
+  }
+
+  function populateItemFromEquipment(item: (typeof CORE_EQUIPMENT)[number]) {
+    setForm({
+      ...EMPTY,
+      name: item.name,
+      category: item.inventoryCategory,
+      weight_kg: item.massKg,
+      value_cr: item.costCr,
+      notes: equipmentInventoryNotes(item),
+    });
+    setEditing(null);
+    setShowEquipmentReference(true);
     setShowForm(true);
   }
 
@@ -268,7 +297,15 @@ export default function InventoryManager() {
           <Download size={13} /> EXPORT CSV
         </button>
         <button
-          onClick={() => { setForm(EMPTY); setEditing(null); setShowForm(v => !v); }}
+          onClick={() => {
+            setForm(EMPTY);
+            setEditing(null);
+            setShowForm(v => {
+              const next = !v;
+              setShowEquipmentReference(next);
+              return next;
+            });
+          }}
           className="btn-amber flex items-center gap-1"
         >
           <Plus size={13} /> ADD ITEM
@@ -284,45 +321,125 @@ export default function InventoryManager() {
         </div>
       )}
 
-      {/* Form */}
-      {showForm && (
-        <form onSubmit={saveItem} className="panel p-4 grid grid-cols-2 gap-3">
-          <div className="col-span-2 panel-header -mx-4 -mt-4 mb-1">
-            {editing ? 'EDIT ITEM' : 'NEW INVENTORY ITEM'}
+      {/* Core Rules equipment list - appears beside the form or as a collapsible reference. */}
+      {(() => {
+        const equipmentMatches = searchCoreEquipment(equipmentQuery, equipmentSection);
+        const equipmentList = (
+          <div className="space-y-2">
+            <div className="grid grid-cols-1 sm:grid-cols-[1fr_9rem] gap-2">
+              <div className="relative">
+                <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-body/40 pointer-events-none" />
+                <input
+                  className="input pl-6 text-xs"
+                  placeholder="Search equipment, TL, traits..."
+                  value={equipmentQuery}
+                  onChange={e => setEquipmentQuery(e.target.value)}
+                />
+              </div>
+              <select
+                className="select py-1 text-xs"
+                aria-label="Equipment section"
+                value={equipmentSection}
+                onChange={e => setEquipmentSection(e.target.value as CoreEquipmentSection | '')}
+              >
+                <option value="">All sections</option>
+                {CORE_EQUIPMENT_SECTIONS.map(section => <option key={section} value={section}>{section}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1.5 overflow-y-auto pr-1" style={{ maxHeight: showForm ? '30rem' : '24rem' }}>
+              {equipmentMatches.map(item => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => populateItemFromEquipment(item)}
+                  className="w-full text-left border border-steel/40 rounded p-2 text-xs space-y-1 hover:border-amber/60 hover:bg-steel/20 transition-colors group"
+                >
+                  <div className="flex items-start gap-2">
+                    <span className={`text-[9px] font-mono border px-1 py-0.5 ${categoryChipClass(item.inventoryCategory)}`}>{item.section}</span>
+                    <span className="font-mono text-bright flex-1 group-hover:text-amber">{item.name}</span>
+                    <span className="text-[10px] text-body/40">p.{item.page}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] pl-1">
+                    <span className="text-body/50">TL <span className="text-bright">{item.techLevel ?? '--'}</span></span>
+                    <span className="text-body/50">MASS <span className="text-bright">{formatEquipmentMass(item.massKg)}</span></span>
+                    <span className="text-body/50">COST <span className="text-cyan-trav">{formatEquipmentCost(item)}</span></span>
+                  </div>
+                  {(item.range || item.damage || item.traits || item.details?.length) && (
+                    <div className="text-[10px] pl-1 space-y-0.5 text-body/60">
+                      {(item.range || item.damage) && (
+                        <div>
+                          {item.range && <span><span className="text-body/30">RANGE </span>{item.range} </span>}
+                          {item.damage && <span><span className="text-body/30">DAMAGE </span>{item.damage}</span>}
+                        </div>
+                      )}
+                      {item.traits && <div><span className="text-body/30">TRAITS </span>{item.traits}</div>}
+                      {item.details?.slice(0, 2).map(detail => <div key={detail}>{detail}</div>)}
+                    </div>
+                  )}
+                </button>
+              ))}
+              {equipmentMatches.length === 0 && (
+                <div className="text-body/40 text-center py-4">No matching Core Rules equipment.</div>
+              )}
+            </div>
           </div>
-          <Field name="Item Name">
-            <input className="input" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
-          </Field>
-          <Field name="Category">
-            <select className="select" value={form.category ?? ''} onChange={e => setForm({ ...form, category: e.target.value || null })}>
-              <option value="">— None —</option>
-              {INVENTORY_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </Field>
-          <Field name="Quantity">
-            <input className="input" type="number" min={0} value={form.quantity} onChange={e => setForm({ ...form, quantity: parseInt(e.target.value) || 0 })} />
-          </Field>
-          <Field name="Weight (kg each)">
-            <input className="input" type="number" step="0.001" value={form.weight_kg ?? ''} onChange={e => setForm({ ...form, weight_kg: e.target.value ? parseFloat(e.target.value) : null })} />
-          </Field>
-          <Field name="Value (Cr each)">
-            <input className="input" type="number" step="0.01" value={form.value_cr ?? ''} onChange={e => setForm({ ...form, value_cr: e.target.value ? parseFloat(e.target.value) : null })} />
-          </Field>
-          <Field name="Owner">
-            <input className="input" value={form.owner ?? ''} onChange={e => setForm({ ...form, owner: e.target.value || null })} />
-          </Field>
-          <Field name="Location">
-            <input className="input" value={form.location ?? ''} onChange={e => setForm({ ...form, location: e.target.value || null })} />
-          </Field>
-          <Field name="Notes">
-            <input className="input" value={form.notes ?? ''} onChange={e => setForm({ ...form, notes: e.target.value || null })} />
-          </Field>
-          <div className="col-span-2 flex gap-2 justify-end">
-            <button type="button" onClick={() => setShowForm(false)} className="btn-steel">CANCEL</button>
-            <button type="submit" className="btn-amber">{editing ? 'UPDATE' : 'SAVE'}</button>
-          </div>
-        </form>
-      )}
+        );
+
+        const itemForm = (
+          <form onSubmit={saveItem} className="panel p-4 grid grid-cols-2 gap-3 flex-1 min-w-0">
+            <div className="col-span-2 panel-header -mx-4 -mt-4 mb-1">
+              {editing ? 'EDIT ITEM' : 'NEW INVENTORY ITEM'}
+            </div>
+            <Field name="Item Name">
+              <input className="input" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+            </Field>
+            <Field name="Category">
+              <select className="select" value={form.category ?? ''} onChange={e => setForm({ ...form, category: e.target.value || null })}>
+                <option value="">-- None --</option>
+                {INVENTORY_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </Field>
+            <Field name="Quantity">
+              <input className="input" type="number" min={0} value={form.quantity} onChange={e => setForm({ ...form, quantity: parseInt(e.target.value) || 0 })} />
+            </Field>
+            <Field name="Weight (kg each)">
+              <input className="input" type="number" step="0.001" value={form.weight_kg ?? ''} onChange={e => setForm({ ...form, weight_kg: e.target.value ? parseFloat(e.target.value) : null })} />
+            </Field>
+            <Field name="Value (Cr each)">
+              <input className="input" type="number" step="0.01" value={form.value_cr ?? ''} onChange={e => setForm({ ...form, value_cr: e.target.value ? parseFloat(e.target.value) : null })} />
+            </Field>
+            <Field name="Owner">
+              <input className="input" value={form.owner ?? ''} onChange={e => setForm({ ...form, owner: e.target.value || null })} />
+            </Field>
+            <Field name="Location">
+              <input className="input" value={form.location ?? ''} onChange={e => setForm({ ...form, location: e.target.value || null })} />
+            </Field>
+            <Field name="Notes">
+              <input className="input" value={form.notes ?? ''} onChange={e => setForm({ ...form, notes: e.target.value || null })} />
+            </Field>
+            <div className="col-span-2 flex gap-2 justify-end">
+              <button type="button" onClick={() => { setShowForm(false); setShowEquipmentReference(false); }} className="btn-steel">CANCEL</button>
+              <button type="submit" className="btn-amber">{editing ? 'UPDATE' : 'SAVE'}</button>
+            </div>
+          </form>
+        );
+
+        if (showForm) {
+          return (
+            <div className="flex flex-col xl:flex-row gap-4 items-start">
+              {itemForm}
+              {showEquipmentReference && (
+                <div className="panel w-full xl:w-80 flex-shrink-0 p-3 space-y-2">
+                  <div className="label">EQUIPMENT REFERENCE - CORE RULES</div>
+                  {equipmentList}
+                </div>
+              )}
+            </div>
+          );
+        }
+
+        return null;
+      })()}
 
       {/* Table */}
       <div className="panel overflow-x-auto">

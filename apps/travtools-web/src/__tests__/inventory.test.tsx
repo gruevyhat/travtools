@@ -162,5 +162,28 @@ describe('InventoryManager', () => {
       expect(mock.insert).toHaveBeenCalledWith(expect.objectContaining({ name: 'Advanced Medkit' }));
     });
     expect(await screen.findByText('Advanced Medkit')).toBeTruthy();
+    expect(screen.queryByText('EQUIPMENT REFERENCE - CORE RULES')).toBeNull();
+  });
+
+  it('populates the add item form from the Core Rules equipment reference', async () => {
+    const mock = makeInventoryClient();
+    vi.spyOn(SupabaseContext, 'useSupabase').mockReturnValue({
+      client: mock.client as never,
+      isConfigured: true,
+      configure: vi.fn(),
+      reset: vi.fn(),
+    });
+
+    render(<InventoryManager />);
+
+    await waitFor(() => expect(mock.select).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: /ADD ITEM/i }));
+    fireEvent.click(screen.getByText('Medikit (TL10)').closest('button') as HTMLElement);
+
+    expect((screen.getByLabelText('Item Name') as HTMLInputElement).value).toBe('Medikit (TL10)');
+    expect((screen.getByLabelText('Category') as HTMLSelectElement).value).toBe('Medicine');
+    expect((screen.getByLabelText('Weight (kg each)') as HTMLInputElement).value).toBe('1');
+    expect((screen.getByLabelText('Value (Cr each)') as HTMLInputElement).value).toBe('1500');
+    expect((screen.getByLabelText('Notes') as HTMLInputElement).value).toContain('Core Rules p.114');
   });
 });

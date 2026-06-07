@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { Trash2, X } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
 import { RollLogEntry } from '../../types';
 import { rollAnalytics } from '../../lib/rollAnalytics';
@@ -20,14 +21,19 @@ function relTime(iso: string): string {
 export default function RollLog() {
   const { client } = useSupabase();
   const [entries, setEntries] = useState<RollLogEntry[]>([]);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!client) return;
-    const { data } = await client
+    const { data, error } = await client
       .from('roll_log')
       .select('*')
       .order('created_at', { ascending: false })
       .limit(100);
+    if (error) {
+      setErrorMessage(`Roll log could not be loaded: ${error.message}`);
+      return;
+    }
     if (data) setEntries(data as RollLogEntry[]);
   }, [client]);
 
@@ -36,18 +42,49 @@ export default function RollLog() {
     if (!client) return;
     const channel = client
       .channel('roll-log-changes')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'roll_log' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'roll_log' }, load)
       .subscribe();
     return () => { client.removeChannel(channel); };
   }, [client, load]);
+
+  async function clearLog() {
+    if (!client || entries.length === 0 || !confirm(`Clear ${entries.length} roll${entries.length !== 1 ? 's' : ''} from the log?`)) return;
+    const previous = entries;
+    setErrorMessage(null);
+    setEntries([]);
+
+    const { error } = await client.from('roll_log').delete().not('id', 'is', null);
+    if (error) {
+      setEntries(previous);
+      setErrorMessage(`Roll log could not be cleared: ${error.message}`);
+      load();
+    }
+  }
 
   const analytics = rollAnalytics(entries);
 
   return (
     <div className="p-4 h-full overflow-auto space-y-3">
-      <div className="text-body text-xs tracking-wider">
-        {entries.length} ROLL{entries.length !== 1 ? 'S' : ''} RECORDED
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="text-body text-xs tracking-wider">
+          {entries.length} ROLL{entries.length !== 1 ? 'S' : ''} RECORDED
+        </div>
+        <div className="flex-1" />
+        {entries.length > 0 && (
+          <button type="button" onClick={clearLog} className="btn-danger flex items-center gap-1">
+            <Trash2 size={13} /> CLEAR LOG
+          </button>
+        )}
       </div>
+
+      {errorMessage && (
+        <div role="alert" className="border border-alert/40 bg-alert/10 px-3 py-2 text-xs text-alert flex items-center justify-between gap-3">
+          <span>{errorMessage}</span>
+          <button type="button" onClick={() => setErrorMessage(null)} aria-label="Dismiss roll log error" className="hover:text-bright">
+            <X size={12} />
+          </button>
+        </div>
+      )}
 
       {entries.length > 0 && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

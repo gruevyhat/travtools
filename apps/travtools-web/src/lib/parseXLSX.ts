@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { CharFormBase } from './traveller';
+import { CharFormBase, DEFAULT_CHARACTER_TITLE } from './traveller';
 import {
   ArmourItem, CharacterAugment, CharacterBackground, CharacterContact,
   CharacterFinances, CharacterProfileDetails, HomeworldDetails, LifepathTerm,
@@ -18,6 +18,7 @@ const STAT_ALIASES: Record<string, keyof Pick<CharFormBase,
 };
 
 const UNARMED: Weapon = { name: 'Unarmed', skill: 'Melee (Unarmed)', range: 'Melee', damage: '1D+STR DM', traits: '' };
+const IGNORED_ARMOUR_NAMES = new Set(['subdermal armour protection']);
 
 function num(v: unknown): number | null {
   if (v === null || v === undefined || v === '' || v === '--') return null;
@@ -91,18 +92,148 @@ function valueRightOfLabel(rows: unknown[][], label: string): unknown {
   return null;
 }
 
+function normaliseLabel(value: unknown): string {
+  return str(value).toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+const BACKGROUND_SECTION_LABELS = [
+  'PERSONALITY',
+  'APPEARANCE',
+  'BACKGROUND',
+  'DESCRIPTOR OPPOSITES',
+  'GOALS, TRAITS, & HABITS',
+  'FACIAL FEATURES',
+  'CLOTHING',
+  'GENERAL DESCRIPTION',
+  'RELATIONSHIPS',
+  'CHILDHOOD & ADOLESCENCE',
+  'TRAINING & LEARNING SKILLS',
+  'ROLE IN SOCIETY',
+  'BACKGROUND NOTES/STORY',
+  'EMOTIONS & EXPERIENCES',
+  'FAVOURITES & HOBBIES',
+  'NON-FAMILY',
+];
+
+const BACKGROUND_FIELD_LABELS: Array<[keyof CharacterBackground, string[]]> = [
+  ['basic_description', ['Basic Desc.', 'Basic Description']],
+  ['visual_age', ['Visual Age']],
+  ['body_build', ['Body Build']],
+  ['attractiveness', ['Attractiveness']],
+  ['posture', ['Posture']],
+  ['distinguishing_marks', ['Prominent & Distinguishing Marks/Features', 'Prominent Distinguishing Marks Features']],
+  ['eye_colour', ['Eye Colour', 'Eye Color']],
+  ['hair_colour', ['Hair Colour', 'Hair Color']],
+  ['shape_of_face', ['Shape of Face']],
+  ['hair_style', ['Hair Style']],
+  ['skin_tone', ['Skin Tone']],
+  ['facial_hair', ['Facial Hair']],
+  ['everyday_clothes', ['Everyday Clothes']],
+  ['combat_ready_gear', ['Combat-Ready Gear', 'Combat Ready Gear']],
+  ['jewellery_accessories', ['Jewelry & Accessories', 'Jewellery & Accessories']],
+  ['general_description', ['GENERAL DESCRIPTION']],
+  ['short_term_goals', ['Short-Term Goals & Ambitions', 'Short Term Goals']],
+  ['long_term_goals', ['Long-Term Goals & Ambitions', 'Long Term Goals']],
+  ['good_traits', ['Good Personality Traits']],
+  ['bad_traits', ['Bad Personality Traits']],
+  ['greatest_strength', ['Greatest Strength']],
+  ['greatest_weakness', ['Greatest Weakness']],
+  ['mannerisms', ['Mannerisms & Peculiarities', 'Mannerisms']],
+  ['speech_quirks', ['Conversation & Speech Quirks', 'Conversation']],
+  ['typical_mood', ['Typical Mood']],
+  ['sense_of_humour', ['Sense of Humour', 'Sense of Humor']],
+  ['greatest_joys', ['Greatest Joys']],
+  ['greatest_fears', ['Greatest Fears']],
+  ['most_at_ease', ['Most at Ease', 'Mose at Ease']],
+  ['least_at_ease', ['Least at Ease']],
+  ['soft_spots', ['Soft Spots']],
+  ['enraged_when', ['Enraged When']],
+  ['depressed_when', ['Depressed When']],
+  ['biggest_accomplishment', ['Biggest Accomplishment']],
+  ['biggest_regret', ['Biggest Regret']],
+  ['darkest_secrets', ['Darkest Secrets']],
+  ['lie_you_believe', ['The Lie You Believe']],
+  ['favourite_colours', ['Favourite Colours', 'Favorite Colors']],
+  ['favourite_foods', ['Favourite Foods', 'Favorite Foods']],
+  ['favourite_music', ['Favourite Music', 'Favorite Music']],
+  ['favourite_joke', ['Favourite Joke', 'Favorite Joke']],
+  ['spending_habits', ['Spending Habits']],
+  ['most_prized_possessions', ['Most Prized Possessions']],
+  ['hobbies', ['Hobbies']],
+  ['birthday', ['Birthday']],
+  ['important_childhood_memory', ['Most Important Childhood Memory']],
+  ['childhood_hero', ['Childhood Hero']],
+  ['childhood_enemies', ['Childhood Enemies']],
+  ['personality_shaping_events', ['Personality-Shaping Events', 'Personality Shaping Events']],
+  ['ever_arrested', ['Ever Arrested?']],
+  ['served_in_military', ['Served in the Military?']],
+  ['prominent_education', ['Prominent Education?']],
+  ['teachers', ['Teacher(s)', 'Teachers']],
+  ['trained_skills', ['Which Skills']],
+  ['training_where', ['Where']],
+  ['training_when', ['When']],
+  ['training_why', ['Why']],
+  ['training_how', ['How']],
+  ['upbringing_worldview', ["Upbringing's Effect on World View", 'Upbringings Effect on World View']],
+  ['social_class_growing_up', ['Social Class Growing Up']],
+  ['current_social_class', ['Current Social Class']],
+  ['background_story', ['BACKGROUND NOTES/STORY', 'BACKGROUND NOTES', 'Background Story']],
+];
+
+const BACKGROUND_LABEL_NORMALS = [
+  ...BACKGROUND_SECTION_LABELS,
+  ...BACKGROUND_FIELD_LABELS.flatMap(([, labels]) => labels),
+  'Mother',
+  'Father',
+  'Sibling',
+  'Mentor',
+  'Closest Friend',
+  'Love Interest',
+  'Most-Admired',
+  'Relationship',
+  'Alive',
+].map(normaliseLabel).filter(Boolean);
+
+function labelMatches(cell: unknown, label: string): boolean {
+  const cellLabel = normaliseLabel(cell);
+  const target = normaliseLabel(label);
+  if (!cellLabel || !target) return false;
+  return cellLabel === target || cellLabel.includes(target);
+}
+
+function isBackgroundLabelLike(value: string): boolean {
+  const normalised = normaliseLabel(value);
+  if (!normalised) return false;
+  return BACKGROUND_LABEL_NORMALS.some(label => normalised === label || normalised.includes(label));
+}
+
+function backgroundValue(v: unknown): string | null {
+  if (typeof v === 'boolean') return v ? 'Yes' : 'No';
+  const value = clean(v);
+  if (!value || isBackgroundLabelLike(value)) return null;
+  return value;
+}
+
 function valueNearLabel(rows: unknown[][], label: string): string | null {
   const target = label.toLowerCase();
   for (let ri = 0; ri < rows.length; ri++) {
     const row = rows[ri];
     for (let ci = 0; ci < row.length; ci++) {
-      if (!str(row[ci]).toLowerCase().includes(target)) continue;
-      for (let vi = ci + 1; vi < Math.min(row.length, ci + 5); vi++) {
-        const value = clean(row[vi]);
-        if (value) return value;
+      if (!str(row[ci]).toLowerCase().includes(target) && !labelMatches(row[ci], label)) continue;
+      for (const rowOffset of [0, 1, 2, 3, -1]) {
+        const candidateRow = rows[ri + rowOffset];
+        if (!candidateRow) continue;
+        if (rowOffset !== 0) {
+          const rowLabel = backgroundValue(candidateRow[ci]);
+          if (rowLabel === null && isBackgroundLabelLike(str(candidateRow[ci]))) continue;
+        }
+        for (let vi = ci + 1; vi < Math.min(candidateRow.length, ci + 9); vi++) {
+          const value = backgroundValue(candidateRow[vi]);
+          if (value) return value;
+        }
       }
       for (let vr = ri + 1; vr < Math.min(rows.length, ri + 4); vr++) {
-        const value = clean(rows[vr]?.[ci]);
+        const value = backgroundValue(rows[vr]?.[ci]);
         if (value) return value;
       }
     }
@@ -180,6 +311,38 @@ function extractLifepath(rows: unknown[][]): LifepathTerm[] {
   return terms;
 }
 
+function isNumericRank(value: string | null): boolean {
+  return value !== null && /^\d+$/.test(value);
+}
+
+function extractTitleFromCareerNotes(notes: string | null): string | null {
+  if (!notes) return null;
+
+  const parentheticalRank = notes.match(/\brank\s+\d+\s*\(([^)]+)\)/i);
+  if (parentheticalRank) return clean(parentheticalRank[1]);
+
+  const advancedTitle = notes.match(/\bAdv\.?\s+([A-Z][A-Za-z' -]+?)(?:[.;]|$)/);
+  const advanced = clean(advancedTitle?.[1]);
+  if (advanced && !/training/i.test(advanced)) return advanced;
+
+  const promotedTitle = notes.match(/\b(?:advance(?:d)?(?: me)? to|I advance to)\s+([A-Z][A-Za-z' -]+?)(?:\s+rank)?\s+\d+\b/i);
+  const promoted = clean(promotedTitle?.[1]);
+  if (promoted) return promoted;
+
+  const titleCandidate = notes
+    .split(/[;\n]/)
+    .map(part => part.trim().replace(/[.。]+$/, ''))
+    .find(part => {
+      if (!part || part.length > 40) return false;
+      if (!/[A-Za-z]/.test(part)) return false;
+      if (/^(life event|mishap|gain|adv training|training|\+|-)/i.test(part)) return false;
+      if (/\b(skill|skills|psi|dm|event|mishap|training|learned|level|met)\b/i.test(part)) return false;
+      return part.split(/\s+/).length <= 4;
+    });
+
+  return clean(titleCandidate);
+}
+
 // Extract career title from lifepath rows (Profile sheet)
 function extractCareerInfo(rows: unknown[][]): { career: string | null; rank: string | null; homeworld: string | null } {
   let termHeaderRow = -1;
@@ -215,14 +378,22 @@ function extractCareerInfo(rows: unknown[][]): { career: string | null; rank: st
   const hrow = rows[termHeaderRow];
   const careerColIdx = hrow.findIndex(c => str(c).toLowerCase() === 'career');
   const rankColIdx = hrow.findIndex(c => str(c).toLowerCase() === 'rank');
+  const titleColIdx = hrow.findIndex(c => str(c).toLowerCase() === 'title');
+  const notesColIdx = hrow.findIndex(c => {
+    const label = str(c).toLowerCase();
+    return label.includes('events') || label.includes('notes');
+  });
 
-  const careers: Array<{ career: string; rank: string }> = [];
+  const careers: Array<{ career: string; rank: string | null }> = [];
   for (let ri = termHeaderRow + 1; ri < rows.length; ri++) {
     const row = rows[ri];
     const termNum = num(row[hrow.findIndex(c => str(c).toLowerCase() === 'term')]);
     if (termNum === null) break;
     const c = str(row[careerColIdx]);
-    const r = str(row[rankColIdx]);
+    const rawRank = rankColIdx >= 0 ? clean(row[rankColIdx]) : null;
+    const title = titleColIdx >= 0 ? clean(row[titleColIdx]) : null;
+    const notes = notesColIdx >= 0 ? clean(row[notesColIdx]) : null;
+    const r = title ?? (!isNumericRank(rawRank) ? rawRank : extractTitleFromCareerNotes(notes));
     if (c) careers.push({ career: c, rank: r });
   }
 
@@ -252,6 +423,7 @@ function extractArmour(rows: unknown[][]): ArmourItem[] {
     const fallbackName = typeCol >= 0 ? clean(row[typeCol + 4]) : null;
     const name = (typeCol >= 0 ? clean(row[typeCol]) : null) ?? fallbackName;
     if (!name || name.toLowerCase().includes('total armour value')) continue;
+    if (IGNORED_ARMOUR_NAMES.has(name.toLowerCase())) continue;
     armour.push({
       worn: wornCol >= 0 ? bool(row[wornCol]) : null,
       name,
@@ -333,27 +505,54 @@ function extractFinances(rows: unknown[][]): CharacterFinances {
   };
 }
 
+const DESCRIPTOR_PAIRS = [
+  ['Diplomatic', 'Violent'],
+  ['Passive', 'Instigating'],
+  ['Cautious', 'Reckless'],
+  ['Selfless', 'Selfish'],
+  ['Trusting', 'Suspicious'],
+  ['Logical', 'Emotional'],
+  ['Optimistic', 'Pessimistic'],
+  ['Extroverted', 'Introverted'],
+  ['Neat', 'Messy'],
+  ['Confident', 'Shy'],
+  ['Prefers Working', 'Prefers Relaxing'],
+];
+
+function extractPersonalityDescriptors(rows: unknown[][]): string | null {
+  const lines: string[] = [];
+
+  for (const row of rows) {
+    for (const [left, right] of DESCRIPTOR_PAIRS) {
+      const leftCol = row.findIndex(cell => labelMatches(cell, left));
+      if (leftCol < 0) continue;
+      const rightCol = row.findIndex((cell, index) => index > leftCol && labelMatches(cell, right));
+      if (rightCol < 0) continue;
+
+      let selected: number | null = null;
+      let scalePosition = 0;
+      for (let ci = leftCol + 1; ci < rightCol; ci++) {
+        if (typeof row[ci] !== 'boolean') continue;
+        scalePosition += 1;
+        if (row[ci] === true) selected = scalePosition;
+      }
+      if (selected !== null) lines.push(`${left} / ${right}: ${selected} of 5`);
+    }
+  }
+
+  return lines.length > 0 ? lines.join('\n') : null;
+}
+
 function extractBackground(rows: unknown[][]): CharacterBackground {
-  return {
-    short_term_goals: valueNearLabel(rows, 'Short-Term'),
-    long_term_goals: valueNearLabel(rows, 'Long-Term'),
-    good_traits: valueNearLabel(rows, 'Good'),
-    bad_traits: valueNearLabel(rows, 'Bad'),
-    greatest_strength: valueNearLabel(rows, 'Greatest Strength'),
-    greatest_weakness: valueNearLabel(rows, 'Greatest Weakness'),
-    mannerisms: valueNearLabel(rows, 'Mannerisms'),
-    speech_quirks: valueNearLabel(rows, 'Conversation'),
-    typical_mood: valueNearLabel(rows, 'Typical Mood'),
-    sense_of_humour: valueNearLabel(rows, 'Sense of Humour'),
-    greatest_joys: valueNearLabel(rows, 'Greatest Joys'),
-    background_story: valueNearLabel(rows, 'BACKGROUND NOTES'),
-    soft_spots: valueNearLabel(rows, 'Soft Spots'),
-    enraged_when: valueNearLabel(rows, 'Enraged When'),
-    depressed_when: valueNearLabel(rows, 'Depressed When'),
-    darkest_secrets: valueNearLabel(rows, 'Darkest Secrets'),
-    favourite_joke: valueNearLabel(rows, 'Favourite Joke'),
-    hobbies: valueNearLabel(rows, 'Hobbies'),
+  const background: CharacterBackground = {
+    personality_descriptors: extractPersonalityDescriptors(rows),
   };
+
+  for (const [key, labels] of BACKGROUND_FIELD_LABELS) {
+    background[key] = labels.map(label => valueNearLabel(rows, label)).find(Boolean) ?? null;
+  }
+
+  return background;
 }
 
 function extractContacts(rows: unknown[][]): CharacterContact[] {
@@ -385,6 +584,62 @@ function extractContacts(rows: unknown[][]): CharacterContact[] {
   }
 
   return contacts;
+}
+
+const BACKGROUND_CONTACT_TYPES = ['Mother', 'Father', 'Sibling', 'Mentor', 'Closest Friend', 'Love Interest', 'Most-Admired'];
+
+function valueRightInRow(row: unknown[], startCol: number, maxCols = 6): string | null {
+  for (let ci = startCol + 1; ci < Math.min(row.length, startCol + maxCols + 1); ci++) {
+    const value = backgroundValue(row[ci]);
+    if (value) return value;
+  }
+  return null;
+}
+
+function extractBackgroundContacts(rows: unknown[][]): CharacterContact[] {
+  const contacts: CharacterContact[] = [];
+
+  for (let ri = 0; ri < rows.length; ri++) {
+    const row = rows[ri];
+    for (let ci = 0; ci < row.length; ci++) {
+      const type = BACKGROUND_CONTACT_TYPES.find(label => labelMatches(row[ci], label));
+      if (!type) continue;
+      const name = valueRightInRow(row, ci);
+      if (!name) continue;
+      const aliveCol = row.findIndex((cell, index) => index > ci && labelMatches(cell, 'Alive'));
+      const alive = aliveCol >= 0 ? bool(row[aliveCol + 1]) : null;
+
+      let description: string | null = null;
+      for (let rr = ri + 1; rr < Math.min(rows.length, ri + 4); rr++) {
+        const relCol = rows[rr].findIndex(cell => labelMatches(cell, 'Relationship'));
+        if (relCol >= 0) {
+          description = valueRightInRow(rows[rr], relCol, 8);
+          if (description) break;
+        }
+      }
+
+      contacts.push({
+        name,
+        gender_species: null,
+        type,
+        description,
+        link: null,
+        alive,
+      });
+    }
+  }
+
+  return contacts;
+}
+
+function mergeContacts(...groups: CharacterContact[][]): CharacterContact[] {
+  const seen = new Set<string>();
+  return groups.flat().filter(contact => {
+    const key = `${contact.name ?? ''}|${contact.type ?? ''}|${contact.description ?? ''}`.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 // Extract weapons from CombatEquipment sheet
@@ -619,8 +874,12 @@ export function parseXLSXCharacter(buffer: ArrayBuffer, playerName?: string): Ch
   const augments = extractAugments(combatRows);
   const personal_equipment = extractPersonalEquipment(combatRows);
   const finances = extractFinances(combatRows);
-  const background = extractBackground(rowsFrom(wb.Sheets['BackgroundPersonality']));
-  const contacts = extractContacts(rowsFrom(wb.Sheets['Campaign Notes']));
+  const backgroundRows = rowsFrom(wb.Sheets['BackgroundPersonality']);
+  const background = extractBackground(backgroundRows);
+  const contacts = mergeContacts(
+    extractContacts(rowsFrom(wb.Sheets['Campaign Notes'])),
+    extractBackgroundContacts(backgroundRows),
+  );
 
   const strVal = stats['str'] ?? null;
   const dexVal = stats['dex'] ?? null;
@@ -651,7 +910,7 @@ export function parseXLSXCharacter(buffer: ArrayBuffer, playerName?: string): Ch
     contacts,
     background,
     career,
-    rank,
+    rank: rank ?? DEFAULT_CHARACTER_TITLE,
     homeworld,
     skills,
     psionic_talents,

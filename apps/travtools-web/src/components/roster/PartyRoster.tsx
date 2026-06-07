@@ -4,7 +4,7 @@ import { useSupabase } from '../../lib/supabaseContext';
 import { AttributeMods, Character, Weapon } from '../../types';
 import {
   toHex, upp, statDM, skillChar, parseSkillsCSV, parseTalentsCSV,
-  STAT_LABELS, CharStat, parseDamageExpr,
+  STAT_LABELS, CharStat, parseDamageExpr, DEFAULT_CHARACTER_TITLE,
 } from '../../lib/traveller';
 import { parseXLSXCharacter } from '../../lib/parseXLSX';
 import { csvRow, downloadCsv } from '../../lib/csv';
@@ -28,7 +28,7 @@ const EMPTY: CharForm = {
   finances: {},
   contacts: [],
   background: {},
-  career: null, rank: null, homeworld: null,
+  career: null, rank: DEFAULT_CHARACTER_TITLE, homeworld: null,
   skills: [], psionic_talents: [],
   weapons: [{ name: 'Unarmed', skill: 'Melee (Unarmed)', range: 'Melee', damage: '1D+STR DM', traits: '' }],
   notes: null,
@@ -66,6 +66,17 @@ function parseIntegerInput(raw: string): number {
 
 function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
+}
+
+function successChance(difficulty: number, modifier: number): number {
+  const target = difficulty - modifier;
+  let hits = 0;
+  for (let d1 = 1; d1 <= 6; d1++) {
+    for (let d2 = 1; d2 <= 6; d2++) {
+      if (d1 + d2 >= target) hits++;
+    }
+  }
+  return hits / 36;
 }
 
 function effectiveStatValue(base: number | null, tempMod: number): number | null {
@@ -324,12 +335,14 @@ function CharacterPortrait({
 function DetailSection({
   title,
   children,
+  className = '',
 }: {
   title: string;
   children: React.ReactNode;
+  className?: string;
 }) {
   return (
-    <div className="border-t border-steel/50 pt-3">
+    <div className={`border-t border-steel/50 pt-3 ${className}`}>
       <div className="label mb-2">{title}</div>
       {children}
     </div>
@@ -491,7 +504,7 @@ function RollModal({
 
           <div className="grid grid-cols-3 gap-2">
             <div className="space-y-1">
-              <label className="label">{isWeapon ? 'Attack Characteristic' : 'Characteristic'}</label>
+              <label className="label">Characteristic</label>
               <select className="select text-xs" value={charKey ?? ''}
                 onChange={e => setCharKey((e.target.value as CharStat) || null)}>
                 <option value="">— none —</option>
@@ -544,7 +557,11 @@ function RollModal({
             Char DM: <span className="text-cyan-trav">{fmtDM(charDM)}</span>
             {' · '}Skill: <span className="text-cyan-trav">{fmtDM(skillLevel)}</span>
             {' · '}+DM: <span className="text-cyan-trav">{fmtDM(bonusDM)}</span>
-            {' · '}Expected: <span className="text-body/40">{7 + charDM + skillLevel + bonusDM}+</span>
+            {' · '}
+          {(() => {
+            const pct = Math.round(successChance(difficulty, charDM + skillLevel + bonusDM) * 100);
+            return <span className={pct >= 50 ? 'text-safe' : 'text-alert'}>{pct}% success</span>;
+          })()}
           </div>
 
           <button onClick={rollAttack} className="btn-amber w-full text-center text-sm">
@@ -669,8 +686,9 @@ function CharDetailContent({
     .filter(s => s.level > 0 || (s.level === 0 && !s.name.includes('(')))
     .sort((a, b) => a.name.localeCompare(b.name));
   const hasPsionics = char.psionic_talents.length > 0 || (char.psi !== null && char.psi > 0);
+  const hasPsiAttribute = char.psi !== null && char.psi > 0;
   const extraStats = EXTRA_STATS.filter(k => char[k] !== null);
-  const allDisplayStats: CharStat[] = [...CORE_STATS, ...(char.psi !== null ? ['psi' as CharStat] : []), ...extraStats];
+  const allDisplayStats: CharStat[] = [...CORE_STATS, ...(hasPsiAttribute ? ['psi' as CharStat] : []), ...extraStats];
   const status = physicalStatus(char);
   const profileDetails = char.profile_details ?? {};
   const homeworldDetails = char.homeworld_details ?? {};
@@ -839,9 +857,9 @@ function CharDetailContent({
         />
       )}
 
-      <div className="space-y-4">
+      <div className="flex flex-col gap-4">
         {/* Characteristics + track toggles */}
-        <div>
+        <div className="order-2">
           <div className="flex items-center justify-between mb-2">
             <div className="label">CHARACTERISTICS</div>
             <div className="flex gap-1.5">
@@ -1061,7 +1079,7 @@ function CharDetailContent({
         </div>
 
         {profileRows.length > 0 && (
-          <DetailSection title="PROFILE">
+          <DetailSection title="PROFILE" className="order-1">
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-xs font-mono">
               {profileRows.map(([label, value]) => (
                 <div key={label} className="min-w-0">
@@ -1074,7 +1092,7 @@ function CharDetailContent({
         )}
 
         {homeworldRows.length > 0 && (
-          <DetailSection title="HOMEWORLD">
+          <DetailSection title="HOMEWORLD" className="order-6">
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-xs font-mono">
               {homeworldRows.map(([label, value]) => (
                 <div key={label} className="min-w-0">
@@ -1087,7 +1105,7 @@ function CharDetailContent({
         )}
 
         {lifepath.length > 0 && (
-          <DetailSection title="LIFEPATH">
+          <DetailSection title="LIFEPATH" className="order-9">
             <div className="space-y-1.5">
               {lifepath.map((term, i) => (
                 <div key={`${term.term ?? i}-${term.career ?? i}`} className="text-xs font-mono border border-steel/35 px-2 py-1.5">
@@ -1108,7 +1126,7 @@ function CharDetailContent({
         )}
 
         {armour.length > 0 && (
-          <DetailSection title="ARMOUR">
+          <DetailSection title="ARMOR" className="order-5">
             <div className="space-y-1">
               {armour.map((item, i) => (
                 <div key={`${item.name}-${i}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-mono border border-steel/35 px-2 py-1">
@@ -1124,7 +1142,7 @@ function CharDetailContent({
         )}
 
         {augments.length > 0 && (
-          <DetailSection title="AUGMENTS">
+          <DetailSection title="AUGMENTS" className="order-10">
             <div className="space-y-1">
               {augments.map((augment, i) => (
                 <div key={`${augment.name}-${i}`} className="text-xs font-mono border border-steel/35 px-2 py-1">
@@ -1139,7 +1157,7 @@ function CharDetailContent({
         )}
 
         {personalEquipment.length > 0 && (
-          <DetailSection title="EQUIPMENT">
+          <DetailSection title="EQUIPMENT" className="order-11">
             <div className="space-y-1">
               {personalEquipment.map((item, i) => (
                 <div key={`${item.name}-${i}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-mono border border-steel/35 px-2 py-1">
@@ -1156,7 +1174,7 @@ function CharDetailContent({
         )}
 
         {financeRows.length > 0 && (
-          <DetailSection title="FINANCES">
+          <DetailSection title="FINANCES" className="order-7">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs font-mono">
               {financeRows.map(([label, value]) => (
                 <div key={label}>
@@ -1169,7 +1187,7 @@ function CharDetailContent({
         )}
 
         {contacts.some(c => hasValue(c.name) || hasValue(c.type) || hasValue(c.description) || hasValue(c.link)) && (
-          <DetailSection title="CONTACTS">
+          <DetailSection title="CONTACTS" className="order-8">
             <div className="space-y-1">
               {contacts
                 .filter(c => hasValue(c.name) || hasValue(c.type) || hasValue(c.description) || hasValue(c.link))
@@ -1189,7 +1207,7 @@ function CharDetailContent({
         )}
 
         {backgroundRows.length > 0 && (
-          <DetailSection title="BACKGROUND">
+          <DetailSection title="BACKGROUND" className="order-12">
             <div className="space-y-1.5 text-xs font-mono">
               {backgroundRows.map(([label, value]) => (
                 <div key={label} className="border border-steel/35 px-2 py-1">
@@ -1202,7 +1220,7 @@ function CharDetailContent({
         )}
 
         {/* Skills */}
-        <div>
+        <div className="order-3">
           <div className="label mb-2">
             SKILLS
             <span className="text-body/30 font-normal ml-2 text-[10px]">click to roll</span>
@@ -1230,7 +1248,7 @@ function CharDetailContent({
 
         {/* Psionics */}
         {hasPsionics && char.psionic_talents.length > 0 && (
-          <div>
+          <div className="order-3">
             <div className="label mb-2 text-cyan-trav">PSIONICS</div>
             <div className="flex flex-wrap gap-1.5">
               {char.psionic_talents.map((t, i) => (
@@ -1245,7 +1263,7 @@ function CharDetailContent({
         )}
 
         {/* Weapons */}
-        <div>
+        <div className="order-4">
           <div className="label mb-2">WEAPONS</div>
           <div className="space-y-1">
             {(char.weapons ?? []).map((w, i) => (
@@ -1263,7 +1281,7 @@ function CharDetailContent({
 
         {/* Notes */}
         {char.notes && (
-          <div className="text-xs text-body/70 border-t border-steel/50 pt-2">{char.notes}</div>
+          <div className="order-last text-xs text-body/70 border-t border-steel/50 pt-2">{char.notes}</div>
         )}
 
       </div>
@@ -1412,6 +1430,7 @@ export default function PartyRoster() {
     if (!client) return;
     const payload: CharForm = {
       ...form,
+      rank: form.rank || DEFAULT_CHARACTER_TITLE,
       skills: parseSkillsCSV(skillsRaw),
       psionic_talents: parseTalentsCSV(talentsRaw),
     };
@@ -1790,12 +1809,69 @@ export default function PartyRoster() {
         </summary>
         <div className="mt-2 space-y-3">
           {[
+            { key: 'personality_descriptors', label: 'Personality Descriptors' },
+            { key: 'basic_description', label: 'Basic Description' },
+            { key: 'visual_age', label: 'Visual Age' },
+            { key: 'body_build', label: 'Body Build' },
+            { key: 'attractiveness', label: 'Attractiveness' },
+            { key: 'posture', label: 'Posture' },
+            { key: 'distinguishing_marks', label: 'Distinguishing Marks' },
+            { key: 'eye_colour', label: 'Eye Colour' },
+            { key: 'hair_colour', label: 'Hair Colour' },
+            { key: 'shape_of_face', label: 'Shape of Face' },
+            { key: 'hair_style', label: 'Hair Style' },
+            { key: 'skin_tone', label: 'Skin Tone' },
+            { key: 'facial_hair', label: 'Facial Hair' },
+            { key: 'everyday_clothes', label: 'Everyday Clothes' },
+            { key: 'combat_ready_gear', label: 'Combat-Ready Gear' },
+            { key: 'jewellery_accessories', label: 'Jewellery & Accessories' },
+            { key: 'general_description', label: 'General Description' },
             { key: 'short_term_goals', label: 'Short-Term Goals' },
             { key: 'long_term_goals', label: 'Long-Term Goals' },
             { key: 'good_traits', label: 'Good Traits' },
             { key: 'bad_traits', label: 'Bad Traits' },
+            { key: 'greatest_strength', label: 'Greatest Strength' },
+            { key: 'greatest_weakness', label: 'Greatest Weakness' },
             { key: 'mannerisms', label: 'Mannerisms' },
+            { key: 'speech_quirks', label: 'Speech Quirks' },
+            { key: 'typical_mood', label: 'Typical Mood' },
+            { key: 'sense_of_humour', label: 'Sense of Humour' },
+            { key: 'greatest_joys', label: 'Greatest Joys' },
+            { key: 'greatest_fears', label: 'Greatest Fears' },
+            { key: 'most_at_ease', label: 'Most at Ease' },
+            { key: 'least_at_ease', label: 'Least at Ease' },
             { key: 'background_story', label: 'Background Story' },
+            { key: 'birthday', label: 'Birthday' },
+            { key: 'important_childhood_memory', label: 'Important Childhood Memory' },
+            { key: 'childhood_hero', label: 'Childhood Hero' },
+            { key: 'childhood_enemies', label: 'Childhood Enemies' },
+            { key: 'personality_shaping_events', label: 'Personality-Shaping Events' },
+            { key: 'ever_arrested', label: 'Ever Arrested?' },
+            { key: 'served_in_military', label: 'Served in the Military?' },
+            { key: 'prominent_education', label: 'Prominent Education' },
+            { key: 'teachers', label: 'Teachers' },
+            { key: 'trained_skills', label: 'Trained Skills' },
+            { key: 'training_where', label: 'Training: Where' },
+            { key: 'training_when', label: 'Training: When' },
+            { key: 'training_why', label: 'Training: Why' },
+            { key: 'training_how', label: 'Training: How' },
+            { key: 'upbringing_worldview', label: 'Upbringing World View' },
+            { key: 'social_class_growing_up', label: 'Social Class Growing Up' },
+            { key: 'current_social_class', label: 'Current Social Class' },
+            { key: 'soft_spots', label: 'Soft Spots' },
+            { key: 'enraged_when', label: 'Enraged When' },
+            { key: 'depressed_when', label: 'Depressed When' },
+            { key: 'biggest_accomplishment', label: 'Biggest Accomplishment' },
+            { key: 'biggest_regret', label: 'Biggest Regret' },
+            { key: 'darkest_secrets', label: 'Darkest Secrets' },
+            { key: 'lie_you_believe', label: 'The Lie You Believe' },
+            { key: 'favourite_colours', label: 'Favourite Colours' },
+            { key: 'favourite_foods', label: 'Favourite Foods' },
+            { key: 'favourite_music', label: 'Favourite Music' },
+            { key: 'favourite_joke', label: 'Favourite Joke' },
+            { key: 'spending_habits', label: 'Spending Habits' },
+            { key: 'most_prized_possessions', label: 'Most Prized Possessions' },
+            { key: 'hobbies', label: 'Hobbies' },
           ].map(({ key, label }) => (
             <Field key={key} name={label}>
               <textarea className="input resize-none h-16"

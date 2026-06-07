@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, Link } from 'react-router-dom';
 import { Dices, Ship, TrendingUp, Package, Users, ScrollText, Wifi, WifiOff, Settings } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
 import GlobalToolsDrawer from '../tools/GlobalToolsDrawer';
@@ -14,10 +14,10 @@ function imperialDate() {
 }
 
 const NAV_ITEMS = [
+  { to: '/roster', label: 'ROSTER', Icon: Users },
   { to: '/ships', label: 'SHIPS', Icon: Ship },
   { to: '/trade', label: 'TRADE', Icon: TrendingUp },
   { to: '/inventory', label: 'INVENTORY', Icon: Package },
-  { to: '/roster', label: 'ROSTER', Icon: Users },
   { to: '/log', label: 'ROLL LOG', Icon: ScrollText },
 ];
 
@@ -43,12 +43,12 @@ export default function Shell() {
       <header className="border-b border-steel bg-panel flex-shrink-0">
         <div className="flex flex-wrap items-center min-h-14 px-3 md:px-4 py-2 md:py-0 gap-3 md:gap-6">
           {/* Brand */}
-          <div className="flex items-center gap-2 select-none">
+          <Link to="/" className="flex items-center gap-2 select-none group">
             <Ship size={18} className="text-amber" />
             <span className="text-amber font-display font-bold text-base md:text-lg tracking-[0.2em] glow-amber">
               TRAVTOOLS
             </span>
-          </div>
+          </Link>
 
           {/* Module tabs */}
           <nav className="order-3 md:order-none flex items-stretch h-10 md:h-14 gap-1 flex-1 w-full md:w-auto overflow-x-auto">

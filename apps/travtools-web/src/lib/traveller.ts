@@ -2,6 +2,8 @@ import { Character, PsionicTalent, Skill, Weapon } from '../types';
 
 export type CharStat = 'str' | 'dex' | 'end_stat' | 'int_stat' | 'edu' | 'soc' | 'psi' | 'chr' | 'mor' | 'lck';
 
+export const DEFAULT_CHARACTER_TITLE = 'Traveller';
+
 export const STAT_LABELS: Record<CharStat, string> = {
   str: 'STR', dex: 'DEX', end_stat: 'END',
   int_stat: 'INT', edu: 'EDU', soc: 'SOC', psi: 'PSI',
@@ -28,7 +30,7 @@ export function toHex(n: number | null | undefined): string {
 export function upp(char: Character): string {
   const core = [char.str, char.dex, char.end_stat, char.int_stat, char.edu, char.soc]
     .map(toHex).join('');
-  const expanded = [char.psi, char.chr, char.mor, char.lck]
+  const expanded = [char.psi && char.psi > 0 ? char.psi : null, char.chr, char.mor, char.lck]
     .filter((v): v is number => v != null)
     .map(toHex).join('');
   return expanded ? `${core}-${expanded}` : core;
@@ -147,7 +149,7 @@ export function parseCSV(text: string): CharFormBase[] {
       contacts: [],
       background: {},
       career: get('career') || null,
-      rank: get('rank') || null,
+      rank: get('rank') || DEFAULT_CHARACTER_TITLE,
       homeworld: get('homeworld') || null,
       skills: parseSkillsCSV(get('skills')),
       psionic_talents: parseTalentsCSV(get('psionictalents')),

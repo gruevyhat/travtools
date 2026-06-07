@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import * as XLSX from 'xlsx';
 import {
   toHex, upp, statDM, skillChar, parseSkillsCSV, parseTalentsCSV, parseCSV,
 } from '../lib/traveller';
@@ -50,6 +51,10 @@ describe('upp', () => {
   });
   it('omits missing expanded attributes instead of rendering ?', () => {
     const c: Character = { ...baseChar, chr: 7, mor: 8, lck: 9 };
+    expect(upp(c)).toBe('9BB8A4-789');
+  });
+  it('omits PSI 0 from expanded UPP', () => {
+    const c: Character = { ...baseChar, psi: 0, chr: 7, mor: 8, lck: 9 };
     expect(upp(c)).toBe('9BB8A4-789');
   });
   it('null stats render as ?', () => {
@@ -174,6 +179,7 @@ describe('parseCSV', () => {
     expect(c.name).toBe('Test');
     expect(c.psi).toBeNull();
     expect(c.career).toBeNull();
+    expect(c.rank).toBe('Traveller');
     expect(c.skills).toEqual([]);
     expect(c.psionic_talents).toEqual([]);
   });
@@ -191,6 +197,143 @@ describe('parseCSV', () => {
 
   it('returns empty array for header-only input', () => {
     expect(parseCSV('Name,STR,DEX')).toEqual([]);
+  });
+});
+
+function workbookBuffer(sheets: Record<string, unknown[][]>): ArrayBuffer {
+  const wb = XLSX.utils.book_new();
+  Object.entries(sheets).forEach(([name, rows]) => {
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), name);
+  });
+  return XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer;
+}
+
+describe('parseXLSXCharacter profile title', () => {
+  it('uses a text title from term notes instead of a numeric rank code', () => {
+    const buffer = workbookBuffer({
+      Profile: [
+        ['', '', 'Name'],
+        ['', '', 'Rafael Navarro'],
+        [],
+        ['', '', 'Term', 'Career', 'Assignment', 'Surv.?', 'Com.?', 'Adv.?', 'Rank', 'Events, Connections, & Notes'],
+        ['', '', 1, 'Army', 'Infantry', true, false, true, 1, '-1 PSI; Lance Corp.; Adv Training.'],
+      ],
+      CharacteristicsSkills: [
+        ['CHARACTERISTICS'],
+        ['STR', 9],
+        ['DEX', 11],
+        ['END', 11],
+        ['INT', 8],
+        ['EDU', 10],
+        ['SOC', 4],
+      ],
+    });
+
+    const parsed = parseXLSXCharacter(buffer, 'Graham');
+
+    expect(parsed.career).toBe('Army');
+    expect(parsed.rank).toBe('Lance Corp');
+    expect(parsed.lifepath[0].rank).toBe('1');
+  });
+
+  it('defaults the title to Traveller when no text title is present', () => {
+    const buffer = workbookBuffer({
+      Profile: [
+        ['', '', 'Name'],
+        ['', '', 'Jesse'],
+      ],
+      CharacteristicsSkills: [
+        ['CHARACTERISTICS'],
+        ['STR', 4],
+        ['DEX', 6],
+        ['END', 8],
+        ['INT', 10],
+        ['EDU', 11],
+        ['SOC', 9],
+      ],
+    });
+
+    const parsed = parseXLSXCharacter(buffer, 'Jesse');
+
+    expect(parsed.rank).toBe('Traveller');
+  });
+});
+
+describe('parseXLSXCharacter combat equipment', () => {
+  it('does not import Subdermal Armour Protection as armour', () => {
+    const buffer = workbookBuffer({
+      CharacteristicsSkills: [
+        ['CHARACTERISTICS'],
+        ['STR', 7],
+        ['DEX', 8],
+        ['END', 9],
+        ['INT', 10],
+        ['EDU', 11],
+        ['SOC', 6],
+      ],
+      CombatEquipment: [
+        ['Worn', 'Armour Type', 'Protection', 'Rad', 'Required Skill'],
+        [true, 'Subdermal Armour Protection', 0, 0, null],
+        [true, 'Jack', 1, 0, null],
+        ['AUGMENTS'],
+      ],
+    });
+
+    const parsed = parseXLSXCharacter(buffer, 'Tester');
+
+    expect(parsed.armour).toEqual([
+      expect.objectContaining({ name: 'Jack', protection: 1 }),
+    ]);
+  });
+});
+
+describe('parseXLSXCharacter background/personality', () => {
+  it('imports populated BackgroundPersonality fields and relationship contacts', () => {
+    const buffer = workbookBuffer({
+      CharacteristicsSkills: [
+        ['CHARACTERISTICS'],
+        ['STR', 7],
+        ['DEX', 8],
+        ['END', 9],
+        ['INT', 10],
+        ['EDU', 11],
+        ['SOC', 6],
+      ],
+      BackgroundPersonality: [
+        ['PERSONALITY', '', '', '', '', '', '', '', '', 'APPEARANCE', '', '', '', '', '', 'BACKGROUND'],
+        ['DESCRIPTOR OPPOSITES', '', '', '', '', '', '', '', '', 'Basic Desc.', 'weathered scout', '', '', '', '', 'From Profile'],
+        ['Diplomatic', '', false, false, true, false, false, 'Violent'],
+        ['Visual Age', '42', '', '', '', '', '', '', '', 'Body Build', 'lean'],
+        ['GENERAL DESCRIPTION'],
+        ['', 'Rugged square face and mirror shades.'],
+        ['', 'Slow drawl with dry one-liners.'],
+        ['Conversation & Speech Quirks'],
+        ['Greatest Fears', 'Being captured again.'],
+        ['Most at Ease', 'In a dimly lit spacer bar.'],
+        ['The Lie You Believe', 'I am better off alone.'],
+        ['Mentor', 'Captain Voss', '', 'Alive', true],
+        ['Relationship', 'Saved him from the Order.'],
+      ],
+    });
+
+    const parsed = parseXLSXCharacter(buffer, 'Rafael');
+
+    expect(parsed.background.personality_descriptors).toContain('Diplomatic / Violent: 3 of 5');
+    expect(parsed.background.basic_description).toBe('weathered scout');
+    expect(parsed.background.body_build).toBe('lean');
+    expect(parsed.background.general_description).toBe('Rugged square face and mirror shades.');
+    expect(parsed.background.speech_quirks).toBe('Slow drawl with dry one-liners.');
+    expect(parsed.background.greatest_fears).toBe('Being captured again.');
+    expect(parsed.background.most_at_ease).toBe('In a dimly lit spacer bar.');
+    expect(parsed.background.lie_you_believe).toBe('I am better off alone.');
+    expect(parsed.contacts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: 'Captain Voss',
+        type: 'Mentor',
+        description: 'Saved him from the Order.',
+        alive: true,
+      }),
+    ]));
   });
 });
 

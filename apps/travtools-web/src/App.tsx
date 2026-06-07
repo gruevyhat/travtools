@@ -1,9 +1,10 @@
 import { Suspense, lazy } from 'react';
-import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter, Routes, Route } from 'react-router-dom';
 import { SupabaseProvider, useSupabase } from './lib/supabaseContext';
 import SetupScreen from './components/SetupScreen';
 import Shell from './components/layout/Shell';
 
+const LandingPage = lazy(() => import('./components/home/LandingPage'));
 const ShipViewer = lazy(() => import('./components/ships/ShipViewer'));
 const TradeLedger = lazy(() => import('./components/trade/TradeLedger'));
 const InventoryManager = lazy(() => import('./components/inventory/InventoryManager'));
@@ -20,7 +21,7 @@ function AppRoutes() {
       <Suspense fallback={<div className="p-4 text-xs text-amber tracking-widest">LOADING MODULE...</div>}>
         <Routes>
           <Route path="/" element={<Shell />}>
-            <Route index element={<Navigate to="/ships" replace />} />
+            <Route index element={<LandingPage />} />
             <Route path="ships" element={<ShipViewer />} />
             <Route path="trade" element={<TradeLedger />} />
             <Route path="inventory" element={<InventoryManager />} />
