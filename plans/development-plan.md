@@ -24,7 +24,7 @@ All four features are scaffolded and connected to Supabase. The build passes cle
 | 0 | Foundation | App live in production, test infra in place | In Progress |
 | 1 | Party Roster | Roster is production-ready: import, display, edit, sync | Planned |
 | 2 | Inventory Manager | Inventory is production-ready: add/edit, filters, totals, sync | Planned |
-| 3 | Ship Schematic Viewer | Ships is production-ready: canonical SVGs, custom upload, annotations, sync | Planned |
+| 3 | Ship Schematic Viewer | Ships is production-ready: canonical SVGs, custom upload, annotations, sync | In Progress |
 | 4 | Trade Ledger | Trade is production-ready: full deal arc, profit calc, sync | Planned |
 | 5 | Dice & Reference | Session-critical tools: dice roller + quick rulebook lookups | Planned |
 | 6 | Polish & Resilience | Mobile layout, error handling, offline resilience | Planned |
@@ -268,35 +268,44 @@ Questions to answer:
 
 **Current baseline**
 - [x] Type-S Scout/Courier and Type-A Free Trader canonical SVGs render as selectable ships
+- [x] Type-K Safari Ship canonical SVG renders as a selectable third ship
 - [x] Custom schematic upload uses the public `ship-schematics` Storage bucket
-- [x] Custom schematic annotations can be added and removed, and are stored in `ships.annotations`
-- [x] E2E smoke covers the Ships route loading without runtime errors
+- [x] Custom and canonical schematic annotations can be added and removed, and are stored in `ships.annotations`
+- [x] E2E smoke covers ship route interactions: canonical add, annotation add/remove, notes field, and custom upload with mocked Storage
 - [x] Character portraits are independent of Storage; only custom ship schematics require the `ship-schematics` bucket
 
 **PDF extraction (do first)**
+- [ ] Restore/source `docs/Traveller 2022 Core Rulebook 20-02-2026.pdf`; the current workspace only has character XLSX files, so page-level ship-plan audit remains blocked
 - [ ] Read deck plan legend (p.189) — reference for icon meanings when auditing SVGs
 - [ ] Read Type-S Scout/Courier deck plan (p.191): 2 decks. Deck 2 (main): Bridge (1), Workshop (2), 4 staterooms, probe drone bay, airlock, iris valves, fuel/drives. Deck 1 (upper): Cargo Bay (3). Turret external. Confirm SVG matches this layout.
 - [ ] Read Type-A Free Trader deck plan (p.195): 2 decks. Deck 1 (main): Bridge (1), Cargo Bay (2), 20 low berths, drives/fuel. Deck 2 (upper): 10 staterooms + common area. Confirm SVG matches this layout.
 - [ ] Note: additional canonical ships exist in the 2022 book — Type-J Seeker (p.193), Type-A2 Far Trader (p.197), Type-K Safari Ship (p.199) — candidates for a third canonical option in M3 UX task
 
 **Correctness**
+- [x] Implement Type-S Scout/Courier SVG layout from extracted milestone notes: 2 decks, bridge, workshop, 4 staterooms, probe drone bay, airlock, fuel/drives, upper cargo bay, external turret
+- [x] Implement Type-A Free Trader SVG layout from extracted milestone notes: 2 decks, bridge, cargo bay, 20 low berths, drives/fuel, 10 staterooms, common area
 - [ ] Audit Type-S Scout/Courier SVG against deck plan (p.191): verify room labels, deck count, fuel/drive placement, turret position
 - [ ] Audit Type-A Free Trader SVG against deck plan (p.195): verify room labels, low berth count (20), stateroom deck separation
 - [ ] Test: upload a custom image, place 3 annotations, verify they persist after page reload
 - [ ] Test: remove an annotation; verify removal syncs to a second tab
-- [ ] Decide and implement: should canonical ships support annotations? (Recommendation: yes — useful for marking cabin assignments, damage, etc.)
+- [x] Decide and implement: canonical ships support annotations for cabin assignments, damage, and table notes
 - [ ] Storage bucket: confirm `ship-schematics` bucket is Public and custom schematic upload/read works end-to-end
 
 **UX improvements**
-- [ ] Annotation tooltip: hovering an annotation dot shows the label without cluttering the view; clicking selects it for deletion
-- [ ] Ship notes field: freeform text below the schematic for crew manifest, mortgage balance, etc.
-- [ ] Add a third canonical ship: Type-K Safari Ship (p.198–199) is the most distinctive option — 200t, unique wide-hull shape, trophy lounge, multi-environment spaces
+- [x] Annotation tooltip: hovering an annotation dot shows the label without cluttering the view; clicking selects it for deletion
+- [x] Ship notes field: freeform text below the schematic for crew manifest, mortgage balance, etc.
+- [x] Add a third canonical ship: Type-K Safari Ship (p.198–199) is the most distinctive option — 200t, unique wide-hull shape, trophy lounge, multi-environment spaces
+- [x] Storage upload errors surface visibly in the ship viewer, including missing `ship-schematics` bucket failures
 
 **Tests (TDD — write before UX improvements)**
-- [ ] `handleImageClick()` position calculation: click at known pixel → expected x/y percentage
-- [ ] `removeAnnotation()` filters correctly by id
-- [ ] `ShipViewer` renders ship list; canonical ship renders its SVG component
-- [ ] `canonicalShips` — each entry has required fields (id, name, tonnage, Component)
+- [x] `handleImageClick()` position calculation: click at known pixel → expected x/y percentage
+- [x] `removeAnnotation()` filters correctly by id
+- [x] `ShipViewer` renders ship list; canonical ship renders its SVG component
+- [x] `canonicalShips` — each entry has required fields (id, name, tonnage, Component)
+- [x] `npm run lint`
+- [x] `npm test`
+- [x] `npm run test:e2e`
+- [x] `npm run build`
 
 ### Milestone 3 Retrospective
 

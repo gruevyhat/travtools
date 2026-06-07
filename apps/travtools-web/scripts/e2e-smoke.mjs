@@ -213,6 +213,24 @@ async function installSupabaseMock(page) {
       body: JSON.stringify(responseBody(request, body)),
     });
   });
+
+  await page.route('https://*/storage/v1/object/**', async route => {
+    const request = route.request();
+    if (request.method() === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'image/png',
+        body: tinyPortraitPng,
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ Key: 'ship-schematics/smoke-ship.png' }),
+    });
+  });
 }
 
 function collectPageErrors(page) {
@@ -352,6 +370,56 @@ async function checkRosterInteractions(browser, baseUrl) {
   };
 }
 
+async function checkShipInteractions(browser, baseUrl) {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  await context.addInitScript(() => {
+    localStorage.setItem('tt_sb_url', 'https://smoke.supabase.co');
+    localStorage.setItem('tt_sb_key', 'smoke-key');
+  });
+
+  const page = await context.newPage();
+  const errors = collectPageErrors(page);
+
+  await installSupabaseMock(page);
+  await page.goto(`${baseUrl}#/ships`, { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1_000);
+
+  await page.getByLabel('Add ship').click();
+  await page.getByRole('button').filter({ hasText: 'Type-S' }).click();
+  await page.getByLabel('Type-S Scout/Courier deck plan').waitFor({ state: 'visible', timeout: 5_000 });
+
+  await page.getByRole('button', { name: 'LABEL' }).click();
+  await page.getByLabel('Type-S Scout/Courier deck plan').click({ position: { x: 200, y: 120 } });
+  await page.getByPlaceholder('Label text...').type('Bridge Watch');
+  await page.getByRole('button', { name: 'SAVE' }).click();
+  await page.getByLabel('Annotation Bridge Watch').waitFor({ state: 'visible', timeout: 5_000 });
+  await page.getByLabel('Annotation Bridge Watch').click();
+  await page.getByLabel('Delete annotation Bridge Watch').click();
+  await page.getByLabel('Annotation Bridge Watch').waitFor({ state: 'hidden', timeout: 5_000 });
+
+  await page.getByLabel('Ship Notes').fill('Crew cabins assigned.');
+  await page.getByLabel('Ship Notes').blur();
+
+  await page.getByLabel('Add ship').click();
+  await page.getByPlaceholder('Ship name').fill('Smoke Custom');
+  await page.locator('input[type="file"][accept="image/*"]').setInputFiles({
+    name: 'ship.png',
+    mimeType: 'image/png',
+    buffer: tinyPortraitPng,
+  });
+  await page.locator('aside').getByText('Smoke Custom', { exact: true }).waitFor({ state: 'visible', timeout: 5_000 });
+  await page.locator('img[alt="Smoke Custom"]').waitFor({ state: 'visible', timeout: 5_000 });
+
+  await page.screenshot({ path: new URL('ships.png', outputDir).pathname, fullPage: false });
+  await context.close();
+
+  return {
+    route: 'ships-interactions',
+    ok: true,
+    errors,
+  };
+}
+
 async function replaceByTyping(locator, value) {
   await locator.press('ControlOrMeta+A');
   await locator.type(value);
@@ -434,7 +502,7 @@ async function main() {
     browser = await chromium.launch({ headless: true });
     const results = [
       await checkLanding(browser, baseUrl),
-      await checkConfiguredRoute(browser, baseUrl, 'ships', 'SHIPS'),
+      await checkShipInteractions(browser, baseUrl),
       await checkRosterInteractions(browser, baseUrl),
       await checkFormTyping(browser, baseUrl),
       await checkConfiguredRoute(browser, baseUrl, 'log', 'ROLL LOG'),
