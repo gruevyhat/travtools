@@ -1,26 +1,47 @@
-import { useEffect, useState, useCallback } from 'react';
-import { ChevronDown, ChevronUp, Plus, RefreshCw, Trash2, X } from 'lucide-react';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { GripVertical, Plus, RefreshCw, Trash2, X } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
 import { fmtDM } from '../../lib/dice';
 import { statDM } from '../../lib/traveller';
 import { Character, CombatCombatant } from '../../types';
 
+const STORAGE_KEY = 'travtools-combat-state';
+
 function rollInitiative(dexDM: number): number {
-  const d6 = Math.ceil(Math.random() * 6);
-  return d6 + dexDM;
+  return Math.ceil(Math.random() * 6) + dexDM;
+}
+
+function loadFromStorage(): { combatants: CombatCombatant[]; round: number; activeIndex: number } | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed?.combatants)) return parsed;
+  } catch { /* ignore */ }
+  return null;
+}
+
+function persist(state: { combatants: CombatCombatant[]; round: number; activeIndex: number }) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { /* ignore */ }
 }
 
 export default function CombatTracker() {
   const { client } = useSupabase();
   const [characters, setCharacters] = useState<Character[]>([]);
-  const [combatants, setCombatants] = useState<CombatCombatant[]>([]);
-  const [round, setRound] = useState(1);
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // NPC quick-add
+  // Initialise from localStorage so state survives tab switches
+  const saved = useRef(loadFromStorage());
+  const [combatants, setCombatants] = useState<CombatCombatant[]>(saved.current?.combatants ?? []);
+  const [round, setRound] = useState(saved.current?.round ?? 1);
+  const [activeIndex, setActiveIndex] = useState(saved.current?.activeIndex ?? 0);
+
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [npcName, setNpcName] = useState('');
   const [npcInitiative, setNpcInitiative] = useState('');
+
+  // Drag state
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
 
   const loadCharacters = useCallback(async () => {
     if (!client) return;
@@ -34,32 +55,73 @@ export default function CombatTracker() {
 
   useEffect(() => { loadCharacters(); }, [loadCharacters]);
 
-  // Persist combat state via Supabase broadcast so all clients stay in sync
+  // Supabase broadcast for cross-client sync
   useEffect(() => {
     if (!client) return;
     const channel = client.channel('combat-tracker-sync', { config: { broadcast: { self: false } } });
     channel.on('broadcast', { event: 'combat_update' }, ({ payload }) => {
-      if (payload.combatants) setCombatants(payload.combatants);
-      if (payload.round !== undefined) setRound(payload.round);
-      if (payload.activeIndex !== undefined) setActiveIndex(payload.activeIndex);
+      if (Array.isArray(payload?.combatants)) {
+        const next = { combatants: payload.combatants, round: payload.round ?? 1, activeIndex: payload.activeIndex ?? 0 };
+        setCombatants(next.combatants);
+        setRound(next.round);
+        setActiveIndex(next.activeIndex);
+        persist(next); // keep this client's localStorage in sync too
+      }
     }).subscribe();
     return () => { client.removeChannel(channel); };
   }, [client]);
 
   function broadcast(next: { combatants: CombatCombatant[]; round: number; activeIndex: number }) {
-    if (!client) return;
-    client.channel('combat-tracker-sync').send({
-      type: 'broadcast',
-      event: 'combat_update',
-      payload: next,
-    });
+    client?.channel('combat-tracker-sync').send({ type: 'broadcast', event: 'combat_update', payload: next });
   }
 
   function updateState(next: { combatants: CombatCombatant[]; round: number; activeIndex: number }) {
     setCombatants(next.combatants);
     setRound(next.round);
     setActiveIndex(next.activeIndex);
+    persist(next);
     broadcast(next);
+  }
+
+  // ── Drag and drop ──────────────────────────────────────────────────────────
+
+  function handleDragStart(idx: number) {
+    setDragIndex(idx);
+    setDropIndex(idx);
+  }
+
+  function handleDragOver(e: React.DragEvent, idx: number) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDropIndex(idx);
+  }
+
+  function handleDrop(e: React.DragEvent, idx: number) {
+    e.preventDefault();
+    if (dragIndex === null || dragIndex === idx) { setDragIndex(null); setDropIndex(null); return; }
+    const next = [...combatants];
+    const [moved] = next.splice(dragIndex, 1);
+    next.splice(idx, 0, moved);
+    let newActive = activeIndex;
+    if (activeIndex === dragIndex) newActive = idx;
+    else if (dragIndex < activeIndex && idx >= activeIndex) newActive--;
+    else if (dragIndex > activeIndex && idx <= activeIndex) newActive++;
+    setDragIndex(null);
+    setDropIndex(null);
+    updateState({ combatants: next, round, activeIndex: newActive });
+  }
+
+  function handleDragEnd() { setDragIndex(null); setDropIndex(null); }
+
+  // ── Combatant management ───────────────────────────────────────────────────
+
+  function addCharacter(c: Character) {
+    if (combatants.some(x => x.id === c.id)) return;
+    const dex = (c.temp_mods as Record<string, number> | null)?.dex ?? c.dex ?? 7;
+    const dm = statDM(dex);
+    const entry: CombatCombatant = { id: c.id, name: c.name, initiative: rollInitiative(dm), dexDM: dm, minorActionUsed: false, significantActionUsed: false, isNPC: false };
+    const next = [...combatants, entry].sort((a, b) => b.initiative - a.initiative);
+    updateState({ combatants: next, round, activeIndex });
   }
 
   function rollAllInitiative() {
@@ -68,15 +130,7 @@ export default function CombatTracker() {
       .map(c => {
         const dex = (c.temp_mods as Record<string, number> | null)?.dex ?? c.dex ?? 7;
         const dm = statDM(dex);
-        return {
-          id: c.id,
-          name: c.name,
-          initiative: rollInitiative(dm),
-          dexDM: dm,
-          minorActionUsed: false,
-          significantActionUsed: false,
-          isNPC: false,
-        };
+        return { id: c.id, name: c.name, initiative: rollInitiative(dm), dexDM: dm, minorActionUsed: false, significantActionUsed: false, isNPC: false };
       });
     const next = [...combatants, ...rolled].sort((a, b) => b.initiative - a.initiative);
     updateState({ combatants: next, round, activeIndex });
@@ -85,49 +139,34 @@ export default function CombatTracker() {
   function addNPC() {
     const init = parseInt(npcInitiative, 10);
     if (!npcName.trim() || Number.isNaN(init)) return;
-    const npc: CombatCombatant = {
-      id: `npc-${Date.now()}`,
-      name: npcName.trim(),
-      initiative: init,
-      dexDM: 0,
-      minorActionUsed: false,
-      significantActionUsed: false,
-      isNPC: true,
-    };
+    const npc: CombatCombatant = { id: `npc-${Date.now()}`, name: npcName.trim(), initiative: init, dexDM: 0, minorActionUsed: false, significantActionUsed: false, isNPC: true };
     const next = [...combatants, npc].sort((a, b) => b.initiative - a.initiative);
-    setNpcName('');
-    setNpcInitiative('');
+    setNpcName(''); setNpcInitiative('');
     updateState({ combatants: next, round, activeIndex: Math.min(activeIndex, next.length - 1) });
   }
 
   function removeCombatant(id: string) {
     const next = combatants.filter(c => c.id !== id);
-    const nextActive = Math.min(activeIndex, Math.max(0, next.length - 1));
-    updateState({ combatants: next, round, activeIndex: nextActive });
+    updateState({ combatants: next, round, activeIndex: Math.min(activeIndex, Math.max(0, next.length - 1)) });
   }
 
   function toggleAction(id: string, action: 'minor' | 'significant') {
-    const next = combatants.map(c =>
-      c.id === id
-        ? { ...c, [action === 'minor' ? 'minorActionUsed' : 'significantActionUsed']: !c[action === 'minor' ? 'minorActionUsed' : 'significantActionUsed'] }
-        : c
-    );
+    const key = action === 'minor' ? 'minorActionUsed' : 'significantActionUsed';
+    const next = combatants.map(c => c.id === id ? { ...c, [key]: !c[key] } : c);
     updateState({ combatants: next, round, activeIndex });
   }
 
+  // ── Turn navigation ────────────────────────────────────────────────────────
+
   function nextTurn() {
     if (combatants.length === 0) return;
-    let nextIndex = activeIndex + 1;
-    let nextRound = round;
+    const nextIndex = activeIndex + 1;
     if (nextIndex >= combatants.length) {
-      nextIndex = 0;
-      nextRound = round + 1;
-      // Reset actions for new round
       const reset = combatants.map(c => ({ ...c, minorActionUsed: false, significantActionUsed: false }));
-      updateState({ combatants: reset, round: nextRound, activeIndex: 0 });
-      return;
+      updateState({ combatants: reset, round: round + 1, activeIndex: 0 });
+    } else {
+      updateState({ combatants, round, activeIndex: nextIndex });
     }
-    updateState({ combatants, round: nextRound, activeIndex: nextIndex });
   }
 
   function prevTurn() {
@@ -139,42 +178,7 @@ export default function CombatTracker() {
     }
   }
 
-  function clearCombat() {
-    updateState({ combatants: [], round: 1, activeIndex: 0 });
-  }
-
-  function moveUp(index: number) {
-    if (index === 0) return;
-    const next = [...combatants];
-    [next[index - 1], next[index]] = [next[index], next[index - 1]];
-    const newActive = activeIndex === index ? index - 1 : activeIndex === index - 1 ? index : activeIndex;
-    updateState({ combatants: next, round, activeIndex: newActive });
-  }
-
-  function moveDown(index: number) {
-    if (index >= combatants.length - 1) return;
-    const next = [...combatants];
-    [next[index], next[index + 1]] = [next[index + 1], next[index]];
-    const newActive = activeIndex === index ? index + 1 : activeIndex === index + 1 ? index : activeIndex;
-    updateState({ combatants: next, round, activeIndex: newActive });
-  }
-
-  function addCharacter(c: Character) {
-    if (combatants.some(x => x.id === c.id)) return;
-    const dex = (c.temp_mods as Record<string, number> | null)?.dex ?? c.dex ?? 7;
-    const dm = statDM(dex);
-    const newCombatant: CombatCombatant = {
-      id: c.id,
-      name: c.name,
-      initiative: rollInitiative(dm),
-      dexDM: dm,
-      minorActionUsed: false,
-      significantActionUsed: false,
-      isNPC: false,
-    };
-    const next = [...combatants, newCombatant].sort((a, b) => b.initiative - a.initiative);
-    updateState({ combatants: next, round, activeIndex });
-  }
+  function clearCombat() { updateState({ combatants: [], round: 1, activeIndex: 0 }); }
 
   const availableChars = characters.filter(c => !combatants.some(x => x.id === c.id));
 
@@ -206,12 +210,9 @@ export default function CombatTracker() {
       {/* Add combatants */}
       <div className="panel p-3 space-y-3">
         <div className="label">ADD TO COMBAT</div>
-
         <div className="flex flex-wrap gap-2">
           {availableChars.map(c => (
-            <button key={c.id} type="button"
-              onClick={() => addCharacter(c)}
-              className="btn-steel text-xs">
+            <button key={c.id} type="button" onClick={() => addCharacter(c)} className="btn-steel text-xs">
               + {c.name}
             </button>
           ))}
@@ -221,8 +222,6 @@ export default function CombatTracker() {
             </button>
           )}
         </div>
-
-        {/* NPC quick-add */}
         <div className="flex gap-2 items-end">
           <div className="flex-1 space-y-1">
             <label className="label">NPC NAME</label>
@@ -248,14 +247,28 @@ export default function CombatTracker() {
           <div>No combatants. Add characters or NPCs above.</div>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-1">
           {combatants.map((c, idx) => {
             const isActive = idx === activeIndex;
+            const isDragging = idx === dragIndex;
+            const isDropTarget = idx === dropIndex && dragIndex !== null && dragIndex !== idx;
             return (
-              <div key={c.id}
-                className={`panel px-3 py-2 flex items-center gap-3 transition-colors ${
+              <div
+                key={c.id}
+                draggable
+                onDragStart={() => handleDragStart(idx)}
+                onDragOver={e => handleDragOver(e, idx)}
+                onDrop={e => handleDrop(e, idx)}
+                onDragEnd={handleDragEnd}
+                className={`panel px-3 py-2 flex items-center gap-2 transition-all select-none ${
                   isActive ? 'border border-amber/60 bg-amber/5' : ''
-                }`}>
+                } ${isDragging ? 'opacity-40' : ''}  ${isDropTarget ? 'border-t-2 border-t-cyan-trav' : ''}`}
+              >
+                {/* Drag handle */}
+                <div className="flex-shrink-0 cursor-grab active:cursor-grabbing text-body/30 hover:text-body/60 touch-none">
+                  <GripVertical size={14} />
+                </div>
+
                 {/* Initiative score */}
                 <div className={`flex-shrink-0 w-10 h-10 border-2 flex items-center justify-center font-mono font-bold text-lg ${
                   isActive ? 'border-amber text-amber' : 'border-steel text-body'
@@ -268,7 +281,7 @@ export default function CombatTracker() {
                   <div className={`font-mono text-sm font-bold truncate ${isActive ? 'text-amber' : 'text-bright'}`}>
                     {c.name}
                     {c.isNPC && <span className="text-body/50 text-xs font-normal ml-1">NPC</span>}
-                    {isActive && <span className="text-amber text-xs ml-2">◀ ACTIVE</span>}
+                    {isActive && <span className="text-amber text-xs ml-2">◀</span>}
                   </div>
                   {!c.isNPC && (
                     <div className="text-xs text-body/55 font-mono">DEX {fmtDM(c.dexDM)}</div>
@@ -277,39 +290,22 @@ export default function CombatTracker() {
 
                 {/* Action boxes */}
                 <div className="flex items-center gap-1">
-                  <button type="button"
-                    onClick={() => toggleAction(c.id, 'minor')}
-                    title="Minor action"
-                    className={`w-6 h-6 border text-xs font-mono transition-colors ${
-                      c.minorActionUsed ? 'border-body/40 bg-steel/30 text-body/40' : 'border-cyan-trav text-cyan-trav hover:bg-cyan-trav/10'
+                  <button type="button" onClick={() => toggleAction(c.id, 'minor')} title="Minor action"
+                    className={`w-7 h-7 border text-xs font-mono transition-colors ${
+                      c.minorActionUsed ? 'border-body/30 bg-steel/30 text-body/30 line-through' : 'border-cyan-trav text-cyan-trav hover:bg-cyan-trav/10'
                     }`}>
                     M
                   </button>
-                  <button type="button"
-                    onClick={() => toggleAction(c.id, 'significant')}
-                    title="Significant action"
-                    className={`w-6 h-6 border text-xs font-mono transition-colors ${
-                      c.significantActionUsed ? 'border-body/40 bg-steel/30 text-body/40' : 'border-amber text-amber hover:bg-amber/10'
+                  <button type="button" onClick={() => toggleAction(c.id, 'significant')} title="Significant action"
+                    className={`w-7 h-7 border text-xs font-mono transition-colors ${
+                      c.significantActionUsed ? 'border-body/30 bg-steel/30 text-body/30 line-through' : 'border-amber text-amber hover:bg-amber/10'
                     }`}>
                     S
                   </button>
                 </div>
 
-                {/* Reorder */}
-                <div className="flex flex-col gap-0.5">
-                  <button type="button" onClick={() => moveUp(idx)} disabled={idx === 0}
-                    className="text-body/50 hover:text-body disabled:opacity-20">
-                    <ChevronUp size={12} />
-                  </button>
-                  <button type="button" onClick={() => moveDown(idx)} disabled={idx === combatants.length - 1}
-                    className="text-body/50 hover:text-body disabled:opacity-20">
-                    <ChevronDown size={12} />
-                  </button>
-                </div>
-
                 {/* Remove */}
-                <button type="button" onClick={() => removeCombatant(c.id)}
-                  className="text-body/40 hover:text-alert">
+                <button type="button" onClick={() => removeCombatant(c.id)} className="text-body/40 hover:text-alert flex-shrink-0">
                   <X size={13} />
                 </button>
               </div>
@@ -320,9 +316,8 @@ export default function CombatTracker() {
 
       {combatants.length > 0 && (
         <div className="text-xs text-body/55 space-y-1 font-mono">
-          <div><span className="text-cyan-trav">M</span> = Minor action (aim, draw, move)</div>
-          <div><span className="text-amber">S</span> = Significant action (attack, skill check)</div>
-          <div>NEXT advances to next combatant; end of round resets actions.</div>
+          <div><span className="text-cyan-trav">M</span> = Minor action · <span className="text-amber">S</span> = Significant action · drag <span className="text-body/40">⠿</span> to reorder</div>
+          <div>NEXT advances turn; end of round resets actions and increments round counter.</div>
         </div>
       )}
     </div>
