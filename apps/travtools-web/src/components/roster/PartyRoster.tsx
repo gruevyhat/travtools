@@ -163,9 +163,11 @@ function physicalStatus(char: Character): { label: string; color: string } {
 function CharacterActionsMenu({
   onEdit,
   onDelete,
+  onRefreshXLSX,
 }: {
   onEdit: () => void;
   onDelete: () => void;
+  onRefreshXLSX: () => void;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -199,6 +201,13 @@ function CharacterActionsMenu({
             className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-mono text-body hover:bg-steel/30 hover:text-amber"
           >
             <Pencil size={12} /> EDIT
+          </button>
+          <button
+            type="button"
+            onClick={() => runAction(onRefreshXLSX)}
+            className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-mono text-body hover:bg-steel/30 hover:text-amber"
+          >
+            <Upload size={12} /> REFRESH XLSX
           </button>
           <button
             type="button"
@@ -651,6 +660,9 @@ function CharDetailContent({
   const [trackingHealth, setTrackingHealth] = useState(() => isDamaged);
   const [trackingPsi, setTrackingPsi] = useState(() => isPsiSpent);
   const [trackingTempMods, setTrackingTempMods] = useState(() => hasTempMods);
+
+  useEffect(() => { if (isDamaged) setTrackingHealth(true); }, [isDamaged]);
+  useEffect(() => { if (isPsiSpent) setTrackingPsi(true); }, [isPsiSpent]);
 
   const displayName = charDisplayName(char);
   const trainedSkills = char.skills
@@ -1262,11 +1274,12 @@ function CharDetailContent({
 // ─── Mobile Card (accordion) ──────────────────────────────────────────────────
 
 function CharCard({
-  char, onEdit, onDelete, onRollSave, onStatAdjust, onPortraitUpload, uploadingPortrait,
+  char, onEdit, onDelete, onRefreshXLSX, onRollSave, onStatAdjust, onPortraitUpload, uploadingPortrait,
 }: {
   char: Character;
   onEdit: () => void;
   onDelete: () => void;
+  onRefreshXLSX: () => void;
   onRollSave: (charName: string, result: { d1: number; d2: number; charDM: number; skillLevel: number; bonusDM: number; total: number }, checkLabel: string, difficulty: number) => void;
   onStatAdjust: (id: string, patch: Partial<Character>) => void;
   onPortraitUpload: (char: Character, file: File) => void;
@@ -1293,7 +1306,7 @@ function CharCard({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <div className="text-bright font-bold font-mono text-sm truncate">{displayName}</div>
-              <CharacterActionsMenu onEdit={onEdit} onDelete={onDelete} />
+              <CharacterActionsMenu onEdit={onEdit} onDelete={onDelete} onRefreshXLSX={onRefreshXLSX} />
             </div>
             <div className="text-xs text-body/50 mt-0.5 space-x-2">
               {char.rank && <span className="text-amber">{char.rank}</span>}
@@ -1375,6 +1388,8 @@ export default function PartyRoster() {
   const [uploadingPortraitId, setUploadingPortraitId] = useState<string | null>(null);
   const [rosterError, setRosterError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const refreshFileRef = useRef<HTMLInputElement>(null);
+  const [refreshTargetId, setRefreshTargetId] = useState<string | null>(null);
 
   const loadChars = useCallback(async () => {
     if (!client) return;
@@ -1559,6 +1574,34 @@ export default function PartyRoster() {
       const inserted = data as Character;
       setChars(prev => sortCharacters([...prev, inserted]));
       setSelectedId(inserted.id);
+    }
+  }
+
+  async function handleRefreshXLSX(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !client) return;
+    e.target.value = '';
+    const targetId = refreshTargetId;
+    setRefreshTargetId(null);
+    if (!targetId) return;
+    setRosterError(null);
+    let parsed;
+    try {
+      const buffer = await file.arrayBuffer();
+      const playerName = file.name.replace(/\.[^.]+$/, '');
+      parsed = parseXLSXCharacter(buffer, playerName);
+    } catch (err) {
+      setRosterError(err instanceof Error ? err.message : 'Could not parse character sheet.');
+      return;
+    }
+    const { data, error } = await client.from('characters').update(parsed).eq('id', targetId).select().single();
+    if (error) {
+      setRosterError(`Character refresh failed: ${error.message}`);
+      return;
+    }
+    if (data) {
+      setChars(prev => sortCharacters(prev.map(c => c.id === targetId ? data as Character : c)));
+      setSelectedId(targetId);
     }
   }
 
@@ -1779,10 +1822,13 @@ export default function PartyRoster() {
         </div>
       )}
 
-      {/* Hidden file input — lives outside both layouts so it's always in the DOM */}
+      {/* Hidden file inputs — live outside both layouts so they're always in the DOM */}
       <input ref={fileRef} type="file"
         accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         className="hidden" onChange={handleXLSX} />
+      <input ref={refreshFileRef} type="file"
+        accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        className="hidden" onChange={handleRefreshXLSX} />
 
       {/* ── Mobile layout (< lg) ────────────────────────────────────────────── */}
       <div className="lg:hidden flex-1 overflow-auto p-4 space-y-4">
@@ -1812,6 +1858,7 @@ export default function PartyRoster() {
             <CharCard key={char.id} char={char}
               onEdit={() => startEdit(char)}
               onDelete={() => deleteChar(char.id)}
+              onRefreshXLSX={() => { setRefreshTargetId(char.id); refreshFileRef.current?.click(); }}
               onRollSave={saveRoll}
               onStatAdjust={handleStatAdjust}
               onPortraitUpload={uploadPortrait}
@@ -1882,6 +1929,7 @@ export default function PartyRoster() {
                         <CharacterActionsMenu
                           onEdit={() => startEdit(selectedChar)}
                           onDelete={() => deleteChar(selectedChar.id)}
+                          onRefreshXLSX={() => { setRefreshTargetId(selectedChar.id); refreshFileRef.current?.click(); }}
                         />
                       </div>
                       <div className="text-xs text-body/50 mt-1 flex flex-wrap gap-x-2">

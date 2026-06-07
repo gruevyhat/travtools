@@ -300,7 +300,10 @@ export default function ShipViewer() {
   }
 
   function startEditSpecs() {
-    setSpecsForm(selected?.specs ?? {});
+    const canonicalDef = selected?.canonical_id
+      ? CANONICAL_SHIPS.find(c => c.id === selected.canonical_id)
+      : undefined;
+    setSpecsForm({ ...(canonicalDef?.defaultSpecs ?? {}), ...(selected?.specs ?? {}) });
     setEditingSpecs(true);
   }
 
@@ -504,16 +507,31 @@ export default function ShipViewer() {
                 <div className="max-w-5xl mx-auto space-y-3">
                   {(() => {
                     const def = CANONICAL_SHIPS.find(c => c.id === selected.canonical_id);
-                    return def ? (
-                      <div
-                        ref={schematicRef}
-                        className={`relative border border-steel bg-void ${annotating ? 'cursor-crosshair' : ''}`}
-                        onClick={handleSchematicClick}
-                      >
-                        <def.Component />
-                        {renderAnnotations()}
-                      </div>
-                    ) : null;
+                    const effectiveSpecs = { ...(def?.defaultSpecs ?? {}), ...(selected.specs ?? {}) };
+                    const hasEffectiveSpecs = Object.values(effectiveSpecs).some(v => v != null);
+                    return (
+                      <>
+                        <ShipSpecsPanel
+                          specs={hasEffectiveSpecs ? effectiveSpecs : null}
+                          editing={editingSpecs}
+                          form={specsForm}
+                          onFormChange={setSpecsForm}
+                          onEdit={startEditSpecs}
+                          onSave={saveSpecs}
+                          onCancel={() => setEditingSpecs(false)}
+                        />
+                        {def && (
+                          <div
+                            ref={schematicRef}
+                            className={`relative border border-steel bg-void ${annotating ? 'cursor-crosshair' : ''}`}
+                            onClick={handleSchematicClick}
+                          >
+                            <def.Component />
+                            {renderAnnotations()}
+                          </div>
+                        )}
+                      </>
+                    );
                   })()}
                   <div>
                     <label htmlFor="ship-notes" className="block text-xs text-amber tracking-wider mb-1">SHIP NOTES</label>
@@ -526,6 +544,9 @@ export default function ShipViewer() {
                       onBlur={saveNotes}
                     />
                   </div>
+                </div>
+              ) : selected.image_url ? (
+                <div className="space-y-3">
                   <ShipSpecsPanel
                     specs={selected.specs}
                     editing={editingSpecs}
@@ -535,9 +556,6 @@ export default function ShipViewer() {
                     onSave={saveSpecs}
                     onCancel={() => setEditingSpecs(false)}
                   />
-                </div>
-              ) : selected.image_url ? (
-                <div className="space-y-3">
                   <div
                     ref={schematicRef}
                     className={`relative inline-block max-w-full border border-steel bg-void ${annotating ? 'cursor-crosshair' : ''}`}
@@ -561,6 +579,9 @@ export default function ShipViewer() {
                       onBlur={saveNotes}
                     />
                   </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
                   <ShipSpecsPanel
                     specs={selected.specs}
                     editing={editingSpecs}
@@ -570,9 +591,6 @@ export default function ShipViewer() {
                     onSave={saveSpecs}
                     onCancel={() => setEditingSpecs(false)}
                   />
-                </div>
-              ) : (
-                <div className="space-y-3">
                   <div className="flex items-center justify-center h-64 text-body/40 text-sm border border-steel bg-panel">
                     No schematic image available.
                   </div>
@@ -587,15 +605,6 @@ export default function ShipViewer() {
                       onBlur={saveNotes}
                     />
                   </div>
-                  <ShipSpecsPanel
-                    specs={selected.specs}
-                    editing={editingSpecs}
-                    form={specsForm}
-                    onFormChange={setSpecsForm}
-                    onEdit={startEditSpecs}
-                    onSave={saveSpecs}
-                    onCancel={() => setEditingSpecs(false)}
-                  />
                 </div>
               )}
                     </div>
