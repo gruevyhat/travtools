@@ -1304,7 +1304,7 @@ function CharDetailContent({
             </div>
             {psiCur === 0 && <span className="text-alert text-xs font-mono">EXHAUSTED</span>}
           </div>
-          <div className="text-[10px] text-body/55 font-mono">Recovers with rest · spend the PSI cost listed for the power</div>
+          <div className="text-[10px] text-body/55 font-mono">Spend listed PSI cost · adjust recovery manually</div>
         </div>
       )}
     </div>
