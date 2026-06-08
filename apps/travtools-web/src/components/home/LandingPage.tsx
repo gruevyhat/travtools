@@ -14,6 +14,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
+import { COMBAT_MODULE_DISABLED } from '../../lib/moduleFlags';
 import { CANONICAL_SHIPS } from '../ships/canonicalShips';
 
 interface LandingStats {
@@ -29,6 +30,7 @@ interface ModuleLink {
   label: string;
   signal: string;
   Icon: LucideIcon;
+  disabled?: boolean;
 }
 
 const INITIAL_STATS: LandingStats = {
@@ -45,7 +47,7 @@ const MODULES: ModuleLink[] = [
   { to: '/trade', label: 'TRADE', signal: 'CARGO', Icon: TrendingUp },
   { to: '/inventory', label: 'INVENTORY', signal: 'GEAR', Icon: Package },
   { to: '/log', label: 'ROLL LOG', signal: 'DICE', Icon: ScrollText },
-  { to: '/combat', label: 'COMBAT', signal: 'COMBAT', Icon: Swords },
+  { to: '/combat', label: 'COMBAT', signal: COMBAT_MODULE_DISABLED ? 'OFFLINE' : 'COMBAT', Icon: Swords, disabled: COMBAT_MODULE_DISABLED },
   { to: '/journal', label: 'JOURNAL', signal: 'LOG', Icon: BookOpen },
 ];
 
@@ -155,12 +157,25 @@ export default function LandingPage() {
             </div>
 
             <div className="mt-8 flex flex-wrap gap-3">
-              {MODULES.map(({ to, label, Icon }) => (
-                <Link key={to} to={to} className="btn-amber flex items-center gap-2 min-h-10">
-                  <Icon size={14} />
-                  <span>{label}</span>
-                  <ArrowRight size={13} />
-                </Link>
+              {MODULES.map(({ to, label, Icon, disabled }) => (
+                disabled ? (
+                  <button
+                    key={to}
+                    type="button"
+                    disabled
+                    className="btn-steel flex items-center gap-2 min-h-10 opacity-45 cursor-not-allowed"
+                    title="Combat module disabled"
+                  >
+                    <Icon size={14} />
+                    <span>{label}</span>
+                  </button>
+                ) : (
+                  <Link key={to} to={to} className="btn-amber flex items-center gap-2 min-h-10">
+                    <Icon size={14} />
+                    <span>{label}</span>
+                    <ArrowRight size={13} />
+                  </Link>
+                )
               ))}
             </div>
           </div>
@@ -168,21 +183,38 @@ export default function LandingPage() {
           <div className="relative min-h-[24rem] flex items-end lg:items-center">
             <div className="w-full border border-steel/70 bg-void/80 backdrop-blur-sm py-5">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-0">
-                {MODULES.map(({ to, label, signal, Icon }) => (
-                  <Link
-                    key={to}
-                    to={to}
-                    className="group min-h-24 border-b border-steel/40 sm:border-r sm:last:border-r-0 px-4 py-4 hover:bg-steel/20 transition-colors"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2 text-amber text-xs tracking-widest">
-                        <Icon size={14} />
-                        <span>{signal}</span>
+                {MODULES.map(({ to, label, signal, Icon, disabled }) => (
+                  disabled ? (
+                    <div
+                      key={to}
+                      aria-disabled="true"
+                      title="Combat module disabled"
+                      className="min-h-24 border-b border-steel/40 sm:border-r sm:last:border-r-0 px-4 py-4 opacity-45"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2 text-body/60 text-xs tracking-widest">
+                          <Icon size={14} />
+                          <span>{signal}</span>
+                        </div>
                       </div>
-                      <ArrowRight size={14} className="text-body/65 group-hover:text-amber transition-colors" />
+                      <div className="mt-5 text-xl font-display text-body/70 tracking-wide">{label}</div>
                     </div>
-                    <div className="mt-5 text-xl font-display text-bright tracking-wide">{label}</div>
-                  </Link>
+                  ) : (
+                    <Link
+                      key={to}
+                      to={to}
+                      className="group min-h-24 border-b border-steel/40 sm:border-r sm:last:border-r-0 px-4 py-4 hover:bg-steel/20 transition-colors"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2 text-amber text-xs tracking-widest">
+                          <Icon size={14} />
+                          <span>{signal}</span>
+                        </div>
+                        <ArrowRight size={14} className="text-body/65 group-hover:text-amber transition-colors" />
+                      </div>
+                      <div className="mt-5 text-xl font-display text-bright tracking-wide">{label}</div>
+                    </Link>
+                  )
                 ))}
               </div>
               <div className="px-4 pt-4 text-xs font-mono text-body/60">

@@ -318,10 +318,17 @@ export interface CombatCombatant {
   minorActionUsed: boolean;
   significantActionUsed: boolean;
   isNPC: boolean;
+  side: 'ally' | 'enemy';
   rangeBand: RangeBand;
+  targetId: string | null;
   // NPC-only health — PCs are read live from the characters table
   npcHitsMax: number | null;
   npcHitsCur: number | null;
+  npcRole?: string | null;
+  npcSource?: string | null;
+  npcSkills?: Skill[];
+  npcWeapons?: Weapon[];
+  npcArmour?: ArmourItem[];
 }
 
 export interface CombatState {

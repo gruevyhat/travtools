@@ -577,6 +577,10 @@ function RollModal({
     return () => document.removeEventListener('keydown', handler);
   }, [onClose]);
 
+  function adjustBonusDM(delta: number) {
+    setBonusDMInput(previous => String(parseIntegerInput(previous) + delta));
+  }
+
   function rollAttack() {
     const d6 = () => Math.ceil(Math.random() * 6);
     const rawDice = rollMode === 'normal' ? [d6(), d6()] : [d6(), d6(), d6()];
@@ -661,11 +665,29 @@ function RollModal({
               </div>
             )}
             <div className="space-y-1">
-              <label className="label" htmlFor="roll-bonus-dm">Mod</label>
-              <input id="roll-bonus-dm" className="input text-xs" type="text" inputMode="numeric" pattern="[+-]?[0-9]*"
-                placeholder="0"
-                value={bonusDMInput}
-                onChange={e => setBonusDMInput(e.target.value)} />
+              <label className="label" htmlFor="roll-bonus-dm">Modifier</label>
+              <div className="grid grid-cols-[1.75rem_minmax(0,1fr)_1.75rem]">
+                <button
+                  type="button"
+                  aria-label="Decrease roll modifier"
+                  onClick={() => adjustBonusDM(-1)}
+                  className="border border-steel bg-panel text-body hover:border-amber hover:text-amber flex items-center justify-center"
+                >
+                  <Minus size={11} />
+                </button>
+                <input id="roll-bonus-dm" className="input rounded-none text-center text-xs" type="text" inputMode="numeric" pattern="[+-]?[0-9]*"
+                  placeholder="0"
+                  value={bonusDMInput}
+                  onChange={e => setBonusDMInput(e.target.value)} />
+                <button
+                  type="button"
+                  aria-label="Increase roll modifier"
+                  onClick={() => adjustBonusDM(1)}
+                  className="border border-steel bg-panel text-body hover:border-amber hover:text-amber flex items-center justify-center"
+                >
+                  <Plus size={11} />
+                </button>
+              </div>
             </div>
           </div>
 
@@ -700,7 +722,7 @@ function RollModal({
           <div className="text-xs text-body/70 font-mono">
             Char DM: <span className="text-cyan-trav">{fmtDM(charDM)}</span>
             {!isInitiative && <>{' · '}Skill: <span className="text-cyan-trav">{skillSummary}</span></>}
-            {' · '}Mod: <span className="text-cyan-trav">{fmtDM(bonusDM)}</span>
+            {' · '}Modifier: <span className="text-cyan-trav">{fmtDM(bonusDM)}</span>
             {' · '}
             {isInitiative ? (
               <span className="text-body/70">Effect becomes Initiative</span>
@@ -735,7 +757,7 @@ function RollModal({
                 )}
                 {attackResult.charDM !== 0 && <><span className="text-body">+</span><span className="text-cyan-trav text-xs">{charKey && STAT_LABELS[charKey]} {fmtDM(attackResult.charDM)}</span></>}
                 {!isInitiative && attackResult.skillLevel !== 0 && <><span className="text-body">+</span><span className="text-cyan-trav text-xs">Skill {skillLevelIsNone ? `None ${fmtDM(attackResult.skillLevel)}` : fmtDM(attackResult.skillLevel)}</span></>}
-                {attackResult.bonusDM !== 0 && <><span className="text-body">+</span><span className="text-cyan-trav text-xs">Mod {fmtDM(attackResult.bonusDM)}</span></>}
+                {attackResult.bonusDM !== 0 && <><span className="text-body">+</span><span className="text-cyan-trav text-xs">Modifier {fmtDM(attackResult.bonusDM)}</span></>}
                 <span className="text-body">=</span>
                 <span className={`text-2xl font-bold ${isInitiative || success ? 'text-safe glow-cyan' : 'text-alert'}`}>{attackResult.total}</span>
               </div>

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { NavLink, Outlet, Link } from 'react-router-dom';
 import { BookOpen, Dices, Ship, Swords, TrendingUp, Package, Users, ScrollText, Wifi, WifiOff, Settings } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
+import { COMBAT_MODULE_DISABLED } from '../../lib/moduleFlags';
 import GlobalToolsDrawer from '../tools/GlobalToolsDrawer';
 import FanNotice from '../legal/FanNotice';
 
@@ -20,7 +21,7 @@ const NAV_ITEMS = [
   { to: '/trade', label: 'TRADE', Icon: TrendingUp },
   { to: '/inventory', label: 'INVENTORY', Icon: Package },
   { to: '/log', label: 'ROLL LOG', Icon: ScrollText },
-  { to: '/combat', label: 'COMBAT', Icon: Swords },
+  { to: '/combat', label: 'COMBAT', Icon: Swords, disabled: COMBAT_MODULE_DISABLED },
   { to: '/journal', label: 'JOURNAL', Icon: BookOpen },
 ];
 
@@ -55,21 +56,33 @@ export default function Shell() {
 
           {/* Module tabs */}
           <nav className="order-3 md:order-none flex items-stretch h-10 md:h-14 gap-1 flex-1 w-full md:w-auto overflow-x-auto">
-            {NAV_ITEMS.map(({ to, label, Icon }) => (
-              <NavLink
-                key={to}
-                to={to}
-                className={({ isActive }) =>
-                  `flex items-center gap-2 px-3 md:px-4 text-xs tracking-widest font-mono border-b-2 transition-colors whitespace-nowrap ${
-                    isActive
-                      ? 'border-amber text-amber'
-                      : 'border-transparent text-body hover:text-bright hover:border-steel'
-                  }`
-                }
-              >
-                <Icon size={13} />
-                {label}
-              </NavLink>
+            {NAV_ITEMS.map(({ to, label, Icon, disabled }) => (
+              disabled ? (
+                <span
+                  key={to}
+                  aria-disabled="true"
+                  title="Combat module disabled"
+                  className="flex items-center gap-2 px-3 md:px-4 text-xs tracking-widest font-mono border-b-2 border-transparent text-body/35 whitespace-nowrap cursor-not-allowed"
+                >
+                  <Icon size={13} />
+                  {label}
+                </span>
+              ) : (
+                <NavLink
+                  key={to}
+                  to={to}
+                  className={({ isActive }) =>
+                    `flex items-center gap-2 px-3 md:px-4 text-xs tracking-widest font-mono border-b-2 transition-colors whitespace-nowrap ${
+                      isActive
+                        ? 'border-amber text-amber'
+                        : 'border-transparent text-body hover:text-bright hover:border-steel'
+                    }`
+                  }
+                >
+                  <Icon size={13} />
+                  {label}
+                </NavLink>
+              )
             ))}
           </nav>
 

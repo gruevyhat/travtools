@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BookOpen, Check, Dices, X } from 'lucide-react';
+import { BookOpen, Check, Dices, Minus, Plus, X } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
 import { DIFFICULTIES, fmtDM, rollFlux, RollMode, rollTravellerCheck, TravellerRollResult, FluxRollResult } from '../../lib/dice';
 import { TRADE_GOODS, TradeGood } from '../../data/tradeGoods';
@@ -93,6 +93,13 @@ export default function GlobalToolsDrawer({ open, onClose }: GlobalToolsDrawerPr
     saveResult(nextResult);
   }
 
+  function adjustModifier(delta: number) {
+    setModifier(previous => {
+      const parsed = parseInt(previous, 10);
+      return String((Number.isNaN(parsed) ? 0 : parsed) + delta);
+    });
+  }
+
   function doRollFlux() {
     setFluxResult(rollFlux());
     setResult(null);
@@ -169,17 +176,36 @@ export default function GlobalToolsDrawer({ open, onClose }: GlobalToolsDrawerPr
               </label>
 
               <div className="grid grid-cols-2 gap-3">
-                <label className="block space-y-1">
-                  <span className="label">MODIFIER</span>
-                  <input
-                    aria-label="Standalone Modifier"
-                    className="input"
-                    type="text"
-                    inputMode="numeric"
-                    value={modifier}
-                    onChange={e => setModifier(e.target.value)}
-                  />
-                </label>
+                <div className="block space-y-1">
+                  <label className="label" htmlFor="standalone-modifier">MODIFIER</label>
+                  <div className="grid grid-cols-[2rem_minmax(0,1fr)_2rem]">
+                    <button
+                      type="button"
+                      aria-label="Decrease standalone modifier"
+                      onClick={() => adjustModifier(-1)}
+                      className="border border-steel bg-panel text-body hover:border-amber hover:text-amber flex items-center justify-center"
+                    >
+                      <Minus size={12} />
+                    </button>
+                    <input
+                      id="standalone-modifier"
+                      aria-label="Standalone Modifier"
+                      className="input rounded-none text-center"
+                      type="text"
+                      inputMode="numeric"
+                      value={modifier}
+                      onChange={e => setModifier(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      aria-label="Increase standalone modifier"
+                      onClick={() => adjustModifier(1)}
+                      className="border border-steel bg-panel text-body hover:border-amber hover:text-amber flex items-center justify-center"
+                    >
+                      <Plus size={12} />
+                    </button>
+                  </div>
+                </div>
                 <label className="block space-y-1">
                   <span className="label">DIFFICULTY</span>
                   <select className="select" value={difficulty} onChange={e => setDifficulty(parseInt(e.target.value, 10))}>

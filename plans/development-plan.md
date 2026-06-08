@@ -516,6 +516,38 @@ Questions to answer:
 - [x] **Session journal** — `/journal` route with create/edit/delete session notes, auto-save on blur, and Supabase realtime sync.
 - **Ship combat tracker** — range bands, ship initiative, damage allocation, repair actions. Complements the existing Ship Viewer. Requires a new schema table or session-local state.
 
+---
+
+## Combat Tracker — Known Issues & Remaining Work
+
+### Resolved: ALLY / ENEMY side selector buttons
+
+**Original symptom:** In the ADD TO COMBAT panel, clicking the ALLY or ENEMY toggle buttons produced no visible change. Clicking ADD subsequently still did nothing (or added the NPC with the wrong side).
+
+**Resolution:**
+- Confirmed `type="button"` is present on both buttons, ruling out accidental form submission.
+- Confirmed `safe` (`#27AE60`) and `alert` (`#C0392B`) are defined in `tailwind.config.ts`, so the visual-state classes (`border-safe text-safe` / `border-alert text-alert`) should apply.
+- Made INIT optional (auto-rolls 1D6 if blank) — this removes one silent failure mode from ADD but does not fix the side buttons.
+- Buttons are not inside the draggable combatant rows, so drag-event interference is ruled out.
+- No `<form>` wrapper around the ADD TO COMBAT panel, ruling out page reload on submit.
+- Fresh Playwright verification showed the selector state changing correctly, so the observed failure was likely stale browser/module state.
+- Hardened the UI with `aria-pressed`, selected-state background/ring styling, and targeted component tests.
+- Fixed the broadcast path to reuse the subscribed Supabase realtime channel and catch send failures, removing a plausible side-effect source.
+
+### Remaining tasks
+
+- [x] **Fix ALLY/ENEMY side buttons** — verified click behavior, improved selected styling, and added component coverage.
+- [x] **Combat interface redesign** — replaced dense micro-control rows with collapsible tactical cards whose collapsed ribbon shows only current-round state: initiative, side, range, target, action readiness, and wound state. Expanded details expose UPP/current stats, combat skills, weapons, side, range, target, and wound controls.
+- [x] **Temporary combat module disablement** — live combat tracker is disabled behind `COMBAT_MODULE_DISABLED`; header and landing launch controls show the module as unavailable while preserving the implementation for later re-enable.
+- [x] **Clickable combat weapons** — weapon chips roll damage against the selected target, subtract worn PC armor protection, apply net damage through the wound tracker, and show an auditable damage report.
+- [x] **Core NPC archetypes** — compact archetype picker adds combat-ready NPCs based on Core Rules quick characters, patrons, encounters, weapons, and armour; archetype skills, weapons, hits, and armour flow into the combat card and weapon-damage path.
+- [x] **Active-turn action gating** — only the active combatant can spend actions or trigger weapon damage; inactive cards remain inspectable and editable for targeting/range setup.
+- [x] **Target selection UX** — replaced the active-combatant ⊕ flow with a per-card target selector.
+- [x] **Drag-and-drop cross-column guard** — invalid cross-side hover now shows a forbidden cursor and alert-highlighted row.
+- [x] **NPC hit-point editing after add** — wound panel now has an inline MAX HITS field; NPCs with no hits can start tracking without being re-added.
+- [x] **Combat tracker mobile layout** — verified at 375px: no page-level horizontal overflow; add panel, rows, and wound panel remain readable.
+- [x] **Realtime sync test** — verified two browser contexts: client B received an NPC add and round advance from client A via Supabase broadcast.
+
 ### Long-term candidates
 
 - **Trade route map** — plot world-to-world routes on a subsector grid; colour-code by profit

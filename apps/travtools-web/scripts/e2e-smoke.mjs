@@ -312,7 +312,9 @@ async function checkRosterInteractions(browser, baseUrl) {
   await page.goto(`${baseUrl}#/roster`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1_000);
 
-  const desktopRoster = page.locator('.hidden.lg\\:flex');
+  const desktopRoster = page.locator('.hidden.lg\\:flex').filter({
+    has: page.getByRole('button', { name: 'Smoke Traveller 9BB8A4-C789' }),
+  });
 
   await desktopRoster.getByRole('button', { name: 'Smoke Traveller 9BB8A4-C789' }).click();
   await desktopRoster.getByLabel('Character actions').click();
@@ -348,18 +350,19 @@ async function checkRosterInteractions(browser, baseUrl) {
   }
   await page.keyboard.press('Escape');
 
-  await desktopRoster.getByTitle('Roll any skill check. Skill 0 = no DM bonus. Unskilled = DM-3.').click();
-  await page.getByPlaceholder('e.g. Pilot (Small Craft)').type('Astrogation');
-  await page.getByLabel('+DM').type('+2');
+  await desktopRoster.getByRole('button', { name: 'UNKNOWN' }).click();
+  const customRollPanel = page.locator('.fixed .panel');
+  await replaceByTyping(customRollPanel.getByPlaceholder('e.g. Pilot (Small Craft)'), 'Astrogation');
+  await customRollPanel.getByLabel('Mod').type('+2');
   const typedValues = {
-    label: await page.getByPlaceholder('e.g. Pilot (Small Craft)').inputValue(),
-    bonus: await page.getByLabel('+DM').inputValue(),
+    label: await customRollPanel.getByPlaceholder('e.g. Pilot (Small Craft)').inputValue(),
+    bonus: await customRollPanel.getByLabel('Mod').inputValue(),
   };
   if (typedValues.label !== 'Astrogation' || typedValues.bonus !== '+2') {
     throw new Error(`Roll tool input lost characters: ${JSON.stringify(typedValues)}`);
   }
-  await page.getByRole('button', { name: 'ROLL 2D6' }).click();
-  await page.getByText('+DM +2', { exact: false }).waitFor({ state: 'visible', timeout: 5_000 });
+  await customRollPanel.getByRole('button', { name: 'ROLL 2D6' }).click();
+  await customRollPanel.getByText('Mod +2', { exact: false }).waitFor({ state: 'visible', timeout: 5_000 });
   await page.screenshot({ path: new URL('roster.png', outputDir).pathname, fullPage: false });
   await context.close();
 
@@ -474,7 +477,9 @@ async function checkFormTyping(browser, baseUrl) {
 
   await page.goto(`${baseUrl}#/roster`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1_000);
-  const desktopRoster = page.locator('.hidden.lg\\:flex');
+  const desktopRoster = page.locator('.hidden.lg\\:flex').filter({
+    has: page.getByRole('button', { name: 'Smoke Traveller 9BB8A4-C789' }),
+  });
   await desktopRoster.getByRole('button', { name: 'Smoke Traveller 9BB8A4-C789' }).click();
   await desktopRoster.getByLabel('Character actions').click();
   await page.getByRole('button', { name: 'EDIT' }).click();
@@ -482,8 +487,11 @@ async function checkFormTyping(browser, baseUrl) {
   await replaceByTyping(desktopRoster.locator('#character-str'), '12');
   await replaceByTyping(desktopRoster.getByLabel('Skills (e.g. Medic-2, Gun Combat (Slug)-3, Recon-1)'), 'Pilot-2, Astrogation-1');
   await desktopRoster.getByRole('button', { name: 'UPDATE' }).click();
-  await desktopRoster.getByRole('button', { name: 'Smoke Traveller Prime CBB8A4-C789' }).waitFor({ state: 'visible', timeout: 5_000 });
-  const rosterBody = await desktopRoster.innerText();
+  const updatedRoster = page.locator('.hidden.lg\\:flex').filter({
+    has: page.getByRole('button', { name: 'Smoke Traveller Prime CBB8A4-C789' }),
+  });
+  await updatedRoster.getByRole('button', { name: 'Smoke Traveller Prime CBB8A4-C789' }).waitFor({ state: 'visible', timeout: 5_000 });
+  const rosterBody = await updatedRoster.innerText();
   if (!rosterBody.includes('Smoke Traveller Prime') || !rosterBody.includes('CBB8A4-C789')) {
     throw new Error('Edited character did not refresh in the roster display');
   }
