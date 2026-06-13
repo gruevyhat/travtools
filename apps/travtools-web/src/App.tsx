@@ -13,6 +13,8 @@ const PartyRoster = lazy(() => import('./components/roster/PartyRoster'));
 const RollLog = lazy(() => import('./components/log/RollLog'));
 const CombatTracker = lazy(() => import('./components/combat/CombatTracker'));
 const SessionJournal = lazy(() => import('./components/journal/SessionJournal'));
+const ShipBuilder = lazy(() => import('./components/ships/ShipBuilder'));
+const NPCGenerator = lazy(() => import('./components/npc/NPCGenerator'));
 
 function CombatDisabled() {
   return (
@@ -46,6 +48,8 @@ function AppRoutes() {
             <Route path="log" element={<RollLog />} />
             <Route path="combat" element={COMBAT_MODULE_DISABLED ? <CombatDisabled /> : <CombatTracker />} />
             <Route path="journal" element={<SessionJournal />} />
+            <Route path="shipbuilder" element={<ShipBuilder />} />
+            <Route path="npc" element={<NPCGenerator />} />
           </Route>
         </Routes>
       </Suspense>
