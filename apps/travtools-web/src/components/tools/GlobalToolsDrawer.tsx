@@ -1,9 +1,12 @@
 import { useState } from 'react';
-import { BookOpen, Check, Dices, Minus, Plus, X } from 'lucide-react';
+import { BookOpen, Check, ChevronDown, ChevronUp, Dices, Minus, Plus, X } from 'lucide-react';
+import { DiceRoller } from '@dice-roller/rpg-dice-roller';
 import { useSupabase } from '../../lib/supabaseContext';
 import { DIFFICULTIES, fmtDM, rollFlux, RollMode, rollTravellerCheck, TravellerRollResult, FluxRollResult } from '../../lib/dice';
 import { TRADE_GOODS, TradeGood } from '../../data/tradeGoods';
 import { lookupModifiedPrice, rollTonsExpr } from '../../data/modifiedPrice';
+
+const diceRoller = new DiceRoller();
 
 interface GlobalToolsDrawerProps {
   open: boolean;
@@ -37,6 +40,14 @@ interface TradeRollResult {
 export default function GlobalToolsDrawer({ open, onClose }: GlobalToolsDrawerProps) {
   const { client } = useSupabase();
   const [tab, setTab] = useState<'dice' | 'reference'>('dice');
+
+  // Notation roller
+  const [notation, setNotation] = useState('');
+  const [notationResult, setNotationResult] = useState<{ output: string; total: number | string; rolls: string } | null>(null);
+  const [notationError, setNotationError] = useState<string | null>(null);
+  const [notationLogRoll, setNotationLogRoll] = useState(false);
+  const [notationSaved, setNotationSaved] = useState(false);
+  const [notationHelpOpen, setNotationHelpOpen] = useState(false);
 
   // Standard check roller
   const [label, setLabel] = useState('Standalone');
@@ -103,6 +114,45 @@ export default function GlobalToolsDrawer({ open, onClose }: GlobalToolsDrawerPr
   function doRollFlux() {
     setFluxResult(rollFlux());
     setResult(null);
+  }
+
+  async function rollNotation() {
+    const expr = notation.trim();
+    if (!expr) return;
+    setNotationError(null);
+    setNotationResult(null);
+    setNotationSaved(false);
+    try {
+      // DiceRoller.roll() returns DiceRoll | DiceRoll[]; we use the single-expression form
+      const roll = diceRoller.roll(expr) as { total: number; output: string; rolls: { rolls?: { value: number }[]; value?: number }[] };
+      const rolls = roll.rolls
+        .flatMap((r: { rolls?: { value: number }[]; value?: number }) =>
+          r.rolls ? r.rolls.map((d: { value: number }) => d.value) : [r.value ?? 0]
+        )
+        .filter((v: unknown): v is number => typeof v === 'number');
+      const rollStr = rolls.length > 0 ? rolls.map((v: number) => `[${v}]`).join('') : '';
+      const total = roll.total;
+      setNotationResult({ output: roll.output, total, rolls: rollStr });
+      if (notationLogRoll && client) {
+        const { error } = await client.from('roll_log').insert({
+          character_name: 'Session',
+          check_label: expr,
+          d1: rolls[0] ?? 0,
+          d2: rolls[1] ?? 0,
+          char_dm: 0,
+          skill_level: 0,
+          bonus_dm: 0,
+          total: typeof total === 'number' ? total : 0,
+          difficulty: 0,
+          success: true,
+          effect: typeof total === 'number' ? total : 0,
+        });
+        if (error) setErrorMessage(`Roll could not be logged: ${error.message}`);
+        else setNotationSaved(true);
+      }
+    } catch {
+      setNotationError(`Invalid notation: "${expr}"`);
+    }
   }
 
   function doTradeRoll() {
@@ -368,6 +418,91 @@ export default function GlobalToolsDrawer({ open, onClose }: GlobalToolsDrawerPr
                     <div className="text-xs text-alert font-mono">⚠ ILLEGAL GOODS — broker required</div>
                   )}
                   <div className="text-[10px] text-body/40">Verify price table against Core Rulebook p.243</div>
+                </div>
+              )}
+            </section>
+
+            {/* ── Notation Roller ───────────────────────── */}
+            <section className="space-y-3 border-t border-steel/40 pt-4">
+              <div className="label">NOTATION ROLLER</div>
+              <p className="text-xs text-body/65">
+                Any dice expression: <span className="text-amber font-mono">3d6+2</span>, <span className="text-amber font-mono">2d20kh1</span>, <span className="text-amber font-mono">d%</span>
+              </p>
+
+              <label className="block space-y-1">
+                <span className="label">EXPRESSION</span>
+                <input
+                  aria-label="Dice notation expression"
+                  className="input font-mono"
+                  placeholder="3d6+2"
+                  value={notation}
+                  onChange={e => { setNotation(e.target.value); setNotationError(null); }}
+                  onKeyDown={e => { if (e.key === 'Enter') rollNotation(); }}
+                />
+              </label>
+
+              {notationError && (
+                <div role="alert" className="text-xs text-alert font-mono border border-alert/40 bg-alert/10 px-2 py-1">
+                  {notationError}
+                </div>
+              )}
+
+              <label className="flex items-center gap-2 text-xs text-body">
+                <input type="checkbox" checked={notationLogRoll} onChange={e => setNotationLogRoll(e.target.checked)} />
+                <span>Log to Roll Log</span>
+              </label>
+
+              <button
+                type="button"
+                onClick={rollNotation}
+                disabled={!notation.trim()}
+                className="btn-steel w-full text-center disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                ROLL NOTATION
+              </button>
+
+              {notationResult && (
+                <div className="panel p-3 space-y-2">
+                  <div className="text-amber font-mono text-sm">{notation.trim()}</div>
+                  <div className="text-xs font-mono text-body/80">{notationResult.rolls || notationResult.output}</div>
+                  <div className="text-2xl font-mono font-bold text-bright">{notationResult.total}</div>
+                  {notationSaved && (
+                    <div className="text-xs text-safe flex items-center gap-1">
+                      <Check size={12} /> Logged to Roll Log
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setNotationHelpOpen(o => !o)}
+                className="flex items-center gap-2 label hover:text-bright"
+              >
+                {notationHelpOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                SYNTAX REFERENCE
+              </button>
+              {notationHelpOpen && (
+                <div className="space-y-1 text-xs font-mono text-body/70">
+                  {[
+                    ['XdY', 'Roll X dice with Y sides — e.g. 3d6, 1d20'],
+                    ['XdY+Z / XdY-Z', 'Add/subtract a flat modifier'],
+                    ['dF', 'Fudge/Fate dice (−1, 0, +1)'],
+                    ['d%', 'Percentile roll (1–100)'],
+                    ['XdYkhN / XdYklN', 'Keep highest/lowest N dice'],
+                    ['XdYdh / XdYdl', 'Drop highest/lowest die'],
+                    ['XdY!', 'Exploding (reroll and add on max)'],
+                    ['XdY!!', 'Compounding exploding'],
+                    ['XdYr=N', 'Reroll on result N'],
+                    ['XdYcs>N', 'Count successes greater than N'],
+                    ['{XdY, ZdW}dl1', 'Group roll with keep/drop'],
+                    ['(XdY * 2) + 3', 'Arithmetic on roll results'],
+                  ].map(([syntax, meaning]) => (
+                    <div key={syntax} className="grid grid-cols-[7rem_1fr] gap-2 border-b border-steel/30 pb-1">
+                      <span className="text-amber">{syntax}</span>
+                      <span>{meaning}</span>
+                    </div>
+                  ))}
                 </div>
               )}
             </section>
