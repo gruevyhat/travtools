@@ -555,6 +555,357 @@ Questions to answer:
 - **Character advancement** — track skill improvements, aging rolls, mustering out benefits, and long-term wounds/augments across sessions
 - **Crew dossier view** — campaign-friendly character dossier combining portrait, background, contacts, finances, and advancement notes
 - [x] **Roll analytics** — use persisted `roll_log` data for session recaps, notable failures, and character spotlight moments
+
+---
+
+## Milestone 8 — Arbitrary Dice Notation Roller
+
+**Goal:** The standalone dice roller accepts any standard dice notation string (not just 2D6/boon/bane/flux) and evaluates it correctly, showing a full breakdown of individual dice.
+
+### Background
+
+The current roller in `GlobalToolsDrawer.tsx` covers the Traveller-specific mechanics (2D6, boon, bane, flux, trade goods rolls). Players occasionally need ad hoc rolls — damage expressions like `3D6+2`, percentile rolls `D100`, skill checks for other systems, or complex expressions like `(2D6+3)*2`. Rather than hard-coding every variant, the `@dice-roller/rpg-dice-roller` npm package (documentation: https://dice-roller.github.io/documentation/guide/notation/) provides a full notation parser and evaluator.
+
+### Supported notation (from the dice-roller library)
+
+| Notation | Meaning |
+|----------|---------|
+| `XdY` | Roll X dice with Y sides (e.g. `3d6`, `1d20`) |
+| `XdY+Z` / `XdY-Z` | Add/subtract a flat modifier |
+| `dF` | Fudge/Fate dice (−1, 0, +1) |
+| `d%` | Percentile (1–100) |
+| `XdYkhN` / `XdYklN` | Keep highest/lowest N dice |
+| `XdYdh` / `XdYdl` | Drop highest/lowest |
+| `XdY!` | Exploding (reroll and add on max) |
+| `XdY!!` | Compounding exploding |
+| `XdY!p` | Penetrating exploding |
+| `XdYr=N` | Reroll on result N |
+| `XdYro=N` | Reroll once on result N |
+| `XdYcs>N` | Count successes greater than N |
+| `{XdY, ZdW}dl1` | Group roll with keep/drop |
+| `(XdY * 2) + 3` | Arithmetic on roll results |
+
+### Tasks
+
+**Implementation**
+- [ ] Install `@dice-roller/rpg-dice-roller` (MIT licence)
+- [ ] Add a **NOTATION** tab to the standalone dice roller section in `GlobalToolsDrawer.tsx` alongside the existing 2D6 / Boon-Bane / Flux / Trade tabs
+- [ ] Render a single text input field accepting free-form notation (placeholder: `3d6+2`, `2d20kh1`, `d%`)
+- [ ] Parse and evaluate with the library; surface parse errors inline (amber warning, no crash)
+- [ ] Display results using the existing roll-result visual language: individual die values in brackets, modifier(s), total (e.g. `[3][5][2] + 2 = 12`)
+- [ ] Optional "Save to Roll Log" toggle — if enabled, write the notation string and total to `roll_log` (caller-supplied label or the notation string itself)
+- [ ] Show the dice notation syntax reference in a collapsible HELP panel below the input (the notation table above)
+
+**Tests**
+- [ ] Unit: `3d6` produces three values in [1,6], total in [3,18]
+- [ ] Unit: `2d6+3` total equals sum of two dice plus 3
+- [ ] Unit: `2d6kh1` keeps exactly one die (the higher)
+- [ ] Unit: `dF` produces values in {-1, 0, 1}
+- [ ] Unit: parse error on invalid notation returns an error object, does not throw
+- [ ] Component: notation input renders, submit calls roll, result panel appears
+- [ ] Component: invalid notation shows inline error, does not crash
+
+**Non-goals for M8**
+The Traveller-specific 2D6 tab and boon/bane/flux mechanics stay exactly as they are. The notation roller is additive only.
+
+---
+
+## Milestone 9 — Ship Builder
+
+**Goal:** Players can design a spacecraft from scratch following the 13-step Core Rules construction process (pp.176–187). The builder tracks tonnage used, running cost, power balance, and produces a shareable ship design saved to Supabase.
+
+### Background
+
+Spacecraft Construction (p.176) is a 13-step process. Each step consumes hull tonnage and adds to total cost. Two running tallies must always be visible: **Tonnage Remaining** and **Power Balance** (generated minus consumed). The design is illegal if either goes negative.
+
+The builder is a new `/shipbuilder` route. It is read/write-shared via a new `ship_designs` Supabase table, so all players can see each other's designs live. Completed designs link through to the existing Ship Viewer for annotation.
+
+### Design Checklist (source: p.177)
+
+Step 1 → Step 2 → Step 3 → Step 4 → Step 5 → Step 6 → Step 7 → Step 8 → Step 9 → Step 10 → Step 11 → Step 12 → Step 13
+
+### Data to encode in `src/data/shipComponents.ts`
+
+```typescript
+// Hull: Cr50000/ton base; 1 HP per 2.5 tons
+// Configs: Standard (partial streamlined), Streamlined (+20% cost), Dispersed (-10% HP, -50% cost)
+// Armour: Crystaliron (TL10, 1.25%/point, 5% hull cost/point, max min(TL,13))
+//         Bonded Superdense (TL14, 0.80%/point, 8% hull cost/point, max TL)
+// M-Drive: 1% hull per thrust, MCr2/ton; TL: 1→TL9, 2-3→TL10, 4-5→TL11, 6-7→TL12, 8-9→TL13
+// J-Drive: 2.5% hull per jump + 5t flat, MCr1.5/ton, min 10t; TL: 1→TL9, 2→TL11, 3→TL12, 4→TL13, 5→TL14, 6→TL15
+// Power Plant: Fusion TL8 (10 power/ton, MCr0.5/ton), TL12 (15, MCr1), TL15 (20, MCr2)
+// Power consumed: basic systems = 20%×hull; M-drive = 10%×hull×thrust; J-drive = 10%×hull×jump
+// Fuel (jump) = 10% × hull × jump rating (tons); fuel (PP) = 10% of PP size, min 1t
+// Bridge: ≤50t→3t, 51-99→6t, 100-200→10t, 201-1000→20t, 1001-2000→40t, 2001+→60t; MCr0.5/100t
+// Cockpit (≤50t only): single 1.5t Cr10000, dual 2.5t Cr15000
+// Computer: model 5/10/15/20/25/30/35 at TL7/9/11/12/13/14/15; costs Cr30000/160000/MCr2/5/10/20/30
+//   /bis option: +50% cost, +5 processing for Jump Control only
+// Sensors: Basic (TL8, DM-4, 0 Power, 0t, free), Civilian (TL9, DM-2, 1 Power, 1t, MCr3),
+//   Military (TL10, DM+0, 2 Power, 2t, MCr4.1), Improved (TL12, DM+1, 4 Power, 3t, MCr4.3),
+//   Advanced (TL15, DM+2, 6 Power, 5t, MCr5.3)
+// Turret mounts: Fixed (0P, 0t, MCr0.1), Single (TL7, 1P, 1t, MCr0.2),
+//   Double (TL8, 1P, 1t, MCr0.5), Triple (TL9, 1P, 1t, MCr1)
+// Turret weapons: Beam Laser (TL10, Med, 4P, 1D, MCr0.5), Missile Rack (TL7, Spec, 0P, 4D, MCr0.75, Smart),
+//   Particle Barbette (TL11, VLong, 15P, 4D, MCr8, Radiation, 5t),
+//   Pulse Laser (TL9, Long, 4P, 2D, MCr1), Sandcaster (TL9, Spec, 0P, MCr0.25)
+// Staterooms: standard 4t MCr0.5; high 6t MCr0.8; luxury 10t MCr1.5
+// Low berths: 0.5t Cr50000 each; 1 Power per 10 berths (round up)
+// Common areas: MCr0.1/ton (no HP; recommended ~25% of stateroom tonnage)
+// Optional systems (selected): aerofins (5% hull, MCr0.1/ton), cargo crane (2.5t + 0.5t/150t cargo, MCr1/ton),
+//   cargo scoop (2t, MCr0.5), collapsible fuel tank (1%/ton empty, Cr500/ton full),
+//   concealed compartment (≤5% hull, Cr20000/ton), docking space (docked ship + 10% round up, MCr0.25/ton),
+//   mining drones (10t/5 drones, MCr1/10t), probe drones (1t/5, MCr0.5/t),
+//   repair drones (1% hull min 1t, MCr0.2/t), fuel processor (MCr0.05/ton, 1P/ton; 20t/ton/day),
+//   fuel scoop (MCr1, 0t), laboratory (4t/scientist, ~MCr1/4t),
+//   library (TL8, 4t, MCr4), luxury stateroom — see staterooms above,
+//   medical bay (4t, MCr2, 1P, 5 patients), multi-environment space (1t equip/20t space, MCr0.5/equip-ton, 1P/equip-ton)
+// Crew: Pilot (1; +1 if J-drive), Astrogator (if J-drive), Engineer (1/35t drives+PP),
+//   Medic (1/120 crew+pax), Gunner (1/turret), Steward (1/10 high or 1/100 middle pax)
+// Maintenance: total cost / 1000 / 12 per month (= annual cost / 12000 per month)
+// Construction time: 1 day per MCr1 at average commercial yard
+```
+
+### Tasks
+
+**Schema**
+- [ ] Create `ship_designs` Supabase table: `id, name, tonnage, hull_config, tech_level, components jsonb, notes text, created_at, updated_at`
+- [ ] Add TypeScript types: `ShipDesign`, `ShipComponent`, `ShipDesignSummary` (computed: tonnage used, tonnage remaining, total cost, power generated, power consumed, power balance, maintenance/month, HP, hardpoints)
+
+**Step forms (one collapsible section per step)**
+- [ ] **Step 1 — Hull**: tonnage input (min 10), hull config selector (Standard/Streamlined/Dispersed), armour type + protection points with TL gate, show hull cost + HP
+- [ ] **Step 2 — Drives**: M-drive rating (0–9) and J-drive rating (0–6) selectors; show tonnage consumed and TL requirements; auto-flag if rating exceeds TL
+- [ ] **Step 3 — Power Plant**: fusion type selector (TL8/12/15); auto-calculate minimum tons needed to meet power requirements; show power generated, power required breakdown
+- [ ] **Step 4 — Fuel**: show calculated required fuel (jump + PP); allow adding extra PP fuel for extended range; read-only derived from drive selections
+- [ ] **Step 5 — Bridge**: auto-select size from hull tonnage; show tonnage and cost; cockpit option appears only if tonnage ≤ 50
+- [ ] **Step 6 — Computer**: model selector with TL gate; optional /bis checkbox; show cost
+- [ ] **Step 7 — Sensors**: tier selector; show DM, Power, Tons, Cost
+- [ ] **Step 8 — Weapons**: hardpoint count shown (hull / 100, firmpoints for <100t); add turret/firmpoint entries with mount type and up to 3 weapons each; show Power consumed
+- [ ] **Step 9 — Optional Systems**: multi-select list of optional equipment with quantity/tonnage inputs and derived cost; auto-calculate crew implications where applicable
+- [ ] **Step 10 — Crew**: derived automatically from drive, turret, passenger, and tonnage selections; display as read-only requirements table with monthly salary total
+- [ ] **Step 11 — Staterooms**: stateroom count (standard/high/luxury), low berths; show tonnage and cost; warn if insufficient staterooms for required crew
+- [ ] **Step 12 — Cargo**: derived automatically as hull − all allocated tonnage; read-only
+- [ ] **Step 13 — Finalise**: summary panel showing all totals; monthly maintenance; construction time; SAVE button writes to Supabase
+
+**Running display (persistent header while building)**
+- [ ] Amber stats bar at top of builder: `Hull: 200t | Used: 143t | Remaining: 57t | Power: +12 | Cost: MCr45.3 | Maint: Cr3,775/mo`
+- [ ] Red highlight on Remaining or Power if negative
+
+**UX**
+- [ ] Designs list sidebar (like Ship Viewer): load saved designs, create new, delete
+- [ ] Realtime sync: another player loading the same design sees changes within ~1s
+- [ ] "Compare to canonical" button: opens the Type-S / Type-A stats in a side panel for reference
+- [ ] Export design as a text summary (copy to clipboard)
+
+**Tests**
+- [ ] Unit: `computeShipSummary()` — hull cost, drive tonnage, fuel requirements, power balance, HP, hardpoints, cargo, maintenance for a canonical Type-S Scout/Courier (100t, J2, M2, PP TL12) match expected values
+- [ ] Unit: TL gate validation — M-drive rating 2 requires TL10; lower TL returns an error
+- [ ] Unit: power balance — excess power is positive; deficit is negative
+- [ ] Unit: cargo = hull − Σ components; negative cargo is an error
+- [ ] Component: step form renders, input change updates running totals display
+
+---
+
+## Milestone 10 — Party Treasury & Loot Shares
+
+**Goal:** The party can track shared Credits, log all income and expenses, and split loot into equal character shares — replacing ad hoc note-keeping between sessions.
+
+### Background
+
+Traveller characters earn and spend Credits constantly: passenger fares, freight payments, trade profits, fuel, maintenance, bribes, and loot. Currently none of this flows through the app. The Inventory Manager tracks physical items but not money. Character finance sections from XLSX import are read-only. This milestone adds a live shared ledger for party funds.
+
+### Schema
+
+```sql
+CREATE TABLE party_treasury (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at timestamptz DEFAULT now(),
+  amount integer NOT NULL,               -- positive = income, negative = expense
+  type text NOT NULL,                    -- 'income' | 'expense' | 'loot' | 'share' | 'trade'
+  description text NOT NULL,
+  character_id uuid REFERENCES characters(id) ON DELETE SET NULL,  -- null = party-wide
+  session_ref text                       -- optional session label
+);
+```
+
+### Features
+
+**Party Balance header card** (shown at top of the Inventory Manager route and as a landing dashboard stat)
+- Running balance = Σ all `amount` values
+- Last transaction timestamp
+
+**Transaction log** (tabular, newest first)
+- Columns: Date, Type chip (colour-coded), Description, Character, Amount (green/red), Running Balance
+- Filter by type and by session ref
+- Pagination (100 per page, LOAD MORE)
+
+**Add Transaction form**
+- Amount (positive for income, negative for expense, or use separate +/− toggle)
+- Type selector: Income / Expense / Loot / Trade Payout
+- Description (free text)
+- Character attribution (optional — select from roster)
+- Session label (free text, defaults to most recent session label used)
+
+**Split Loot action**
+- Enter total loot value (Credits)
+- Select participating characters (defaults to all active party members)
+- Shows per-character share (integer floor, remainder stays in party funds)
+- On confirm: creates one `loot` transaction for the total and one `share` credit transaction per character; optionally updates each character's `finances.cash` field
+- Supabase realtime broadcasts the split so all players see it immediately
+
+**Integration hooks**
+- Trade Ledger: on marking a deal SOLD, show "Add profit to party treasury?" prompt
+- Inventory Manager: when bulk-deleting items (assumed sold), show "Add value to party treasury?" prompt
+- Passenger/Freight tab (M11): completing a run adds fares automatically
+
+**Tests**
+- [ ] Unit: `runningBalance(transactions)` sums amounts correctly including negatives
+- [ ] Unit: `splitLoot(total, participantCount)` returns correct per-share and remainder
+- [ ] Unit: filter by type and session ref
+- [ ] Component: add transaction form submits; balance updates optimistically
+- [ ] Component: split loot modal shows correct per-character share; confirms creates correct transaction count
+- [ ] E2E smoke: add income, add expense, verify balance; split loot, verify character entries appear
+
+---
+
+## Milestone 11 — Full Trade Mini-Game
+
+**Goal:** The Trade module becomes a complete implementation of the Core Rules trade chapter (pp.238–245): the existing speculative deal ledger is retained as the backbone, and three new tabs expose the full passenger-traffic, freight-lot, and speculative-trade workflows as guided interactive tools with dice rollers built in.
+
+### Background
+
+The Core Rules trade chapter is a standalone mini-game with three income streams:
+
+1. **Passengers** (p.238–239): find them per class (Low/Basic/Middle/High), pay fares by class and parsec distance
+2. **Freight** (p.240–241): roll for cargo lot availability (Major/Minor/Incidental), earn flat freight-per-ton rate by parsec; also Mail containers (Cr25000 flat for 5t)
+3. **Speculative Trade** (p.241–243): 7-step checklist — find supplier → goods available → purchase price → buy → travel → find buyer → sale price
+
+The Modified Price table and Trade Goods table are already encoded in `src/data/modifiedPrice.ts` and `src/data/tradeGoods.ts`.
+
+**Note on existing `modifiedPrice.ts` values:** the transcribed table uses the roll-indexed version starting at 3. Cross-check against p.243 — the rulebook shows a different range starting at −3 for result, and the existing file maps roll results starting at 3 to purchase/sale %. These need to be reconciled before the mini-game uses them (the purchase% at roll 3 is 40% in the file but 300% in the book; the file appears to have the columns swapped relative to the book scan). Audit and correct before M11 ships.
+
+### New UI structure
+
+Replace the current single-tab `TradeLedger.tsx` with a three-tab layout:
+
+```
+[ DEALS LEDGER ] [ TRADE SESSION ] [ PASSENGERS & FREIGHT ]
+```
+
+The existing Deals Ledger content moves into tab 1 unchanged.
+
+### Tab 2 — Trade Session (Speculative Trade workflow)
+
+A stateful wizard driven by the 7-step checklist. State is local (one session at a time); completed deals are pushed to the Deals Ledger (tab 1) and optionally to Party Treasury (M10).
+
+**Step 1 — Source World Profile**  
+Inputs: World name, Trade Codes (multi-select chips: Agricultural, Asteroid, Desert, Fluid Oceans, Garden, High Pop, High Tech, Ice-Capped, Industrial, Low Pop, Non-Agricultural, Non-Industrial, Poor, Rich, Vacuum, Water World), Starport class (A/B/C/D/E/X), Population code (0–9+), Tech Level, Law Level, Zone (Normal/Amber/Red). Stored in component state and used to derive all DMs below.
+
+**Step 2 — Find Supplier**  
+Skill check panel (reuses roster roll visual language):
+- Broker check (Average 8+, EDU or SOC, 1D days) — standard supplier
+- Streetwise check (Average 8+, EDU or SOC, 1D days) — black market supplier; rolls illegal goods (1D on table, use '6' column)
+- Admin check (Average 8+, EDU, 1D hours) — online supplier (TL8+ worlds only)
+- Starport DM: A+6, B+4, C+2
+- DM-1 per previous supplier attempt this month (counter)
+- Result: success → proceed; failure → try again (counter increments)
+
+**Step 3 — Goods Available**  
+- Common Goods (D66 11–16) always available on any world
+- For each world trade code, show matching Trade Goods rows from `tradeGoods.ts`
+- Lot quantity roll: roll the dice expression from the `tons` column (e.g. `2D×10`) with world population modifier (Pop ≤ 3: DM-3 on quantity roll; Pop 9+: DM+3); roll inline with built-in roller
+- Black market supplier: also roll 1D on trade goods table using '6' as tens digit (D6 result maps to 61–66 rows); re-roll results 65–66 unless black market
+- Display available lots as a table: Good | Available Tons | Base Price | Purchase DM | Sale DM | [ADD TO CART button]
+- "Cart" accumulates selected lots and quantities for Step 4
+
+**Step 4 — Purchase Price**  
+For each lot in cart:
+- Roll 3D (integrated roller, shows breakdown)
+- Apply: + Broker skill (input), + Purchase DM(s) for matching trade codes (auto-applied from world profile), − Sale DM(s), − supplier broker skill (default 2, editable)
+- Clamp total to table range; look up `modifiedPrice.ts` → purchase%
+- Show: base price × purchase% = unit price; unit price × quantity = lot cost
+- ACCEPT or REJECT each lot (rejected lots lock out that supplier for 1 month per rules)
+- PURCHASE ALL button: creates draft deals in Deals Ledger with status `active`; optionally deducts from Party Treasury
+
+**Step 5 — Travel (informational)**  
+Parsec distance input. Displayed as a reminder only — no game mechanic here beyond setting the distance for fare calculation.
+
+**Step 6 — Find Buyer**  
+Same as Step 2 but at destination world. Destination World Profile inputs appear (same fields as Step 1). Starport and world DMs for destination apply.
+
+**Step 7 — Sale Price**  
+For each active deal in the ledger:
+- Roll 3D (integrated roller)
+- Apply: + Broker skill, + Sale DM(s) for destination trade codes, − Purchase DM(s), − buyer broker skill (default 2, editable)
+- Look up → sale%
+- Show: base price × sale% = sale unit price; × quantity = total revenue; profit = revenue − cost
+- SELL button: updates deal status to `completed`, records sale price, adds profit to Party Treasury (M10) if linked
+
+### Tab 3 — Passengers & Freight
+
+Two sub-sections, each with a world profile input (reuses/caches the source world state from tab 2) and an integrated roll workflow.
+
+**Passengers sub-section**  
+Inputs: Parsec distance, Steward skill on ship (DM+ highest), Chief Steward (DM+ highest), source and destination world population + starport + zone.
+
+Roll workflow (run once per class):
+- Roll 2D for each class (Low, Basic, Middle, High)
+- Apply class modifier: High passengers DM-4, Low passengers DM+1
+- Apply world/starport/zone DMs and each-additional-parsec DM-1 per parsec past 1
+- Look up Passenger Traffic table → number of dice to roll for passengers available
+- Roll that number of D6 → passengers available
+- Fare = Passage & Freight table value for class × parsec distance
+- Total income = passengers boarded × fare per passenger
+
+Random Passenger table (D66, p.240) included as a collapsible reference — roll a D66 to generate a passenger's background type.
+
+**Freight sub-section**  
+Inputs: Parsec distance, Broker skill (or Streetwise), source and destination world population + starport + TL + zone.
+
+Roll workflow (run once per lot size):
+- Roll 2D for each size (Major, Minor, Incidental)
+- Apply size modifier: Major DM-4, Incidental DM+2
+- Apply world/starport/TL/zone DMs
+- Look up Freight Traffic table → number of lots available
+- For each lot: roll the appropriate dice (Major: 1D×10t, Minor: 1D×5t, Incidental: 1D×1t)
+- Freight income = Σ tons × freight rate per ton from Passage & Freight table
+- Mail: roll 2D + mail DMs (freight traffic DM, ship armed +2, TL≤5 −4, naval/scout rank +, SOC DM +); if 12+, 1D mail containers available (5t each, Cr25000 flat, all or none)
+
+**Income summary**: total passenger income + freight income + mail income shown as a transaction ready to add to Party Treasury.
+
+### Data additions needed
+
+- [ ] Passenger Traffic table (2D result → passenger dice) — encode in `src/data/passengerTraffic.ts`
+- [ ] Freight Traffic table (2D result → lot dice) — encode in `src/data/freightTraffic.ts`
+- [ ] Passage & Freight rate table (parsecs 1–6 × class) — encode in `src/data/passageFares.ts`
+- [ ] Random Passenger table (D66 → type) — encode in `src/data/randomPassenger.ts` (reference only)
+- [ ] Audit and correct `modifiedPrice.ts` — purchase% and sale% columns appear swapped vs. p.243; add verified comment
+
+### Schema additions
+
+```sql
+-- Trade sessions are local/ephemeral; only completed deals persist in the existing deals table.
+-- No new tables required beyond Party Treasury (M10) for income logging.
+-- Add 'session_ref' column to existing trade deals to group deals from one session.
+ALTER TABLE trade_deals ADD COLUMN IF NOT EXISTS session_ref text;
+ALTER TABLE trade_deals ADD COLUMN IF NOT EXISTS base_price integer;
+ALTER TABLE trade_deals ADD COLUMN IF NOT EXISTS purchase_pct integer;
+ALTER TABLE trade_deals ADD COLUMN IF NOT EXISTS sale_pct integer;
+ALTER TABLE trade_deals ADD COLUMN IF NOT EXISTS trade_code text;
+```
+
+### Tests
+
+- [ ] Unit: `applyPurchaseDMs(roll, brokerSkill, purchaseDMs, saleDMs, supplierBroker)` applies modifiers correctly and clamps to table range
+- [ ] Unit: `lookupModifiedPrice(clampedRoll)` returns correct purchase% and sale%
+- [ ] Unit: `calculateLotCost(basePrice, purchasePct, tons)` matches expected credit amounts
+- [ ] Unit: `calculateProfit(basePrice, purchasePct, salePct, tons)` is positive when sale% > purchase%
+- [ ] Unit: Passenger Traffic table lookup — 2D roll 7 + DMs 0 → 3D passengers for Middle class
+- [ ] Unit: Freight Traffic table lookup — 2D roll 8 → correct lot count
+- [ ] Unit: `splitPassengerIncome(classes, parsecs)` sums fares correctly
+- [ ] Unit: `modifiedPrice.ts` audit — spot-check 5 rows against verified book values
+- [ ] Component: Trade Session tab renders; world profile inputs flow into DM display; dice roller shows breakdown
+- [ ] Component: Deals Ledger tab unaffected by tab 2 and 3 additions
+- [ ] E2E smoke: open Trade, switch to Trade Session tab, enter world profile, roll supplier check, see goods table
 - **Ship mortgage tracker** — monthly payment schedule, running balance, jump fuel costs
 - **Portrait storage migration** — character portraits are currently stored as JPEG data URLs inside the `characters` table, growing row size significantly; migrating to the existing `ship-schematics` Storage bucket pattern would reduce DB payload
 
@@ -577,6 +928,209 @@ Questions to answer:
 - Bug fix = reproduction test first, then the fix.
 - Supabase calls are mocked at the client level (MSW or vi.mock); no live DB in tests.
 - CI runs `npm test` and `npm run build` during GitHub Pages deploy; local changes should also run `npm run lint`.
+
+---
+
+## Milestone 12 — Ammunition Tracking
+
+**Goal:** Each character's ranged weapons track their current ammunition count during and between sessions. The combat tracker decrements ammo automatically on weapon use, flags empty weapons, and the party can manage spare magazines through the Inventory Manager.
+
+### Background
+
+Traveller weapons have a **Magazine** capacity (rounds per reload) and **Magazine Cost** (cost of a spare, p.76–77). Reload is a Minor Action. The **Auto** trait (p.79) changes round consumption:
+
+| Fire Mode | Rounds consumed per attack |
+|-----------|---------------------------|
+| Single | 1 |
+| Burst | Auto score (e.g. Auto 3 = 3 rounds) |
+| Full Auto | 3 × Auto score (e.g. Auto 3 = 9 rounds) |
+
+Weapons with no Magazine entry (melee, grenades used one at a time, sandcasters) are tracked differently: melee has infinite ammo, grenades and missiles are tracked as consumable inventory items (see Inventory integration below).
+
+Ammo state is per-character, per-weapon, and needs to persist between sessions — the party may end a session mid-combat or with partially loaded magazines. It is stored in Supabase on the `characters` table in a new `ammo_state` jsonb column so all clients see the same counts via realtime.
+
+### Data model
+
+```sql
+ALTER TABLE characters ADD COLUMN IF NOT EXISTS ammo_state jsonb NOT NULL DEFAULT '{}'::jsonb;
+-- Shape: { [weaponName: string]: { current: number, magazineSize: number, spareMags: number } }
+-- weaponName matches the name field of each weapon in the character's weapons array.
+-- spareMags is advisory only (synced from inventory if the item exists there).
+```
+
+```typescript
+interface WeaponAmmoState {
+  current: number;       // rounds remaining in current magazine
+  magazineSize: number;  // full magazine capacity (from weapon data)
+  spareMags: number;     // spare loaded magazines available
+}
+type AmmoState = Record<string, WeaponAmmoState>;
+```
+
+### Ammo initialisation
+
+When a character is first given an ammo state (or a new weapon is added), `current` is set to `magazineSize` and `spareMags` defaults to 0. The party can edit both values manually at any time. Weapons with no Magazine value in the rulebook (melee, blade, dagger, etc.) are excluded from ammo tracking; the UI omits them silently.
+
+### Integration points
+
+**Party Roster — character detail panel**
+- [ ] Add an **AMMO** sub-section to the Weapons block, below each weapon's existing damage chip
+- [ ] Each ranged weapon shows: `[current] / [magazineSize] ■■■■□□□ [spare mags: N]`
+- [ ] Bar fills amber when ≥ 50% loaded, turns red when ≤ 25% (2 or fewer rounds), goes dark/empty when 0
+- [ ] Inline `−` and `+` buttons to manually adjust current count (free-form edits between sessions)
+- [ ] **RELOAD** button: sets `current = magazineSize`, decrements `spareMags` by 1 (blocked if `spareMags = 0` and shows a warning; player can override)
+- [ ] Clicking RELOAD is a Minor Action reminder — shows a tooltip "Reload costs 1 Minor Action in combat"
+- [ ] Edit pencil on spare mag count for freeform entry
+- [ ] Changes write to `ammo_state` in Supabase and broadcast via realtime
+
+**Combat Tracker — weapon damage path**
+- [ ] When a character fires a weapon in the combat tracker (existing clickable weapon chip), decrement `current` by the correct amount:
+  - Default (single): −1
+  - If weapon has Auto trait and fire mode is Burst: −Auto score
+  - If weapon has Auto trait and fire mode is Full Auto: −(3 × Auto score)
+- [ ] Add a **fire mode selector** (Single / Burst / Full Auto) that appears on the weapon chip only if the weapon has the Auto trait; defaults to Single
+- [ ] If `current` reaches 0 after firing, the weapon chip turns red and shows `EMPTY — RELOAD`; subsequent clicks are blocked until reloaded
+- [ ] **RELOAD** button appears inline on the empty chip; same logic as roster panel (spends a spare mag, warns if none left)
+- [ ] Ammo state changes during combat broadcast via Supabase realtime to all connected clients (other players see the ammo bar update live)
+
+**Inventory Manager — spare magazine tracking**
+- [ ] Ammo items in the inventory (e.g. "Rifle Magazine ×4", "Autopistol Magazine ×2") can be designated as **ammo** with a new `ammo_for` field linking to a weapon name
+- [ ] When an ammo item quantity is edited in the Inventory Manager, the linked character's `spareMags` count updates automatically (quantity of ammo items = spareMags available)
+- [ ] Conversely, when RELOAD is pressed in the roster or combat tracker, the linked inventory ammo item decrements by 1 (if the item exists; otherwise only `spareMags` decrements in `ammo_state`)
+- [ ] Grenades and missiles are tracked as inventory items with `ammo_for` set to the weapon name; firing them in the combat tracker decrements the inventory quantity by 1
+
+### Fire mode rules summary (shown in UI reference tooltip)
+
+| Mode | Rounds used | DM | Notes |
+|------|-------------|-----|-------|
+| Single | 1 | normal | |
+| Burst | Auto score | +Auto to damage | Cannot aim or use Scope in same action |
+| Full Auto | 3 × Auto | Auto attacks | All targets within 6m; cannot aim |
+
+### Tasks
+
+- [ ] Add `ammo_state` column to `characters` table in Supabase
+- [ ] Add `ammo_for` field to inventory item schema (nullable text, links weapon name)
+- [ ] Update `Character` TypeScript interface with `ammo_state: AmmoState`
+- [ ] Update `InventoryItem` TypeScript interface with `ammo_for?: string`
+- [ ] Write `initAmmoState(weapons: Weapon[]): AmmoState` — builds initial state from weapon list, skipping melee weapons
+- [ ] Write `decrementAmmo(state: AmmoState, weaponName: string, fireMode: 'single' | 'burst' | 'fullAuto', autoScore: number): AmmoState`
+- [ ] Write `reloadWeapon(state: AmmoState, weaponName: string): { state: AmmoState; usedMag: boolean }`
+- [ ] Ammo sub-section component in character weapon panel (roster)
+- [ ] Fire mode selector on Auto-trait weapon chips in combat tracker
+- [ ] Auto-decrement on weapon fire in combat tracker
+- [ ] Empty-weapon block + inline reload button in combat tracker
+- [ ] Realtime broadcast of `ammo_state` changes (reuse existing `characters` realtime subscription)
+- [ ] Inventory `ammo_for` field: add to new/edit item form; show linked character name as a read-only badge
+- [ ] Inventory ↔ `ammo_state` sync on quantity change (debounced write, 500ms)
+
+### Tests
+
+- [ ] Unit: `initAmmoState()` — melee weapons excluded; rifle starts at `{ current: 20, magazineSize: 20, spareMags: 0 }`
+- [ ] Unit: `decrementAmmo()` — single (−1), burst Auto3 (−3), fullAuto Auto3 (−9); clamps to 0, never negative
+- [ ] Unit: `decrementAmmo()` — throws/returns error state if `current` is already 0
+- [ ] Unit: `reloadWeapon()` — resets `current` to `magazineSize`; decrements `spareMags`; `usedMag: true`
+- [ ] Unit: `reloadWeapon()` with `spareMags: 0` — still reloads (manual override allowed), `usedMag: false`
+- [ ] Component: ammo bar renders correct fill % and colour thresholds (≥50% amber, ≤25% red, 0 dark)
+- [ ] Component: RELOAD button disabled state shows warning text when `spareMags === 0`
+- [ ] Component: fire mode selector only renders on Auto-trait weapons
+- [ ] Component: weapon chip turns red on empty; click on empty chip does not trigger damage roll
+- [ ] E2E smoke: fire a rifle in combat tracker → ammo decrements; RELOAD → ammo resets; second player's roster panel updates within ~1s
+
+---
+
+## Milestone 13 — Quick Character Generator
+
+**Goal:** The GM can instantly generate a plausible NPC using the Quick Characters tables from Core Rulebook pp.91–92, then save the result directly to the party roster.
+
+### Background
+
+Pages 91–92 of the 2022 Core Rulebook define a three-table rapid NPC generation system:
+- **Allies & Enemies** (D66 → 36 archetypes): Naval Officer, Crooked Trader, Mercenary, etc.
+- **Character Quirks** (D66 → 36 personality traits): Loyal, In debt to criminals, Spying on the Travellers, etc.
+- **Experience Levels** (8 templates): Green/Average/Experienced/Elite × Combatant/Non-combatant — each specifying a skill list, average skill level, and characteristic bonuses (+0 to +1/+2/+3)
+
+Characteristics (STR/DEX/END/INT/EDU/SOC) are generated with 2D6 each, then the experience level's bonuses are applied to the three highest results. The generated character can be saved to Supabase and immediately participates in the app's roster, rolls, and combat tracker.
+
+### Data additions needed
+
+New file: `src/data/quickCharacters.ts`
+
+```typescript
+export const ALLIES_ENEMIES: { d66: number; archetype: string }[]  // 36 entries, D66 11–66
+
+export const CHARACTER_QUIRKS: { d66: number; quirk: string }[]    // 36 entries, D66 11–66
+
+export interface ExperienceLevel {
+  id: string;
+  label: string;           // e.g. "Experienced Combatant"
+  combatant: boolean;
+  skills: { name: string; level: number }[];
+  charBonuses: number[];   // e.g. [] | [1] | [1, 2] | [1, 2, 3]
+}
+export const EXPERIENCE_LEVELS: ExperienceLevel[]  // 8 entries
+```
+
+Experience level templates (source: p.92):
+
+| Label | Skills (at avg level) | Avg Level | Char Bonuses |
+|-------|-----------------------|-----------|--------------|
+| Green Non-combatant | Drive/Flyer | 0 | — |
+| Green Combatant | Drive/Flyer, Gun Combat, Melee | 0 | — |
+| Average Non-combatant | Drive/Flyer, Profession | 1 | +1 |
+| Average Combatant | Drive/Flyer, Gun Combat, Melee, Recon | 1 | +1 |
+| Experienced Non-combatant | Admin, Drive/Flyer, Profession | 2 | +1, +2 |
+| Experienced Combatant | Drive/Flyer, Gun Combat, Heavy Weapons, Melee, Recon | 2 | +1, +2 |
+| Elite Non-combatant | Admin, Drive/Flyer, Investigate, Profession | 3 | +1, +2, +3 |
+| Elite Combatant | Drive/Flyer, Gun Combat, Heavy Weapons, Melee, Recon, Tactics | 3 | +1, +2, +3 |
+
+### New library file: `src/lib/quickCharGen.ts`
+
+Pure functions, unit-testable with an injectable roller:
+
+```typescript
+// Extract rollD66() from GlobalToolsDrawer.tsx into dice.ts and re-export
+export function generateCharacteristics(roller?): number[]  // returns [str,dex,end,int,edu,soc], each 2D6
+export function applyExperienceBonuses(stats: number[], bonuses: number[]): number[]  // adds bonuses to 3 highest
+export function generateQuickCharacter(opts?: { roller? }): GeneratedNPC
+// Returns: { archetype, quirk, experienceLevel, name, str, dex, end_stat, int_stat, edu, soc, skills, career, notes }
+```
+
+### Tasks
+
+**Data & logic**
+- [ ] Encode all three tables into `src/data/quickCharacters.ts` (36 + 36 + 8 entries)
+- [ ] Extract `rollD66()` from `GlobalToolsDrawer.tsx` into `src/lib/dice.ts` and update the drawer import
+- [ ] Write `src/lib/quickCharGen.ts` with `generateCharacteristics()`, `applyExperienceBonuses()`, `generateQuickCharacter()`
+
+**UI**
+- [ ] Add **GENERATE NPC** button to the Party Roster header alongside ADD CHARACTER and IMPORT XLSX
+- [ ] Create `src/components/roster/QuickCharGenModal.tsx` — modal with three roll rows (Archetype, Quirk, Experience Level), each with a ROLL button and result display
+- [ ] Show generated UPP and skill list as read-only output in the modal
+- [ ] Provide editable Name field (pre-filled with the archetype)
+- [ ] REROLL ALL button regenerates everything; individual REROLL buttons per row
+- [ ] SAVE TO ROSTER inserts character via Supabase; quirk → `notes`, archetype → `career`; closes modal on success
+- [ ] Show inline error if name is blank; show Supabase error banner on insert failure
+
+**Tests (write before implementing)**
+- [ ] Unit: `generateCharacteristics()` — all 6 values in [2, 12]
+- [ ] Unit: `applyExperienceBonuses([7,8,5,6,9,4], [1,2])` — bonuses added to the two highest stats (9 and 8), not the lowest
+- [ ] Unit: `generateQuickCharacter()` — archetype is a valid ALLIES_ENEMIES entry, skills match the drawn experience level template
+- [ ] Unit: D66 lookup — all 36 ALLIES_ENEMIES entries covered without gaps; same for CHARACTER_QUIRKS
+- [ ] Component: modal renders with three roll rows; REROLL ALL updates all displayed values; name field is editable
+- [ ] Component: SAVE TO ROSTER is blocked and shows warning when name is empty
+- [ ] Component: SAVE TO ROSTER calls `supabase.from('characters').insert(...)` with correct shape (mocked)
+- [ ] `npm run lint` / `npm test` / `npm run build`
+
+### Milestone 13 Retrospective
+
+*(Fill in after completion)*
+
+Questions to answer:
+- Did the GM actually use NPC generation at the table, or was it ignored?
+- Were the archetype and quirk tables evocative enough, or did they need manual overrides?
+- Is the Experience Level a good proxy for combat capability in the tracker?
+- Should the modal offer a Career field so the generated NPC shows up correctly in the tracker's archetype picker?
 
 ---
 

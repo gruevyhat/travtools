@@ -82,3 +82,10 @@ export function rollFlux(roller?: () => number): FluxRollResult {
   const die2 = d6(r);
   return { die1, die2, result: die1 - die2 };
 }
+
+export function rollD66(roller?: () => number): { d1: number; d2: number; d66: number } {
+  const r = roller ?? Math.random;
+  const d1 = Math.ceil(r() * 6);
+  const d2 = Math.ceil(r() * 6);
+  return { d1, d2, d66: d1 * 10 + d2 };
+}

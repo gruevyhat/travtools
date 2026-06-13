@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { Download, Plus, Upload, ChevronDown, ChevronUp, X, Minus, Settings, Pencil, Trash2 } from 'lucide-react';
+import { Download, Plus, Shuffle, Upload, ChevronDown, ChevronUp, X, Minus, Settings, Pencil, Trash2 } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
 import {
   ArmourItem,
@@ -19,6 +19,8 @@ import { parseXLSXCharacter } from '../../lib/parseXLSX';
 import { csvRow, downloadCsv } from '../../lib/csv';
 import { CORE_EQUIPMENT } from '../../data/equipment';
 import { fmtDM, DIFFICULTIES, RollMode } from '../../lib/dice';
+import { GeneratedNPC } from '../../lib/quickCharGen';
+import QuickCharGenModal from './QuickCharGenModal';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -1730,6 +1732,10 @@ export default function PartyRoster() {
     } catch { /* ignore */ }
   }
 
+  const [showGenModal, setShowGenModal] = useState(false);
+  const [genSaving, setGenSaving] = useState(false);
+  const [genError, setGenError] = useState<string | null>(null);
+
   const [uploadingPortraitId, setUploadingPortraitId] = useState<string | null>(null);
   const [rosterError, setRosterError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -1827,6 +1833,32 @@ export default function PartyRoster() {
       if (previous) setChars(prev => sortCharacters([...prev, previous]));
       loadChars();
     }
+  }
+
+  async function saveGeneratedNPC(npc: GeneratedNPC & { name: string }) {
+    if (!client) return;
+    setGenSaving(true);
+    setGenError(null);
+    const payload: Omit<Character, 'id' | 'created_at'> = {
+      ...EMPTY,
+      name: npc.name,
+      career: npc.career,
+      notes: npc.notes,
+      rank: npc.experienceLevel.label,
+      str: npc.str, dex: npc.dex, end_stat: npc.end_stat,
+      int_stat: npc.int_stat, edu: npc.edu, soc: npc.soc,
+      skills: npc.skills,
+    };
+    const { data, error } = await client.from('characters').insert(payload).select().single();
+    setGenSaving(false);
+    if (error) { setGenError(`Could not save NPC: ${error.message}`); return; }
+    if (data) {
+      const inserted = data as Character;
+      setChars(prev => sortCharacters([...prev, inserted]));
+      selectChar(inserted.id);
+    }
+    setShowGenModal(false);
+    setGenError(null);
   }
 
   function startEdit(char: Character) {
@@ -2768,6 +2800,9 @@ export default function PartyRoster() {
               className="btn-amber flex items-center gap-1">
               <Plus size={13} /> ADD CHARACTER
             </button>
+            <button onClick={() => setShowGenModal(true)} className="btn-steel flex items-center gap-1">
+              <Shuffle size={13} /> GENERATE NPC
+            </button>
           </div>
         </div>
 
@@ -2795,6 +2830,15 @@ export default function PartyRoster() {
         )}
       </div>
 
+      {showGenModal && (
+        <QuickCharGenModal
+          onSave={saveGeneratedNPC}
+          onClose={() => { setShowGenModal(false); setGenError(null); }}
+          saving={genSaving}
+          error={genError}
+        />
+      )}
+
       {/* ── Desktop layout (≥ lg) ────────────────────────────────────────────── */}
       <div className="hidden lg:flex flex-1 overflow-hidden">
 
@@ -2813,6 +2857,10 @@ export default function PartyRoster() {
               onClick={() => { setForm(EMPTY); setSkillsRaw(''); setTalentsRaw(''); setEditing(null); setShowForm(true); selectChar(null); }}
               className="btn-amber w-full flex items-center justify-center gap-1 text-xs">
               <Plus size={12} /> ADD CHARACTER
+            </button>
+            <button onClick={() => setShowGenModal(true)}
+              className="btn-steel w-full flex items-center justify-center gap-1 text-xs">
+              <Shuffle size={12} /> GENERATE NPC
             </button>
           </div>
 
