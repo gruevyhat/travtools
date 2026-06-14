@@ -409,22 +409,33 @@ async function checkShipInteractions(browser, baseUrl) {
   if (await page.getByRole('button', { name: 'SAVE SHIP RECORD' }).count() !== 0) {
     throw new Error('Fleet ship record was editable before clicking the row cog');
   }
-  if (await page.getByRole('button', { name: 'SAVE DAMAGE' }).count() !== 0) {
-    throw new Error('Fleet ship damage trackers were editable before clicking the row cog');
-  }
   if (await page.getByRole('button', { name: 'LABEL' }).count() !== 0) {
     throw new Error('Fleet annotation controls were visible before clicking the row cog');
   }
+  await page.getByRole('button', { name: 'TRACK DAMAGE' }).click();
+  await page.getByLabel('Hull Damage Input').fill('7');
+  await page.getByRole('button', { name: 'APPLY' }).click();
+  await page.getByText('7/40', { exact: false }).first().waitFor({ state: 'visible', timeout: 5_000 });
+  await page.getByLabel('Increase M-Drive Damage').click();
+  await page.getByText('1/6', { exact: false }).first().waitFor({ state: 'visible', timeout: 5_000 });
+  await page.getByLabel('Decrease M-Drive Damage').click();
+  await page.getByRole('button', { name: 'RESET DAMAGE' }).waitFor({ state: 'visible', timeout: 5_000 });
+  await page.getByRole('button', { name: 'RESET DAMAGE' }).click();
+  await page.getByRole('button', { name: 'TRACK DAMAGE' }).waitFor({ state: 'visible', timeout: 5_000 });
+  if (await page.getByLabel('Hull Damage Input').count() !== 0) {
+    throw new Error('Fleet ship damage trackers stayed expanded after reset');
+  }
+  await page.getByRole('button', { name: 'TRACK DAMAGE' }).click();
+  await page.getByLabel('Hull Damage Input').fill('7');
+  await page.getByRole('button', { name: 'APPLY' }).click();
+  await page.getByText('7/40', { exact: false }).first().waitFor({ state: 'visible', timeout: 5_000 });
+
   await page.getByRole('button', { name: 'Edit Scout/Courier ship' }).click();
   await replaceByTyping(page.getByRole('textbox', { name: 'Ship name' }), 'Smoke Scout');
   await replaceByTyping(page.getByLabel('Ship class'), 'Type-SX');
   await page.getByRole('button', { name: 'SAVE SHIP RECORD' }).click();
   await page.locator('aside').getByText('Smoke Scout', { exact: true }).waitFor({ state: 'visible', timeout: 5_000 });
   await page.getByText('Type-SX', { exact: false }).first().waitFor({ state: 'visible', timeout: 5_000 });
-
-  await page.getByLabel('Hull Damage').fill('7');
-  await page.getByRole('button', { name: 'SAVE DAMAGE' }).click();
-  await page.getByText('7/40', { exact: false }).waitFor({ state: 'visible', timeout: 5_000 });
 
   await page.getByRole('button', { name: 'LABEL' }).click();
   await page.getByLabel('Type-S Scout/Courier deck plan').click({ position: { x: 200, y: 120 } });
@@ -581,6 +592,15 @@ async function checkFormTyping(browser, baseUrl) {
   await tradeRow.getByPlaceholder('Sell price').type('1500');
   await tradeRow.getByPlaceholder('Sell price').press('Enter');
   await tradeRow.getByText('+Cr 500').waitFor({ state: 'visible', timeout: 5_000 });
+  await page.getByRole('button', { name: 'TRADE SESSION' }).click();
+  await replaceByTyping(page.getByLabel('Source World Name'), 'Mora');
+  await replaceByTyping(page.getByLabel('Source Population'), '9');
+  await page.getByRole('button', { name: /2 SUPPLIER/ }).click();
+  await page.getByRole('button', { name: /ROLL SUPPLIER/ }).click();
+  await page.getByText(/Smoke Traveller Prime · Broker\/INT/).waitFor({ state: 'visible', timeout: 5_000 });
+  await page.getByRole('button', { name: /3 LOTS/ }).click();
+  await page.getByRole('button', { name: /ROLL LOTS/ }).click();
+  await page.locator('tr', { hasText: 'Common Electronics' }).waitFor({ state: 'visible', timeout: 5_000 });
 
   await page.goto(`${baseUrl}#/inventory`, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'ADD ITEM' }).click();

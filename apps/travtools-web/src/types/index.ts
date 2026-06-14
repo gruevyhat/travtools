@@ -63,6 +63,11 @@ export interface TradeDeal {
   world_bought: string | null;
   world_sold: string | null;
   notes: string | null;
+  session_ref?: string | null;
+  base_price?: number | null;
+  purchase_pct?: number | null;
+  sale_pct?: number | null;
+  trade_code?: string | null;
   created_at: string;
   updated_at: string;
 }

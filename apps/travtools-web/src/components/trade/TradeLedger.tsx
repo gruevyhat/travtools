@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Download, Plus, Search, Upload, X, Check } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
-import { TradeDeal } from '../../types';
+import { Character, TradeDeal } from '../../types';
 import {
   dealsToCsv,
   filterTradeDeals,
@@ -12,8 +12,10 @@ import {
 } from '../../lib/trade';
 import { downloadCsv, parseCsvRows } from '../../lib/csv';
 import { TRADE_GOODS, searchTradeGoods, formatBasePrice } from '../../data/tradeGoods';
+import { PassengersFreightPanel, TradeSessionPanel, type TradeDealDraft } from './TradeMiniGame';
 
 type Status = 'all' | 'active' | 'completed' | 'cancelled';
+type TradeTab = 'deals' | 'session' | 'traffic';
 type DealForm = Omit<TradeDeal, 'id' | 'created_at' | 'updated_at'>;
 
 const EMPTY: DealForm = {
@@ -39,6 +41,7 @@ function Field({ name, children }: { name: string; children: React.ReactNode }) 
 export default function TradeLedger() {
   const { client } = useSupabase();
   const [deals, setDeals] = useState<TradeDeal[]>([]);
+  const [characters, setCharacters] = useState<Character[]>([]);
   const [filter, setFilter] = useState<Status>('all');
   const [worldFilter, setWorldFilter] = useState('');
   const [showForm, setShowForm] = useState(false);
@@ -49,6 +52,8 @@ export default function TradeLedger() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [tradeQuery, setTradeQuery] = useState('');
   const [showTradeGoods, setShowTradeGoods] = useState(false);
+  const [activeTab, setActiveTab] = useState<TradeTab>('deals');
+  const [sessionBusy, setSessionBusy] = useState(false);
   const csvImportRef = useRef<HTMLInputElement>(null);
 
   const loadDeals = useCallback(async () => {
@@ -61,15 +66,33 @@ export default function TradeLedger() {
     if (data) setDeals(data as TradeDeal[]);
   }, [client]);
 
+  const loadCharacters = useCallback(async () => {
+    if (!client) return;
+    const { data, error } = await client.from('characters').select('*').order('name', { ascending: true });
+    if (error) {
+      setErrorMessage(`Roster could not be loaded for trade checks: ${error.message}`);
+      return;
+    }
+    if (data) setCharacters(data as Character[]);
+  }, [client]);
+
   useEffect(() => {
     loadDeals();
+    loadCharacters();
     if (!client) return;
-    const channel = client
+    const tradeChannel = client
       .channel('trade-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'trade_deals' }, loadDeals)
       .subscribe();
-    return () => { client.removeChannel(channel); };
-  }, [client, loadDeals]);
+    const characterChannel = client
+      .channel('trade-roster-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'characters' }, loadCharacters)
+      .subscribe();
+    return () => {
+      client.removeChannel(tradeChannel);
+      client.removeChannel(characterChannel);
+    };
+  }, [client, loadDeals, loadCharacters]);
 
   async function saveDeal(e: React.FormEvent) {
     e.preventDefault();
@@ -168,6 +191,41 @@ export default function TradeLedger() {
     if (data) setDeals(prev => sortDeals(prev.map(d => d.id === id ? data as TradeDeal : d)));
   }
 
+  async function createSessionDeals(payloads: TradeDealDraft[]) {
+    if (!client || payloads.length === 0) return;
+    setSessionBusy(true);
+    const inserted: TradeDeal[] = [];
+    for (const payload of payloads) {
+      const { data, error } = await client.from('trade_deals').insert(payload).select().single();
+      if (error) {
+        setErrorMessage(`Trade session deal could not be added: ${error.message}`);
+        setSessionBusy(false);
+        if (inserted.length > 0) setDeals(prev => sortDeals([...inserted, ...prev]));
+        return;
+      }
+      if (data) inserted.push(data as TradeDeal);
+    }
+    setDeals(prev => sortDeals([...inserted, ...prev]));
+    setSessionBusy(false);
+  }
+
+  async function updateSessionDeal(id: string, patch: Partial<TradeDeal>) {
+    if (!client) return;
+    const previous = deals.find(d => d.id === id);
+    const payload = { ...patch, updated_at: patch.updated_at ?? new Date().toISOString() };
+    setSessionBusy(true);
+    setDeals(prev => sortDeals(prev.map(d => d.id === id ? { ...d, ...payload } : d)));
+    const { data, error } = await client.from('trade_deals').update(payload).eq('id', id).select().single();
+    setSessionBusy(false);
+    if (error) {
+      setErrorMessage(`Trade session deal could not be updated: ${error.message}`);
+      if (previous) setDeals(prev => sortDeals(prev.map(d => d.id === id ? previous : d)));
+      loadDeals();
+      return;
+    }
+    if (data) setDeals(prev => sortDeals(prev.map(d => d.id === id ? data as TradeDeal : d)));
+  }
+
   function startEdit(deal: TradeDeal) {
     setForm({
       item: deal.item, quantity: deal.quantity, buy_price: deal.buy_price,
@@ -236,6 +294,26 @@ export default function TradeLedger() {
           </button>
         </div>
       )}
+
+      <div className="flex flex-wrap items-center gap-2 border-b border-steel/50 pb-3">
+        {([
+          ['deals', 'DEALS LEDGER'],
+          ['session', 'TRADE SESSION'],
+          ['traffic', 'PASSENGERS & FREIGHT'],
+        ] as const).map(([tab, label]) => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => setActiveTab(tab)}
+            className={`btn text-xs ${activeTab === tab ? 'btn-amber' : 'btn-steel'}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'deals' && (
+        <>
 
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-4">
@@ -496,6 +574,20 @@ export default function TradeLedger() {
           </tbody>
         </table>
       </div>
+        </>
+      )}
+
+      {activeTab === 'session' && (
+        <TradeSessionPanel
+          deals={deals}
+          characters={characters}
+          onCreateDeals={createSessionDeals}
+          onUpdateDeal={updateSessionDeal}
+          busy={sessionBusy}
+        />
+      )}
+
+      {activeTab === 'traffic' && <PassengersFreightPanel characters={characters} />}
     </div>
   );
 }

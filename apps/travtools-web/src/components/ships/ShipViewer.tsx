@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Trash2, Upload, Tag, X, Settings } from 'lucide-react';
+import { Minus, Plus, Trash2, Upload, Tag, X, Settings } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
 import { Ship, ShipSpecs, Annotation, ShipDamageTrackers } from '../../types';
 import { CANONICAL_SHIPS } from './canonicalShips';
@@ -69,11 +69,14 @@ interface ShipRecordPanelProps {
 interface ShipDamagePanelProps {
   specs: ShipSpecs;
   damage: ShipDamageTrackers;
-  editable: boolean;
-  form: ShipDamageTrackers;
-  onFormChange: (damage: ShipDamageTrackers) => void;
-  onSave: () => void;
-  onReset: () => void;
+  tracking: boolean;
+  damageInput: string;
+  onDamageInputChange: (value: string) => void;
+  onToggleTracking: () => void;
+  onApplyDamage: () => void;
+  onAdjust: (key: ShipDamageNumberKey, delta: number) => void;
+  onNotesChange: (notes: string) => void;
+  onNotesBlur: (notes: string) => void;
 }
 
 function hasSpecValues(specs: ShipSpecs | null) {
@@ -174,6 +177,12 @@ function damageTone(value: number, max?: number) {
 function damagePercent(value: number, max?: number) {
   if (!max || max <= 0) return Math.min(100, value > 0 ? 100 : 0);
   return Math.min(100, Math.max(0, (value / max) * 100));
+}
+
+function clampDamageValue(value: number, max?: number) {
+  const safeValue = Number.isFinite(value) ? value : 0;
+  const upper = max && max > 0 ? max : Number.POSITIVE_INFINITY;
+  return Math.max(0, Math.min(upper, safeValue));
 }
 
 function fleetManifestRows(ship: Ship, specs: ShipSpecs) {
@@ -350,7 +359,10 @@ function ShipRecordPanel({
   );
 }
 
-function ShipDamagePanel({ specs, damage, editable, form, onFormChange, onSave, onReset }: ShipDamagePanelProps) {
+function ShipDamagePanel({
+  specs, damage, tracking, damageInput, onDamageInputChange, onToggleTracking,
+  onApplyDamage, onAdjust, onNotesChange, onNotesBlur,
+}: ShipDamagePanelProps) {
   const normalized = normalizeShipDamage(damage);
   const totalDamage = DAMAGE_FIELDS.reduce((sum, { key }) => sum + Number(normalized[key] ?? 0), 0);
 
@@ -363,64 +375,96 @@ function ShipDamagePanel({ specs, damage, editable, form, onFormChange, onSave, 
             {totalDamage > 0 ? `${totalDamage} tracked damage marker${totalDamage === 1 ? '' : 's'}` : 'No damage recorded'}
           </div>
         </div>
-        {editable && (
-          <div className="flex gap-2 flex-shrink-0">
-            <button type="button" onClick={onReset} className="btn-steel text-xs py-1 px-2">RESET</button>
-            <button type="button" onClick={onSave} className="btn-amber text-xs py-1 px-2">SAVE DAMAGE</button>
-          </div>
-        )}
+        <button
+          type="button"
+          onClick={onToggleTracking}
+          className={`text-[10px] font-mono px-2 py-0.5 border transition-colors flex-shrink-0 ${
+            tracking
+              ? 'border-alert/60 text-alert hover:border-steel hover:text-body/60'
+              : 'border-steel/40 text-body/65 hover:border-amber/50 hover:text-amber/70'
+          }`}
+        >
+          {tracking ? 'RESET DAMAGE' : 'TRACK DAMAGE'}
+        </button>
       </div>
-      <div className="p-3 space-y-2">
-        {DAMAGE_FIELDS.map(field => {
-          const max = maxForDamageField(field, specs);
-          const value = Number((editable ? form[field.key] : normalized[field.key]) ?? 0);
-          const tone = damageTone(value, max);
-          return (
-            <div key={field.key} className="space-y-1">
-              <div className="flex items-center justify-between gap-3 text-xs">
-                <span className="text-body/65 font-mono text-[10px] tracking-wider">{field.label.toUpperCase()}</span>
-                {editable ? (
-                  <input
-                    aria-label={field.label}
-                    type="number"
-                    min={0}
-                    max={max}
-                    className="input py-0.5 text-xs w-20 text-right"
-                    value={value}
-                    onChange={e => {
-                      const next = Math.max(0, parseInt(e.target.value || '0', 10));
-                      onFormChange({ ...form, [field.key]: Number.isFinite(next) ? next : 0 });
-                    }}
-                  />
-                ) : (
-                  <span className={`font-mono ${tone === 'alert' ? 'text-alert' : tone === 'amber' ? 'text-amber' : 'text-safe'}`}>
-                    {value}{max ? ` / ${max}` : ''}
-                  </span>
-                )}
-              </div>
-              <div className="h-1.5 bg-steel/30 overflow-hidden">
-                <div
-                  className={`h-full ${tone === 'alert' ? 'bg-alert' : tone === 'amber' ? 'bg-amber' : 'bg-safe/70'}`}
-                  style={{ width: `${damagePercent(value, max)}%` }}
-                />
-              </div>
-            </div>
-          );
-        })}
-        {editable ? (
+      {tracking ? (
+        <div className="p-3 space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              aria-label="Hull Damage Input"
+              type="number"
+              min={1}
+              placeholder="Hull damage..."
+              value={damageInput}
+              onChange={e => onDamageInputChange(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') onApplyDamage(); }}
+              className="input text-xs w-32 py-1"
+            />
+            <button type="button" onClick={onApplyDamage} className="btn-danger text-xs py-1">APPLY</button>
+            <span className="text-body/55 text-[10px] font-mono min-w-40 flex-1">Apply to hull, or adjust systems below</span>
+          </div>
+
+          <div className="space-y-2">
+            {DAMAGE_FIELDS.map(field => {
+              const max = maxForDamageField(field, specs);
+              const value = Number(normalized[field.key] ?? 0);
+              const tone = damageTone(value, max);
+              return (
+                <div key={field.key} className="space-y-1">
+                  <div className="flex items-center gap-2 text-xs font-mono">
+                    <span className="text-body/70 flex-1 min-w-0 truncate">{field.label.replace(' Damage', '').toUpperCase()}</span>
+                    <button
+                      type="button"
+                      aria-label={`Decrease ${field.label}`}
+                      disabled={value <= 0}
+                      onClick={() => onAdjust(field.key, -1)}
+                      className="w-5 h-5 border border-steel/60 text-body/70 hover:border-alert hover:text-alert disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center"
+                    >
+                      <Minus size={8} />
+                    </button>
+                    <span className={`w-14 text-center ${tone === 'alert' ? 'text-alert' : tone === 'amber' ? 'text-amber' : 'text-safe'}`}>
+                      {value}{max ? `/${max}` : ''}
+                    </span>
+                    <button
+                      type="button"
+                      aria-label={`Increase ${field.label}`}
+                      disabled={max !== undefined && value >= max}
+                      onClick={() => onAdjust(field.key, 1)}
+                      className="w-5 h-5 border border-steel/60 text-body/70 hover:border-safe hover:text-safe disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center"
+                    >
+                      <Plus size={8} />
+                    </button>
+                  </div>
+                  <div className="h-1.5 bg-steel/30 overflow-hidden">
+                    <div
+                      className={`h-full ${tone === 'alert' ? 'bg-alert' : tone === 'amber' ? 'bg-amber' : 'bg-safe/70'}`}
+                      style={{ width: `${damagePercent(value, max)}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
           <label className="space-y-1 block pt-2">
             <span className="text-body/60 font-mono text-[10px] tracking-wider">DAMAGE NOTES</span>
             <textarea
               aria-label="Damage Notes"
               className="input min-h-20 resize-y text-xs"
-              value={form.notes ?? ''}
-              onChange={e => onFormChange({ ...form, notes: e.target.value || null })}
+              value={normalized.notes ?? ''}
+              onChange={e => onNotesChange(e.target.value)}
+              onBlur={e => onNotesBlur(e.target.value)}
             />
           </label>
-        ) : normalized.notes ? (
-          <div className="pt-2 text-xs text-body/70 leading-5 whitespace-pre-wrap">{normalized.notes}</div>
-        ) : null}
-      </div>
+          <div className="text-[10px] text-body/55 font-mono">
+            Reset clears all tracked ship damage and damage notes.
+          </div>
+        </div>
+      ) : (
+        <div className="p-3 text-xs text-body/55 font-mono">
+          Click TRACK DAMAGE to open hull and system damage controls.
+        </div>
+      )}
     </section>
   );
 }
@@ -436,10 +480,14 @@ export default function ShipViewer() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [specsForm, setSpecsForm] = useState<ShipSpecs>({});
   const [damageForm, setDamageForm] = useState<ShipDamageTrackers>(normalizeShipDamage(null));
+  const [trackingDamage, setTrackingDamage] = useState(false);
+  const [damageInput, setDamageInput] = useState('');
   const [identityForm, setIdentityForm] = useState<ShipIdentityForm>(identityFormFromShip(null));
   const [editingRecord, setEditingRecord] = useState(false);
   const schematicRef = useRef<HTMLDivElement>(null);
   const replaceImageRef = useRef<HTMLInputElement>(null);
+  const selectedShipId = selected?.id ?? null;
+  const selectedShipDamage = selected?.damage;
 
   const loadShips = useCallback(async () => {
     if (!client) return;
@@ -478,6 +526,7 @@ export default function ShipViewer() {
     setPendingPos(null);
     setSelectedAnnotationId(null);
     setEditingRecord(false);
+    setDamageInput('');
   }
 
   function startEditShip(ship: Ship) {
@@ -489,13 +538,22 @@ export default function ShipViewer() {
     setIdentityForm(identityFormFromShip(ship));
     setSpecsForm(effectiveShipSpecs(ship));
     setDamageForm(normalizeShipDamage(ship.damage));
+    setDamageInput('');
   }
 
   useEffect(() => {
-    setIdentityForm(identityFormFromShip(selected));
-    setSpecsForm(effectiveShipSpecs(selected));
-    setDamageForm(normalizeShipDamage(selected?.damage));
-  }, [selected]);
+    if (!editingRecord) {
+      setIdentityForm(identityFormFromShip(selected));
+      setSpecsForm(effectiveShipSpecs(selected));
+    }
+  }, [selected, editingRecord]);
+
+  useEffect(() => {
+    const normalized = normalizeShipDamage(selectedShipDamage);
+    setDamageForm(normalized);
+    setTrackingDamage(hasDamageValues(normalized));
+    setDamageInput('');
+  }, [selectedShipId, selectedShipDamage]);
 
   async function deleteShip(id: string) {
     if (!client || !confirm('Delete this ship entry?')) return;
@@ -630,15 +688,62 @@ export default function ShipViewer() {
     setErrorMessage(null);
   }
 
-  async function saveDamage() {
-    if (!editingRecord || !client || !selected) return;
-    const damage = hasDamageValues(damageForm) ? damageForm : {};
+  async function persistDamage(nextDamage: ShipDamageTrackers) {
+    if (!client || !selected) return;
+    const normalized = normalizeShipDamage(nextDamage);
+    const damage = hasDamageValues(normalized) ? normalized : {};
+    setDamageForm(normalized);
     updateShipInState({ ...selected, damage });
     const { error } = await client.from('ships').update({ damage }).eq('id', selected.id);
     if (error) {
       setErrorMessage(`Ship damage could not be saved: ${error.message}`);
       loadShips();
     }
+  }
+
+  function toggleDamageTracking() {
+    if (trackingDamage) {
+      setTrackingDamage(false);
+      setDamageInput('');
+      persistDamage(normalizeShipDamage(null));
+    } else {
+      setTrackingDamage(true);
+    }
+  }
+
+  function adjustDamageField(key: ShipDamageNumberKey, delta: number) {
+    const field = DAMAGE_FIELDS.find(candidate => candidate.key === key);
+    const max = field ? maxForDamageField(field, effectiveShipSpecs(selected)) : undefined;
+    const current = Number(damageForm[key] ?? 0);
+    persistDamage({
+      ...damageForm,
+      [key]: clampDamageValue(current + delta, max),
+    });
+  }
+
+  function applyHullDamage() {
+    const amount = parseInt(damageInput, 10);
+    if (!amount || amount <= 0) {
+      setDamageInput('');
+      return;
+    }
+
+    const hullField = DAMAGE_FIELDS.find(field => field.key === 'hull');
+    const max = hullField ? maxForDamageField(hullField, effectiveShipSpecs(selected)) : undefined;
+    const current = Number(damageForm.hull ?? 0);
+    persistDamage({
+      ...damageForm,
+      hull: clampDamageValue(current + amount, max),
+    });
+    setDamageInput('');
+  }
+
+  function updateDamageNotes(notes: string) {
+    setDamageForm(current => ({ ...current, notes: notes || null }));
+  }
+
+  function saveDamageNotes(notes: string) {
+    persistDamage({ ...damageForm, notes: notes.trim() ? notes : null });
   }
 
   async function handleReplaceImage(e: React.ChangeEvent<HTMLInputElement>) {
@@ -968,12 +1073,15 @@ export default function ShipViewer() {
                   />
                   <ShipDamagePanel
                     specs={selectedSpecs}
-                    damage={selectedDamage}
-                    editable={editingRecord}
-                    form={damageForm}
-                    onFormChange={setDamageForm}
-                    onSave={saveDamage}
-                    onReset={() => setDamageForm(normalizeShipDamage(selected.damage))}
+                    damage={damageForm}
+                    tracking={trackingDamage}
+                    damageInput={damageInput}
+                    onDamageInputChange={setDamageInput}
+                    onToggleTracking={toggleDamageTracking}
+                    onApplyDamage={applyHullDamage}
+                    onAdjust={adjustDamageField}
+                    onNotesChange={updateDamageNotes}
+                    onNotesBlur={saveDamageNotes}
                   />
                   <section className="border border-steel/50 bg-panel/45">
                     <div className="border-b border-steel/40 px-3 py-2 label">SHIP NOTES</div>

@@ -29,6 +29,11 @@ create table if not exists trade_deals (
     check (status in ('active', 'completed', 'cancelled')),
   world_bought text,
   world_sold text,
+  session_ref text,
+  base_price integer,
+  purchase_pct integer,
+  sale_pct integer,
+  trade_code text,
   notes text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -119,6 +124,11 @@ alter table characters add column if not exists contacts jsonb not null default 
 alter table characters add column if not exists background jsonb not null default '{}'::jsonb;
 alter table ships add column if not exists specs jsonb default null;
 alter table ships add column if not exists damage jsonb not null default '{}'::jsonb;
+alter table trade_deals add column if not exists session_ref text;
+alter table trade_deals add column if not exists base_price integer;
+alter table trade_deals add column if not exists purchase_pct integer;
+alter table trade_deals add column if not exists sale_pct integer;
+alter table trade_deals add column if not exists trade_code text;
 
 -- ============================================================
 -- Row Level Security
@@ -198,14 +208,18 @@ values (
 )
 on conflict (id) do nothing;
 
-create policy if not exists "Public read ship-schematics" on storage.objects
+drop policy if exists "Public read ship-schematics" on storage.objects;
+create policy "Public read ship-schematics" on storage.objects
   for select using (bucket_id = 'ship-schematics');
 
-create policy if not exists "Anon insert ship-schematics" on storage.objects
+drop policy if exists "Anon insert ship-schematics" on storage.objects;
+create policy "Anon insert ship-schematics" on storage.objects
   for insert with check (bucket_id = 'ship-schematics');
 
-create policy if not exists "Anon update ship-schematics" on storage.objects
+drop policy if exists "Anon update ship-schematics" on storage.objects;
+create policy "Anon update ship-schematics" on storage.objects
   for update using (bucket_id = 'ship-schematics');
 
-create policy if not exists "Anon delete ship-schematics" on storage.objects
+drop policy if exists "Anon delete ship-schematics" on storage.objects;
+create policy "Anon delete ship-schematics" on storage.objects
   for delete using (bucket_id = 'ship-schematics');

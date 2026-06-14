@@ -3,6 +3,11 @@ import { Character, PsionicTalent, Skill, Weapon } from '../types';
 export type CharStat = 'str' | 'dex' | 'end_stat' | 'int_stat' | 'edu' | 'soc' | 'psi' | 'chr' | 'mor' | 'lck';
 
 export const DEFAULT_CHARACTER_TITLE = 'Traveller';
+export const CORE_STATS: CharStat[] = ['str', 'dex', 'end_stat', 'int_stat', 'edu', 'soc'];
+export const EXTRA_STATS: CharStat[] = ['chr', 'mor', 'lck'];
+export const ALL_STATS: CharStat[] = [...CORE_STATS, 'psi', ...EXTRA_STATS];
+const TEMP_MOD_MIN = -15;
+const TEMP_MOD_MAX = 15;
 
 export const STAT_LABELS: Record<CharStat, string> = {
   str: 'STR', dex: 'DEX', end_stat: 'END',
@@ -92,6 +97,106 @@ export function skillChar(name: string): CharStat | null {
   if (SKILL_CHAR[name]) return SKILL_CHAR[name];
   const parent = name.replace(/\s*\(.*\)/, '').trim();
   return SKILL_CHAR[parent] ?? null;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+export function effectiveStatValue(base: number | null, tempMod: number): number | null {
+  if (base === null) return null;
+  return Math.max(0, base + tempMod);
+}
+
+export function normalizeSkillLookupName(name: string | null | undefined): string {
+  return (name ?? '')
+    .toLowerCase()
+    .replace(/\(x\s*\d+\)/g, '')
+    .replace(/\btl\s*\d+\b/g, '')
+    .replace(/\([^)]*\)/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+export function knownSkillLevel(char: Character, names: string[]): number | null {
+  const wanted = names.map(normalizeSkillLookupName);
+  let best: number | null = null;
+  for (const skill of char.skills ?? []) {
+    const skillName = normalizeSkillLookupName(skill.name);
+    const matches = wanted.some(name => skillName === name || skillName.startsWith(`${name} `));
+    if (matches) best = Math.max(best ?? skill.level, skill.level);
+  }
+  return best;
+}
+
+function normalizedTempMod(char: Character, key: CharStat): number {
+  const value = char.temp_mods?.[key];
+  if (typeof value !== 'number' || !Number.isFinite(value) || value === 0) return 0;
+  return clamp(Math.trunc(value), TEMP_MOD_MIN, TEMP_MOD_MAX);
+}
+
+export function currentCharacterStat(char: Character, key: CharStat): number | null {
+  if (key === 'str') return char.str_cur ?? char.str;
+  if (key === 'dex') return char.dex_cur ?? char.dex;
+  if (key === 'end_stat') return char.end_cur ?? char.end_stat;
+  if (key === 'psi') return char.psi_cur ?? char.psi;
+  return char[key] as number | null;
+}
+
+export function effectiveCharacterStat(char: Character, key: CharStat): number | null {
+  return effectiveStatValue(currentCharacterStat(char, key), normalizedTempMod(char, key));
+}
+
+export interface CharacterSkillLevelResult {
+  skillLevel: number;
+  trainedLevel: number | null;
+  jackOfAllTrades: number;
+}
+
+export function characterSkillLevel(char: Character, skillName: string, applyJackOfAllTrades = true): CharacterSkillLevelResult {
+  const trainedLevel = knownSkillLevel(char, [skillName]);
+  if (trainedLevel !== null) {
+    return { skillLevel: trainedLevel, trainedLevel, jackOfAllTrades: 0 };
+  }
+  const jackOfAllTrades = applyJackOfAllTrades
+    ? knownSkillLevel(char, ['Jack-of-all-Trades', 'Jack of All Trades']) ?? 0
+    : 0;
+  return { skillLevel: -3 + jackOfAllTrades, trainedLevel: null, jackOfAllTrades };
+}
+
+export interface CharacterSkillCheckDm {
+  characterName: string;
+  skillName: string;
+  statKey: CharStat | null;
+  statValue: number | null;
+  charDm: number;
+  skillLevel: number;
+  trainedLevel: number | null;
+  jackOfAllTrades: number;
+  totalDm: number;
+}
+
+export function characterSkillCheckDm(
+  char: Character,
+  skillName: string,
+  preferredStat?: CharStat | null,
+  applyJackOfAllTrades = true,
+): CharacterSkillCheckDm {
+  const statKey = preferredStat ?? skillChar(skillName);
+  const statValue = statKey ? effectiveCharacterStat(char, statKey) : null;
+  const charDm = statKey ? statDM(statValue) : 0;
+  const skill = characterSkillLevel(char, skillName, applyJackOfAllTrades);
+  return {
+    characterName: char.name,
+    skillName,
+    statKey,
+    statValue,
+    charDm,
+    skillLevel: skill.skillLevel,
+    trainedLevel: skill.trainedLevel,
+    jackOfAllTrades: skill.jackOfAllTrades,
+    totalDm: charDm + skill.skillLevel,
+  };
 }
 
 export function parseSkillsCSV(raw: string): Skill[] {

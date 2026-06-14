@@ -2,18 +2,7 @@
 // D66 roll: first die = tens digit, second die = units digit.
 // Tons: roll specified dice and multiply (e.g. "2D×10" = 2d6 × 10).
 // BasePrice in Credits. null = Exotics (price set by roleplay).
-// NOTE: purchaseDM/saleDM columns were transcribed from a low-resolution scan and
-// may contain errors. Verify against the physical book before using at the table.
-//
-// Modified Price Table (p.243) — apply after finding a buyer/seller:
-//   3D roll → Purchase%  / Sale%
-//   3         40%  / 140%   9         80%  / 100%
-//   4         50%  / 130%   10        90%  / 90%
-//   5         60%  / 120%   11        100% / 85%
-//   6         70%  / 110%   12        105% / 75%
-//   7         80%  / 100%   13        110% / 70%
-//   8         90%  / 90%    14        120% / 60%
-//   (add total Purchase/Sale DMs from matching trade codes to the 3D roll)
+// Modified Price lives in modifiedPrice.ts. It uses the p.243 range from -3 to 25+.
 
 export interface TradeGood {
   d66: number;

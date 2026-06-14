@@ -6,7 +6,7 @@ A group companion app for Traveller RPG (2022 Core Rulebook edition), runnable a
 
 ### Current State
 
-The app is live on GitHub Pages at `https://gruevyhat.github.io/travtools/` and connected to the live Supabase project. The test suite, lint, production build, and GitHub Pages workflow are all active. The current suite has 170 Vitest tests plus a Playwright smoke script covering landing, ships/fleet, shipyard, global tools, roster, form typing, and roll log.
+The app is live on GitHub Pages at `https://gruevyhat.github.io/travtools/` and connected to the live Supabase project. The test suite, lint, production build, and GitHub Pages workflow are all active. The current suite has 178 Vitest tests plus a Playwright smoke script covering landing, ships/fleet, shipyard, global tools, roster, trade session, form typing, and roll log.
 
 The core app now has a landing dashboard, roster, ships, trade ledger, inventory manager, roll log, and global tools drawer. The four local character XLSX files under `docs/characters/` have been imported into Supabase with the current parser. Character portraits are stored as data URLs; the `ship-schematics` Storage bucket remains relevant only for custom ship schematic uploads.
 
@@ -37,7 +37,7 @@ Travtools is an unofficial fan tool for a private campaign. It is not affiliated
 | 8 | Arbitrary Dice Notation Roller | Free-form dice expressions in global tools | Implemented |
 | 9 | Ship Builder | Guided spacecraft construction and Fleet integration | In Progress |
 | 10 | Party Treasury & Loot Shares | Shared credits ledger and split-loot workflow | Backlog |
-| 11 | Full Trade Mini-Game | Complete passenger, freight, and speculative-trade workflow | Backlog |
+| 11 | Full Trade Mini-Game | Complete passenger, freight, and speculative-trade workflow | Implemented |
 | 12 | Ammunition Tracking | Persistent weapon ammo and magazine tracking | Backlog |
 | 13 | Quick Character Generator | Fast NPC generation from Core Rules quick-character tables | Shipped as NPC route |
 
@@ -649,7 +649,7 @@ The Traveller-specific 2D6 tab and boon/bane/flux mechanics stay exactly as they
 - [x] **Completed design detail** (Shipyard): redesign `DesignDetail` to look like a technical schematic document — blueprint-style layout with instrument-panel stat readouts, prominent diagram area, and systems manifest
 - [x] **Fleet ship detail** (Fleet): redesign the selected-ship view to be a proper editable record — two-column layout with editable specs on the left and the annotatable schematic on the right; fields always visible and editable without a separate EDIT mode
 - [x] E2E smoke covers Shipyard create/save/detail/add-to-fleet flow with mocked `ship_designs`
-- [ ] Fix Supabase Storage policy provisioning in `supabase/schema.sql`: `CREATE POLICY IF NOT EXISTS` is not valid Postgres syntax; replace with `DROP POLICY IF EXISTS` + `CREATE POLICY` or a guarded `DO` block
+- [x] Fix Supabase Storage policy provisioning in `supabase/schema.sql`: replaced invalid `CREATE POLICY IF NOT EXISTS` statements with `DROP POLICY IF EXISTS` + `CREATE POLICY`
 - [ ] Fix over-tonnage handling: `computeShipSummary()` should preserve negative remaining cargo/tonnage or emit a warning instead of clamping cargo to `0`
 - [ ] Apply hull `hpMult` when calculating HP, especially for dispersed structure hulls
 - [ ] Surface `ADD TO FLEET` insert failures inline instead of always showing `IN FLEET`
@@ -715,7 +715,7 @@ Note: the historical 13-step checklist above is retained as source context. The 
 - [x] Add TypeScript types: `ShipDesignState`, `ShipDesignSummary`, `ShipDesign`, `MountConfig`, and `OptionalSystemEntry`
 - [x] Add `specs jsonb` to `ships` for Fleet records created from Shipyard designs
 - [x] Add `ship-schematics` bucket provisioning block to `supabase/schema.sql`
-- [ ] Correct `ship-schematics` policy SQL so a fresh Supabase SQL-editor run succeeds
+- [x] Correct `ship-schematics` policy SQL so a fresh Supabase SQL-editor run succeeds
 
 **Guided wizard**
 - [x] **Foundation**: name, TL, tonnage, hull config, and canonical preset loading
@@ -823,6 +823,10 @@ CREATE TABLE party_treasury (
 
 **Goal:** The Trade module becomes a complete implementation of the Core Rules trade chapter (pp.238–245): the existing speculative deal ledger is retained as the backbone, and three new tabs expose the full passenger-traffic, freight-lot, and speculative-trade workflows as guided interactive tools with dice rollers built in.
 
+### Status: Implemented
+
+The Trade route now has `DEALS LEDGER`, `TRADE SESSION`, and `PASSENGERS & FREIGHT` tabs. The existing ledger remains intact. The Trade Session tab supports source/destination world profiles, supplier/buyer checks, market and random lot generation, purchase-price rolls, cart purchase into active ledger deals, and sale-price rolls that complete active deals. The Passengers & Freight tab rolls passenger traffic, freight lots, mail availability, random passenger hooks, and shows an income summary. Party Treasury posting is deferred until Milestone 10 creates the treasury table and transaction workflow.
+
 ### Background
 
 The Core Rules trade chapter is a standalone mini-game with three income streams:
@@ -831,9 +835,7 @@ The Core Rules trade chapter is a standalone mini-game with three income streams
 2. **Freight** (p.240–241): roll for cargo lot availability (Major/Minor/Incidental), earn flat freight-per-ton rate by parsec; also Mail containers (Cr25000 flat for 5t)
 3. **Speculative Trade** (p.241–243): 7-step checklist — find supplier → goods available → purchase price → buy → travel → find buyer → sale price
 
-The Modified Price table and Trade Goods table are already encoded in `src/data/modifiedPrice.ts` and `src/data/tradeGoods.ts`.
-
-**Note on existing `modifiedPrice.ts` values:** the transcribed table uses the roll-indexed version starting at 3. Cross-check against p.243 — the rulebook shows a different range starting at −3 for result, and the existing file maps roll results starting at 3 to purchase/sale %. These need to be reconciled before the mini-game uses them (the purchase% at roll 3 is 40% in the file but 300% in the book; the file appears to have the columns swapped relative to the book scan). Audit and correct before M11 ships.
+The Modified Price table and Trade Goods table are encoded in `src/data/modifiedPrice.ts` and `src/data/tradeGoods.ts`. The p.243 Modified Price table has been corrected to the `-3` through `25+` result range and covered with tests.
 
 ### New UI structure
 
@@ -926,11 +928,11 @@ Roll workflow (run once per lot size):
 
 ### Data additions needed
 
-- [ ] Passenger Traffic table (2D result → passenger dice) — encode in `src/data/passengerTraffic.ts`
-- [ ] Freight Traffic table (2D result → lot dice) — encode in `src/data/freightTraffic.ts`
-- [ ] Passage & Freight rate table (parsecs 1–6 × class) — encode in `src/data/passageFares.ts`
-- [ ] Random Passenger table (D66 → type) — encode in `src/data/randomPassenger.ts` (reference only)
-- [ ] Audit and correct `modifiedPrice.ts` — purchase% and sale% columns appear swapped vs. p.243; add verified comment
+- [x] Passenger Traffic table (2D result → passenger dice) — encoded in `src/data/passengerTraffic.ts`
+- [x] Freight Traffic table (2D result → lot dice) — encoded in `src/data/freightTraffic.ts`
+- [x] Passage & Freight rate table (parsecs 1–6 × class) — encoded in `src/data/passageFares.ts`
+- [x] Random Passenger table (D66 → type) — encoded in `src/data/randomPassenger.ts` (reference only)
+- [x] Audit and correct `modifiedPrice.ts` — corrected purchase/sale percentages and added verified comment
 
 ### Schema additions
 
@@ -947,17 +949,17 @@ ALTER TABLE trade_deals ADD COLUMN IF NOT EXISTS trade_code text;
 
 ### Tests
 
-- [ ] Unit: `applyPurchaseDMs(roll, brokerSkill, purchaseDMs, saleDMs, supplierBroker)` applies modifiers correctly and clamps to table range
-- [ ] Unit: `lookupModifiedPrice(clampedRoll)` returns correct purchase% and sale%
-- [ ] Unit: `calculateLotCost(basePrice, purchasePct, tons)` matches expected credit amounts
-- [ ] Unit: `calculateProfit(basePrice, purchasePct, salePct, tons)` is positive when sale% > purchase%
-- [ ] Unit: Passenger Traffic table lookup — 2D roll 7 + DMs 0 → 3D passengers for Middle class
-- [ ] Unit: Freight Traffic table lookup — 2D roll 8 → correct lot count
-- [ ] Unit: `splitPassengerIncome(classes, parsecs)` sums fares correctly
-- [ ] Unit: `modifiedPrice.ts` audit — spot-check 5 rows against verified book values
-- [ ] Component: Trade Session tab renders; world profile inputs flow into DM display; dice roller shows breakdown
-- [ ] Component: Deals Ledger tab unaffected by tab 2 and 3 additions
-- [ ] E2E smoke: open Trade, switch to Trade Session tab, enter world profile, roll supplier check, see goods table
+- [x] Unit: `applyPurchaseDMs(roll, brokerSkill, purchaseDMs, saleDMs, supplierBroker)` applies modifiers correctly and clamps to table range
+- [x] Unit: `lookupModifiedPrice(clampedRoll)` returns correct purchase% and sale%
+- [x] Unit: `calculateLotCost(basePrice, purchasePct, tons)` matches expected credit amounts
+- [x] Unit: `calculateProfit(basePrice, purchasePct, salePct, tons)` is positive when sale% > purchase%
+- [x] Unit: Passenger Traffic table lookup — 2D roll 7 + DMs 0 → 3D passengers for Middle class
+- [x] Unit: Freight Traffic table lookup — 2D roll 8 → correct lot count
+- [x] Unit: `splitPassengerIncome(classes, parsecs)` sums fares correctly
+- [x] Unit: `modifiedPrice.ts` audit — spot-check verified book values
+- [x] Component: Trade Session tab renders; world profile inputs flow into DM display; dice roller shows breakdown
+- [x] Component: Deals Ledger tab unaffected by tab 2 and 3 additions
+- [x] E2E smoke: open Trade, switch to Trade Session tab, enter world profile, roll supplier check, see goods table
 - **Ship mortgage tracker** — monthly payment schedule, running balance, jump fuel costs
 - **Portrait storage migration** — character portraits are currently stored as JPEG data URLs inside the `characters` table, growing row size significantly; migrating to the existing `ship-schematics` Storage bucket pattern would reduce DB payload
 
