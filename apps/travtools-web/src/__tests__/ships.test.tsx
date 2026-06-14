@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import ShipViewer from '../components/ships/ShipViewer';
+import ShipBuilder from '../components/ships/ShipBuilder';
 import { CANONICAL_SHIPS } from '../components/ships/canonicalShips';
+import { computeShipSummary, defaultDesign } from '../lib/shipBuilder';
 import { annotationPosition, removeAnnotationById } from '../lib/ships';
-import type { Ship } from '../types';
+import type { Ship, ShipDesign } from '../types';
 import * as SupabaseContext from '../lib/supabaseContext';
 
 const scoutShip: Ship = {
@@ -31,6 +33,40 @@ function makeShipClient(ships: Ship[] = [scoutShip]) {
       subscribe: vi.fn(),
     })),
     removeChannel: vi.fn(),
+  };
+}
+
+function makeShipBuilderClient(designs: ShipDesign[], shipInsertError: string | null = null) {
+  const order = vi.fn(async () => ({ data: designs, error: null }));
+  const select = vi.fn(() => ({ order }));
+  const insertShip = vi.fn(async () => ({
+    data: null,
+    error: shipInsertError ? { message: shipInsertError } : null,
+  }));
+  const unsubscribe = vi.fn();
+  const channel = {
+    on: vi.fn(() => channel),
+    subscribe: vi.fn(() => ({ unsubscribe })),
+  };
+
+  return {
+    insertShip,
+    client: {
+      from: vi.fn((table: string) => {
+        if (table === 'ship_designs') {
+          return {
+            select,
+            update: vi.fn(() => ({ eq: vi.fn(async () => ({ error: null })) })),
+            delete: vi.fn(() => ({ eq: vi.fn(async () => ({ error: null })) })),
+          };
+        }
+        if (table === 'ships') {
+          return { insert: insertShip };
+        }
+        return {};
+      }),
+      channel: vi.fn(() => channel),
+    },
   };
 }
 
@@ -82,5 +118,54 @@ describe('ShipViewer', () => {
 
     expect((await screen.findAllByText('Scout/Courier')).length).toBeGreaterThan(0);
     expect(screen.getByLabelText('Type-S Scout/Courier deck plan')).toBeTruthy();
+  });
+});
+
+describe('ShipBuilder', () => {
+  it('updates running totals when a design input changes', async () => {
+    const { client } = makeShipBuilderClient([]);
+    vi.spyOn(SupabaseContext, 'useSupabase').mockReturnValue({
+      client: client as never,
+      isConfigured: true,
+      configure: vi.fn(),
+      reset: vi.fn(),
+    });
+
+    const { container } = render(<ShipBuilder />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'NEW DESIGN' }));
+    await waitFor(() => expect(container.textContent).toContain('TONS 36t/100t CARGO 64t'));
+
+    fireEvent.click(screen.getByRole('button', { name: '200t' }));
+    await waitFor(() => expect(container.textContent).toContain('TONS 47t/200t CARGO 153t'));
+  });
+
+  it('surfaces ADD TO FLEET failures without showing a false success state', async () => {
+    const designState = { ...defaultDesign(), name: 'Overbuilt Barge', staterooms: 100 };
+    const design: ShipDesign = {
+      id: 'design-1',
+      name: designState.name,
+      design: designState,
+      summary: computeShipSummary(designState),
+      diagram_url: null,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    };
+    const { client, insertShip } = makeShipBuilderClient([design], 'permission denied');
+    vi.spyOn(SupabaseContext, 'useSupabase').mockReturnValue({
+      client: client as never,
+      isConfigured: true,
+      configure: vi.fn(),
+      reset: vi.fn(),
+    });
+
+    render(<ShipBuilder />);
+
+    fireEvent.click(await screen.findByText('Overbuilt Barge'));
+    fireEvent.click(await screen.findByRole('button', { name: 'ADD TO FLEET' }));
+
+    await waitFor(() => expect(insertShip).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText(/Ship could not be added to the Fleet: permission denied/)).toBeTruthy();
+    expect(screen.queryByText('IN FLEET')).toBeNull();
   });
 });

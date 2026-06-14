@@ -650,9 +650,9 @@ The Traveller-specific 2D6 tab and boon/bane/flux mechanics stay exactly as they
 - [x] **Fleet ship detail** (Fleet): redesign the selected-ship view to be a proper editable record — two-column layout with editable specs on the left and the annotatable schematic on the right; fields always visible and editable without a separate EDIT mode
 - [x] E2E smoke covers Shipyard create/save/detail/add-to-fleet flow with mocked `ship_designs`
 - [x] Fix Supabase Storage policy provisioning in `supabase/schema.sql`: replaced invalid `CREATE POLICY IF NOT EXISTS` statements with `DROP POLICY IF EXISTS` + `CREATE POLICY`
-- [ ] Fix over-tonnage handling: `computeShipSummary()` should preserve negative remaining cargo/tonnage or emit a warning instead of clamping cargo to `0`
-- [ ] Apply hull `hpMult` when calculating HP, especially for dispersed structure hulls
-- [ ] Surface `ADD TO FLEET` insert failures inline instead of always showing `IN FLEET`
+- [x] Fix over-tonnage handling: `computeShipSummary()` preserves negative remaining cargo/tonnage and emits a warning instead of clamping cargo to `0`
+- [x] Apply hull `hpMult` when calculating HP, especially for dispersed structure hulls
+- [x] Surface `ADD TO FLEET` insert failures inline instead of always showing `IN FLEET`
 - [ ] Decide whether untracked local `data/*.json` and `docs/characters/*.xlsx` campaign files should be committed or ignored
 
 ### Background
@@ -731,7 +731,7 @@ Note: the historical 13-step checklist above is retained as source context. The 
 **Running display (persistent header while building)**
 - [x] Amber stats bar at top of builder: used tonnage, cargo, power, cost, HP, hardpoints, and crew
 - [x] Red/amber highlight for power deficit
-- [ ] Red highlight for over-tonnage designs after negative cargo handling is fixed
+- [x] Red highlight for over-tonnage designs after negative cargo handling is fixed
 
 **UX**
 - [x] Designs list sidebar: load saved designs, create new, edit, delete
@@ -749,11 +749,11 @@ Note: the historical 13-step checklist above is retained as source context. The 
 - [x] Unit: validation warnings for dispersed armour and power deficit
 - [x] Unit: no-J-drive design has no astrogator
 - [x] E2E smoke: Shipyard create/save/detail/add-to-fleet flow with mocked `ship_designs`
-- [ ] Unit: TL gate validation — low-TL M-drive/J-drive/power plant/sensors produce expected warnings
-- [ ] Unit: dispersed hull applies `hpMult`
-- [ ] Unit: over-tonnage design produces negative remaining cargo or a warning, not silent clamp to zero
-- [ ] Component: `ADD TO FLEET` failure surfaces visibly and does not show `IN FLEET`
-- [ ] Component: step input changes update the running totals display
+- [x] Unit: TL gate validation — low-TL M-drive/J-drive/power plant/sensors produce expected warnings
+- [x] Unit: dispersed hull applies `hpMult`
+- [x] Unit: over-tonnage design produces negative remaining cargo or a warning, not silent clamp to zero
+- [x] Component: `ADD TO FLEET` failure surfaces visibly and does not show `IN FLEET`
+- [x] Component: step input changes update the running totals display
 
 ---
 

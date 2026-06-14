@@ -18,7 +18,7 @@ export function computeShipSummary(d: ShipDesignState): ShipDesignSummary {
   const hullConfig = HULL_CONFIGS.find(c => c.id === d.hull_config) ?? HULL_CONFIGS[0];
   const hullBaseCostMCr = (d.tonnage * 50_000) / 1_000_000; // MCr = tons × Cr50000
   const hullCostMCr = hullBaseCostMCr * hullConfig.costMult;
-  const hullHP = Math.floor(d.tonnage / 2.5);
+  const hullHP = Math.floor((d.tonnage / 2.5) * hullConfig.hpMult);
   const hardpoints = d.tonnage < 100 ? 0 : Math.floor(d.tonnage / 100);
   const firmpoints = d.tonnage < 100 ? Math.floor(d.tonnage / 100) || 1 : 0;
   totalCostMCr += hullCostMCr;
@@ -200,7 +200,10 @@ export function computeShipSummary(d: ShipDesignState): ShipDesignSummary {
   if (d.software_intellect)        totalCostMCr += 1.0;
 
   // ── Cargo ─────────────────────────────────────────────────────────────
-  const cargoTons = Math.max(0, d.tonnage - usedTons);
+  const cargoTons = d.tonnage - usedTons;
+  if (cargoTons < 0) {
+    warnings.push(`Over tonnage by ${Math.abs(cargoTons).toFixed(1).replace(/\.0$/, '')}t — remove systems or increase hull size.`);
+  }
 
   // ── Power balance ─────────────────────────────────────────────────────
   const powerBalance = powerGenerated - powerUsed;

@@ -152,10 +152,35 @@ describe('computeShipSummary — validation', () => {
     expect(s.warnings.some(w => w.includes('Power deficit'))).toBe(true);
   });
 
-  it('cargo never goes negative (clamped to 0)', () => {
+  it('preserves negative cargo and warns when over tonnage', () => {
     const d = { ...defaultDesign(), staterooms: 100 };
     const s = computeShipSummary(d);
-    expect(s.cargoTons).toBeGreaterThanOrEqual(0);
+    expect(s.cargoTons).toBeLessThan(0);
+    expect(s.warnings.some(w => w.includes('Over tonnage'))).toBe(true);
+  });
+
+  it('applies dispersed hull HP multiplier', () => {
+    const d = { ...defaultDesign(), hull_config: 'dispersed' as const };
+    const s = computeShipSummary(d);
+    expect(s.hullHP).toBe(36);
+  });
+
+  it('warns when low tech level cannot support selected components', () => {
+    const d = {
+      ...defaultDesign(),
+      tech_level: 8,
+      m_drive: 2,
+      j_drive: 2,
+      pp_type: 'tl12' as const,
+      computer_model: 15,
+      sensors: 'improved' as const,
+    };
+    const s = computeShipSummary(d);
+    expect(s.warnings.some(w => w.includes('M-Drive thrust-2 requires TL10'))).toBe(true);
+    expect(s.warnings.some(w => w.includes('J-Drive jump-2 requires TL11'))).toBe(true);
+    expect(s.warnings.some(w => w.includes('Fusion (TL12) requires TL12'))).toBe(true);
+    expect(s.warnings.some(w => w.includes('Computer/model 15 requires TL11'))).toBe(true);
+    expect(s.warnings.some(w => w.includes('Improved sensors require TL12'))).toBe(true);
   });
 
   it('hull with no J-drive has no astrogator', () => {

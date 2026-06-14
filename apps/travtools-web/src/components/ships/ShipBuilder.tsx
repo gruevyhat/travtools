@@ -29,6 +29,10 @@ function downloadJson(filename: string, data: unknown) {
   URL.revokeObjectURL(url);
 }
 
+function formatTons(value: number) {
+  return `${Number.isInteger(value) ? value : Number(value.toFixed(1))}t`;
+}
+
 function generateStatBlock(d: ShipDesignState, s: ShipDesignSummary): string {
   const pad = (str: string, n: number) => str.padEnd(n);
   const rpad = (str: string, n: number) => str.padStart(n);
@@ -82,7 +86,7 @@ function generateStatBlock(d: ShipDesignState, s: ShipDesignSummary): string {
   if (d.luxury_staterooms > 0) rows.push(row('', `Luxury ×${d.luxury_staterooms}`, String(d.luxury_staterooms * 10), (d.luxury_staterooms * 1.5).toFixed(3)));
   if (d.low_berths > 0) rows.push(row('', `Low Berths ×${d.low_berths}`, String(Math.ceil(d.low_berths * 0.5)), (d.low_berths * 0.05).toFixed(3)));
   if (d.common_area_tons > 0) rows.push(row('', `Common Area`, String(d.common_area_tons), (d.common_area_tons * 0.1).toFixed(3)));
-  rows.push(row('Cargo', '', String(Math.max(0, s.cargoTons)), '—'));
+  rows.push(row('Cargo', '', formatTons(s.cargoTons).replace(/t$/, ''), '—'));
 
   const softwareParts: string[] = [];
   if (d.software_jump_control > 0) softwareParts.push(`Jump Control/${d.software_jump_control}`);
@@ -278,8 +282,8 @@ function StatsBar({ s, tonnage }: { s: ShipDesignSummary; tonnage: number }) {
   return (
     <div className="flex flex-wrap gap-x-6 gap-y-1 px-4 py-2 bg-panel/80 border-b border-steel/50 text-xs font-mono">
       <span className={tonsOk ? 'text-body' : 'text-alert'}>
-        TONS <span className={tonsOk ? 'text-cyan-trav' : 'text-alert'}>{s.usedTons}/{tonnage}</span>
-        {' '}CARGO <span className={tonsOk ? 'text-safe' : 'text-alert'}>{Math.max(0, s.cargoTons)}t</span>
+        TONS <span className={tonsOk ? 'text-cyan-trav' : 'text-alert'}>{formatTons(s.usedTons)}/{formatTons(tonnage)}</span>
+        {' '}CARGO <span className={tonsOk ? 'text-safe' : 'text-alert'}>{formatTons(s.cargoTons)}</span>
       </span>
       <span className={powerOk ? 'text-body' : 'text-amber'}>
         POWER <span className={powerOk ? 'text-cyan-trav' : 'text-amber'}>{s.powerGenerated}/{s.powerUsed}</span>
@@ -441,20 +445,21 @@ function designManifestRows(d: ShipDesignState, s: ShipDesignSummary) {
     { section: 'Weapons', detail: mountLabels.length ? mountLabels.join(' | ') : 'No mounts installed', metric: `${d.mounts.length}/${s.hardpoints + s.firmpoints} mounts` },
     { section: 'Systems', detail: systems.length ? systems.join(' | ') : 'No optional systems installed', metric: `${d.optional_systems.length} entries` },
     { section: 'Quarters', detail: `${d.staterooms} std / ${d.high_staterooms} high / ${d.luxury_staterooms} lux / ${d.low_berths} low`, metric: `${d.common_area_tons}t common` },
-    { section: 'Cargo', detail: 'Residual displacement after installed systems', metric: `${Math.max(0, s.cargoTons)}t` },
+    { section: 'Cargo', detail: 'Residual displacement after installed systems', metric: formatTons(s.cargoTons) },
   ];
 }
 
 // ── canonical ship detail view ───────────────────────────────────────────────
 
 function CanonicalShipDetail({
-  ship, preset, onAddToFleet, addingToFleet, addedToFleet,
+  ship, preset, onAddToFleet, addingToFleet, addedToFleet, fleetError,
 }: {
   ship: CanonicalShip;
   preset: ShipPreset | null;
   onAddToFleet: () => void;
   addingToFleet: boolean;
   addedToFleet: boolean;
+  fleetError: string | null;
 }) {
   const specs = ship.defaultSpecs ?? {};
   const Component = ship.Component;
@@ -492,6 +497,13 @@ function CanonicalShipDetail({
       </div>
 
       <div className="flex-1 overflow-auto p-4 space-y-4">
+        {fleetError && (
+          <div className="border border-alert/40 bg-alert/5 px-3 py-2 text-xs text-alert font-mono flex items-start gap-2">
+            <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
+            {fleetError}
+          </div>
+        )}
+
         <div className="grid grid-cols-2 lg:grid-cols-6 gap-2">
           <Readout label="DISPLACEMENT" value={`${ship.tonnage}t`} sub={ship.ship_class} tone="cyan" />
           <Readout label="TECH LEVEL" value={specs.tech_level ?? '-'} sub={String(specs.hull_config ?? 'Canonical hull')} tone="amber" />
@@ -564,7 +576,7 @@ function CanonicalShipDetail({
 // ── design detail view ────────────────────────────────────────────────────────
 
 function DesignDetail({
-  design, onDelete, onUploadDiagram, uploadingDiagram, uploadError, onAddToFleet, addingToFleet, addedToFleet,
+  design, onDelete, onUploadDiagram, uploadingDiagram, uploadError, onAddToFleet, addingToFleet, addedToFleet, fleetError,
 }: {
   design: ShipDesign;
   onDelete: () => void;
@@ -574,6 +586,7 @@ function DesignDetail({
   onAddToFleet: () => void;
   addingToFleet: boolean;
   addedToFleet: boolean;
+  fleetError: string | null;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const s = design.summary;
@@ -616,6 +629,13 @@ function DesignDetail({
       </div>
 
       <div className="flex-1 overflow-auto p-4 space-y-4">
+        {fleetError && (
+          <div className="border border-alert/40 bg-alert/5 px-3 py-2 text-xs text-alert font-mono flex items-start gap-2">
+            <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
+            {fleetError}
+          </div>
+        )}
+
         {/* Warnings */}
         {s.warnings.length > 0 && (
           <div className="border border-amber/40 bg-amber/5 px-3 py-2 space-y-1">
@@ -629,7 +649,7 @@ function DesignDetail({
         )}
 
         <div className="grid grid-cols-2 lg:grid-cols-6 gap-2">
-          <Readout label="DISPLACEMENT" value={`${s.usedTons}/${d.tonnage}t`} sub={`${Math.max(0, s.cargoTons)}t cargo`} tone={s.cargoTons < 0 ? 'alert' : 'cyan'} />
+          <Readout label="DISPLACEMENT" value={`${formatTons(s.usedTons)}/${formatTons(d.tonnage)}`} sub={`${formatTons(s.cargoTons)} cargo`} tone={s.cargoTons < 0 ? 'alert' : 'cyan'} />
           <Readout label="POWER BALANCE" value={`${powerBalance >= 0 ? '+' : ''}${powerBalance}P`} sub={`${s.powerGenerated} gen / ${s.powerUsed} use`} tone={powerBalance < 0 ? 'alert' : 'safe'} />
           <Readout label="PURCHASE" value={formatMCr(s.totalCostMCr)} sub={`${s.constructionDays} days build`} tone="amber" />
           <Readout label="MAINTENANCE" value={formatCr(s.maintenanceCrPerMonth)} sub="per month" tone="cyan" />
@@ -1218,7 +1238,7 @@ function StepReview({ draft, summary, activeId, onSave, saving, saved, saveError
       {/* Key stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: 'CARGO', value: `${Math.max(0, summary.cargoTons)}t`, warn: summary.cargoTons < 0 },
+          { label: 'CARGO', value: formatTons(summary.cargoTons), warn: summary.cargoTons < 0 },
           { label: 'PURCHASE', value: `MCr ${summary.totalCostMCr.toFixed(2)}`, warn: false },
           { label: 'MAINT', value: `Cr ${Math.round(summary.maintenanceCrPerMonth).toLocaleString()}/mo`, warn: false },
           { label: 'POWER', value: `${summary.powerGenerated}/${summary.powerUsed}`, warn: summary.powerBalance < 0 },
@@ -1300,6 +1320,7 @@ export default function ShipBuilder() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [addingToFleet, setAddingToFleet] = useState(false);
   const [addedToFleet, setAddedToFleet] = useState(false);
+  const [fleetError, setFleetError] = useState<string | null>(null);
 
   const summary = computeShipSummary(draft);
   const activeDesign = designs.find(d => d.id === activeId) ?? null;
@@ -1328,6 +1349,7 @@ export default function ShipBuilder() {
   function startNew() {
     setActiveId(null);
     setActiveCanonicalId(null);
+    setFleetError(null);
     setDraft(defaultDesign());
     setStep(0);
     setMode('wizard');
@@ -1336,6 +1358,7 @@ export default function ShipBuilder() {
   function startEdit(design: ShipDesign) {
     setActiveId(design.id);
     setActiveCanonicalId(null);
+    setFleetError(null);
     setDraft(cloneDesignState(design.design));
     setStep(0);
     setMode('wizard');
@@ -1346,6 +1369,7 @@ export default function ShipBuilder() {
     setActiveCanonicalId(null);
     setMode('detail');
     setAddedToFleet(false);
+    setFleetError(null);
   }
 
   function viewCanonicalShip(ship: CanonicalShip) {
@@ -1353,6 +1377,7 @@ export default function ShipBuilder() {
     setActiveCanonicalId(ship.id);
     setMode('detail');
     setAddedToFleet(false);
+    setFleetError(null);
   }
 
   function customizeCanonical(ship: CanonicalShip) {
@@ -1360,6 +1385,7 @@ export default function ShipBuilder() {
     if (!preset) return;
     setActiveId(null);
     setActiveCanonicalId(null);
+    setFleetError(null);
     setDraft(cloneDesignState(preset.design));
     setStep(0);
     setMode('wizard');
@@ -1412,34 +1438,45 @@ export default function ShipBuilder() {
   async function addToFleet() {
     if (!client || (!activeDesign && !activeCanonicalShip)) return;
     setAddingToFleet(true);
-    if (activeCanonicalShip) {
-      await client.from('ships').insert({
-        name: activeCanonicalShip.name,
-        ship_class: activeCanonicalShip.ship_class,
-        tonnage: activeCanonicalShip.tonnage,
-        schematic_type: 'canonical',
-        canonical_id: activeCanonicalShip.id,
-        annotations: [],
-        notes: null,
-        damage: {},
-      });
-    } else if (activeDesign) {
-      const d = activeDesign.design;
-      const s = activeDesign.summary;
-      await client.from('ships').insert({
-        name: d.name || 'Unnamed Design',
-        tonnage: d.tonnage,
-        schematic_type: 'custom',
-        image_url: activeDesign.diagram_url ?? null,
-        annotations: [],
-        notes: null,
-        damage: {},
-        specs: designToFleetSpecs(d, s),
-      });
+    setFleetError(null);
+    try {
+      let result: { error: { message: string } | null } | null = null;
+      if (activeCanonicalShip) {
+        result = await client.from('ships').insert({
+          name: activeCanonicalShip.name,
+          ship_class: activeCanonicalShip.ship_class,
+          tonnage: activeCanonicalShip.tonnage,
+          schematic_type: 'canonical',
+          canonical_id: activeCanonicalShip.id,
+          annotations: [],
+          notes: null,
+          damage: {},
+        });
+      } else if (activeDesign) {
+        const d = activeDesign.design;
+        const s = activeDesign.summary;
+        result = await client.from('ships').insert({
+          name: d.name || 'Unnamed Design',
+          tonnage: d.tonnage,
+          schematic_type: 'custom',
+          image_url: activeDesign.diagram_url ?? null,
+          annotations: [],
+          notes: null,
+          damage: {},
+          specs: designToFleetSpecs(d, s),
+        });
+      }
+      if (result?.error) {
+        throw new Error(result.error.message);
+      }
+      setAddedToFleet(true);
+      setTimeout(() => setAddedToFleet(false), 3000);
+    } catch (err) {
+      setAddedToFleet(false);
+      setFleetError(`Ship could not be added to the Fleet: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setAddingToFleet(false);
     }
-    setAddingToFleet(false);
-    setAddedToFleet(true);
-    setTimeout(() => setAddedToFleet(false), 3000);
   }
 
   async function uploadDiagram(file: File) {
@@ -1592,6 +1629,7 @@ export default function ShipBuilder() {
             onAddToFleet={addToFleet}
             addingToFleet={addingToFleet}
             addedToFleet={addedToFleet}
+            fleetError={fleetError}
           />
         )}
 
@@ -1605,6 +1643,7 @@ export default function ShipBuilder() {
             onAddToFleet={addToFleet}
             addingToFleet={addingToFleet}
             addedToFleet={addedToFleet}
+            fleetError={fleetError}
           />
         )}
 
