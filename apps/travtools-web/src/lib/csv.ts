@@ -18,33 +18,51 @@ export function downloadCsv(filename: string, csv: string): void {
   URL.revokeObjectURL(url);
 }
 
-// Parses CSV text into rows of string cells. Handles quoted fields with internal commas.
+// Parses CSV text into rows of string cells. Handles quoted fields with commas,
+// escaped quotes, and line breaks.
 export function parseCsvRows(text: string): string[][] {
   const rows: string[][] = [];
-  for (const line of text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')) {
-    if (!line.trim()) continue;
-    const row: string[] = [];
-    let i = 0;
-    while (i <= line.length) {
-      if (i === line.length) break;
-      if (line[i] === '"') {
-        i++;
-        let cell = '';
-        while (i < line.length) {
-          if (line[i] === '"' && line[i + 1] === '"') { cell += '"'; i += 2; }
-          else if (line[i] === '"') { i++; break; }
-          else cell += line[i++];
-        }
-        row.push(cell);
-        if (line[i] === ',') i++;
-      } else {
-        let cell = '';
-        while (i < line.length && line[i] !== ',') cell += line[i++];
-        row.push(cell.trim());
-        if (line[i] === ',') i++;
-      }
-    }
-    if (row.length > 0) rows.push(row);
+  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  let row: string[] = [];
+  let cell = '';
+  let inQuotes = false;
+  let cellWasQuoted = false;
+
+  function finishCell() {
+    row.push(cellWasQuoted ? cell : cell.trim());
+    cell = '';
+    cellWasQuoted = false;
   }
+
+  function finishRow() {
+    finishCell();
+    if (row.some(value => value.trim() !== '')) rows.push(row);
+    row = [];
+  }
+
+  for (let i = 0; i < normalized.length; i++) {
+    const char = normalized[i];
+    if (inQuotes) {
+      if (char === '"' && normalized[i + 1] === '"') {
+        cell += '"';
+        i++;
+      } else if (char === '"') {
+        inQuotes = false;
+      } else {
+        cell += char;
+      }
+    } else if (char === '"' && cell.trim() === '') {
+      inQuotes = true;
+      cellWasQuoted = true;
+      cell = '';
+    } else if (char === ',') {
+      finishCell();
+    } else if (char === '\n') {
+      finishRow();
+    } else {
+      cell += char;
+    }
+  }
+  if (inQuotes || cell.length > 0 || cellWasQuoted || row.length > 0) finishRow();
   return rows;
 }

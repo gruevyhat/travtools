@@ -56,8 +56,6 @@ create table if not exists inventory_items (
 -- Characters (party roster)
 create table if not exists characters (
   id uuid default gen_random_uuid() primary key,
-  status text not null default 'active'
-    check (status in ('active', 'deceased')),
   name text not null,
   player text,                                          -- player name (distinct from character name)
   portrait_url text,                                    -- optional portrait image URL
@@ -78,10 +76,10 @@ create table if not exists characters (
   temp_mods jsonb not null default '{}'::jsonb,         -- temporary characteristic modifiers, shared until reset
   profile_details jsonb not null default '{}'::jsonb,   -- species, age, gender, height, weight, appearance
   homeworld_details jsonb not null default '{}'::jsonb, -- sector/subsector/location/UWP/trade code metadata
-  lifepath jsonb not null default '[]'::jsonb,          -- term history rows from imported character data
+  lifepath jsonb not null default '[]'::jsonb,          -- term history rows from XLSX Profile
   armour jsonb not null default '[]'::jsonb,            -- worn armour and protection values
   augments jsonb not null default '[]'::jsonb,          -- augments/cybernetics
-  personal_equipment jsonb not null default '[]'::jsonb,-- carried equipment from imported character data
+  personal_equipment jsonb not null default '[]'::jsonb,-- carried equipment from character sheet
   finances jsonb not null default '{}'::jsonb,          -- cash, pension, salary, costs, debt summary
   contacts jsonb not null default '[]'::jsonb,          -- allies, contacts, rivals, enemies
   background jsonb not null default '{}'::jsonb,        -- personality/background notes
@@ -114,20 +112,6 @@ create table if not exists roll_log (
 
 alter table roll_log add column if not exists bonus_dm integer not null default 0;
 alter table characters add column if not exists portrait_url text;
-alter table characters add column if not exists status text not null default 'active';
-do $$
-begin
-  if not exists (
-    select 1
-    from pg_constraint
-    where conname = 'characters_status_check'
-      and conrelid = 'public.characters'::regclass
-  ) then
-    alter table characters
-      add constraint characters_status_check
-      check (status in ('active', 'deceased'));
-  end if;
-end $$;
 alter table characters add column if not exists temp_mods jsonb not null default '{}'::jsonb;
 alter table characters add column if not exists profile_details jsonb not null default '{}'::jsonb;
 alter table characters add column if not exists homeworld_details jsonb not null default '{}'::jsonb;

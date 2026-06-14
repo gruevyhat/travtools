@@ -1,0 +1,51 @@
+{
+  "backupCreatedAt": "2026-06-14T22:42:04.740Z",
+  "sourceUrl": "https://plytyqsbolucfnnsdyqw.supabase.co",
+  "method": "Supabase PostgREST anon select with exact counts",
+  "tables": {
+    "characters": {
+      "rowCount": 5,
+      "exactCount": 5,
+      "file": "characters.json"
+    },
+    "npcs": {
+      "rowCount": 6,
+      "exactCount": 6,
+      "file": "npcs.json"
+    },
+    "ships": {
+      "rowCount": 1,
+      "exactCount": 1,
+      "file": "ships.json"
+    },
+    "ship_designs": {
+      "rowCount": 1,
+      "exactCount": 1,
+      "file": "ship_designs.json"
+    },
+    "trade_deals": {
+      "rowCount": 0,
+      "exactCount": 0,
+      "file": "trade_deals.json"
+    },
+    "inventory_items": {
+      "rowCount": 0,
+      "exactCount": 0,
+      "file": "inventory_items.json"
+    },
+    "roll_log": {
+      "rowCount": 361,
+      "exactCount": 361,
+      "file": "roll_log.json"
+    },
+    "session_journal": {
+      "rowCount": 1,
+      "exactCount": 1,
+      "file": "session_journal.json"
+    }
+  },
+  "git": {
+    "commit": "4549c71980bc",
+    "note": "Backup directory name includes HEAD short commit. Worktree may contain uncommitted changes; use git status for exact local state."
+  }
+}

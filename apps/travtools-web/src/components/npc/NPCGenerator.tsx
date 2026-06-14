@@ -216,19 +216,31 @@ export default function NPCGenerator() {
             </div>
 
             {/* Archetype */}
-            <div className="flex items-center gap-1.5">
-              <div className="label w-20 flex-shrink-0 text-[9px]">ARCHETYPE</div>
-              <div className="flex-1 text-[10px] font-mono text-bright truncate">{archetype}</div>
-              <button type="button" onClick={rerollArchetype} className="btn-steel px-1.5 py-0.5 flex-shrink-0">
+            <div className="flex items-start gap-1.5">
+              <div className="label w-20 flex-shrink-0 pt-1.5 text-[9px]">ARCHETYPE</div>
+              <textarea
+                aria-label="NPC Archetype"
+                className="input min-h-12 flex-1 resize-y whitespace-pre-wrap break-words px-2 py-1 text-[10px] leading-4"
+                rows={2}
+                value={archetype}
+                onChange={e => { setArchetype(e.target.value); setSavedMsg(null); }}
+              />
+              <button type="button" onClick={rerollArchetype} className="btn-steel flex-shrink-0 px-1.5 py-0.5">
                 <RefreshCw size={9} />
               </button>
             </div>
 
             {/* Quirk */}
-            <div className="flex items-center gap-1.5">
-              <div className="label w-20 flex-shrink-0 text-[9px]">QUIRK</div>
-              <div className="flex-1 text-[10px] font-mono text-bright truncate">{quirk}</div>
-              <button type="button" onClick={rerollQuirk} className="btn-steel px-1.5 py-0.5 flex-shrink-0">
+            <div className="flex items-start gap-1.5">
+              <div className="label w-20 flex-shrink-0 pt-1.5 text-[9px]">QUIRK</div>
+              <textarea
+                aria-label="NPC Quirk"
+                className="input min-h-16 flex-1 resize-y whitespace-pre-wrap break-words px-2 py-1 text-[10px] leading-4"
+                rows={3}
+                value={quirk}
+                onChange={e => { setQuirk(e.target.value); setSavedMsg(null); }}
+              />
+              <button type="button" onClick={rerollQuirk} className="btn-steel flex-shrink-0 px-1.5 py-0.5">
                 <RefreshCw size={9} />
               </button>
             </div>

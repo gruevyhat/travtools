@@ -39,6 +39,14 @@ describe('parseCsvRows', () => {
     expect(parseCsvRows('a,b\r\nc,d')).toEqual([['a', 'b'], ['c', 'd']]);
   });
 
+  it('handles quoted line breaks inside cells', () => {
+    expect(parseCsvRows('Name,Notes\nA,"line 1\nline 2"\nB,done')).toEqual([
+      ['Name', 'Notes'],
+      ['A', 'line 1\nline 2'],
+      ['B', 'done'],
+    ]);
+  });
+
   it('round-trips a row through csvRow + parseCsvRows', () => {
     const original = ['Alpha Crucis', 'Electronics, Advanced', '100000', 'Buy at Roup'];
     const line = csvRow(original);

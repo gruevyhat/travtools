@@ -291,8 +291,11 @@ export interface CharacterBackground {
   hobbies?: string | null;
 }
 
+export type CharacterStatus = 'active' | 'deceased';
+
 export interface Character {
   id: string;
+  status?: CharacterStatus | null;
   name: string;
   player: string | null;
   portrait_url: string | null;

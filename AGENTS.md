@@ -86,6 +86,8 @@ The schema uses anonymous RLS policies for a trusted private group. All users sh
 
 Important tables currently include `characters`, `npcs`, `ships`, `ship_designs`, `trade_deals`, `inventory_items`, `roll_log`, and `session_journal`.
 
+Before pushing upstream, back up the current live Supabase database under `data/` with a timestamped directory name tagged for the commit id being pushed, and include that commit id in the backup manifest. If the target commit changes after the backup is created, regenerate the backup or clearly tag it to the exact commit it represents.
+
 The current development plan flags one schema hardening item: `CREATE POLICY IF NOT EXISTS` is not valid Postgres syntax for Storage policies in `supabase/schema.sql`. If working on setup/schema, replace those policy statements with `DROP POLICY IF EXISTS` plus `CREATE POLICY`, or a guarded `DO` block, before relying on a fresh Supabase SQL-editor run.
 
 ## Engineering Guidance

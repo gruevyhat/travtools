@@ -15,8 +15,8 @@ import {
   toHex, upp, statDM, skillChar, parseSkillsCSV, parseTalentsCSV,
   STAT_LABELS, CharStat, parseDamageExpr, DEFAULT_CHARACTER_TITLE,
 } from '../../lib/traveller';
-import { parseXLSXCharacter } from '../../lib/parseXLSX';
-import { csvRow, downloadCsv } from '../../lib/csv';
+import { downloadCsv } from '../../lib/csv';
+import { rosterFromCsv, rosterToCsv, type RosterCsvCharacter } from '../../lib/rosterCsv';
 import { CORE_EQUIPMENT } from '../../data/equipment';
 import { fmtDM, DIFFICULTIES, RollMode } from '../../lib/dice';
 import { spendWeaponAmmo, weaponAmmoState, weaponAmmoStateLabel, weaponClipSize, type WeaponAmmoSpendResult } from '../../lib/ammo';
@@ -27,6 +27,7 @@ import NumberStepper from '../shared/NumberStepper';
 type CharForm = Omit<Character, 'id' | 'created_at'>;
 
 const EMPTY: CharForm = {
+  status: 'active',
   name: '', player: null, portrait_url: null,
   str: null, dex: null, end_stat: null, int_stat: null, edu: null, soc: null,
   psi: null, chr: null, mor: null, lck: null,
@@ -277,7 +278,12 @@ function sortCharacters(characters: Character[]): Character[] {
   return [...characters].sort((a, b) => charDisplayName(a).localeCompare(charDisplayName(b)));
 }
 
+function isCharacterDeceased(char: Character): boolean {
+  return char.status === 'deceased';
+}
+
 function physicalStatus(char: Character): { label: string; color: string } {
+  if (isCharacterDeceased(char)) return { label: 'DECEASED', color: 'text-alert' };
   const tempMods = normalizeTempMods(char.temp_mods);
   const maxEnd = effectiveStatValue(char.end_stat, tempMods.end_stat ?? 0) ?? 0;
   const maxStr = effectiveStatValue(char.str, tempMods.str ?? 0) ?? 0;
@@ -295,11 +301,9 @@ function physicalStatus(char: Character): { label: string; color: string } {
 function CharacterActionsMenu({
   onEdit,
   onDelete,
-  onRefreshXLSX,
 }: {
   onEdit: () => void;
   onDelete: () => void;
-  onRefreshXLSX: () => void;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -333,13 +337,6 @@ function CharacterActionsMenu({
             className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-mono text-body hover:bg-steel/30 hover:text-amber"
           >
             <Pencil size={12} /> EDIT
-          </button>
-          <button
-            type="button"
-            onClick={() => runAction(onRefreshXLSX)}
-            className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-mono text-body hover:bg-steel/30 hover:text-amber"
-          >
-            <Upload size={12} /> REFRESH XLSX
           </button>
           <button
             type="button"
@@ -1863,12 +1860,11 @@ function CharDetailContent({
 // ─── Mobile Card (accordion) ──────────────────────────────────────────────────
 
 function CharCard({
-  char, onEdit, onDelete, onRefreshXLSX, onRollSave, onStatAdjust, onPortraitUpload, uploadingPortrait,
+  char, onEdit, onDelete, onRollSave, onStatAdjust, onPortraitUpload, uploadingPortrait,
 }: {
   char: Character;
   onEdit: () => void;
   onDelete: () => void;
-  onRefreshXLSX: () => void;
   onRollSave: (charName: string, result: { d1: number; d2: number; charDM: number; skillLevel: number; bonusDM: number; total: number }, checkLabel: string, difficulty: number) => void;
   onStatAdjust: (id: string, patch: Partial<Character>) => void;
   onPortraitUpload: (char: Character, file: File) => void;
@@ -1895,7 +1891,7 @@ function CharCard({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <div className="text-bright font-bold font-mono text-sm truncate">{displayName}</div>
-              <CharacterActionsMenu onEdit={onEdit} onDelete={onDelete} onRefreshXLSX={onRefreshXLSX} />
+              <CharacterActionsMenu onEdit={onEdit} onDelete={onDelete} />
             </div>
             <div className="text-xs text-body/70 mt-0.5 space-x-2">
               {char.rank && <span className="text-amber">{char.rank}</span>}
@@ -1987,8 +1983,6 @@ export default function PartyRoster() {
   const [uploadingPortraitId, setUploadingPortraitId] = useState<string | null>(null);
   const [rosterError, setRosterError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const refreshFileRef = useRef<HTMLInputElement>(null);
-  const [refreshTargetId, setRefreshTargetId] = useState<string | null>(null);
 
   const loadChars = useCallback(async () => {
     if (!client) return;
@@ -2019,6 +2013,7 @@ export default function PartyRoster() {
     if (!client) return;
     const payload: CharForm = {
       ...form,
+      status: form.status ?? 'active',
       rank: form.rank || DEFAULT_CHARACTER_TITLE,
       skills: parseSkillsCSV(skillsRaw),
       psionic_talents: parseTalentsCSV(talentsRaw),
@@ -2085,6 +2080,7 @@ export default function PartyRoster() {
 
   function startEdit(char: Character) {
     setForm({
+      status: char.status ?? 'active',
       name: char.name, player: char.player, portrait_url: char.portrait_url,
       str: char.str, dex: char.dex, end_stat: char.end_stat,
       int_stat: char.int_stat, edu: char.edu, soc: char.soc, psi: char.psi,
@@ -2165,73 +2161,67 @@ export default function PartyRoster() {
     }
   }
 
-  async function handleXLSX(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleCsvUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file || !client) return;
     e.target.value = '';
     setRosterError(null);
-    let parsed;
+    let imported: RosterCsvCharacter[];
     try {
-      const buffer = await file.arrayBuffer();
-      const playerName = file.name.replace(/\.[^.]+$/, '');
-      parsed = parseXLSXCharacter(buffer, playerName);
+      imported = rosterFromCsv(await file.text());
     } catch (err) {
-      setRosterError(err instanceof Error ? err.message : 'Could not parse character sheet.');
+      setRosterError(err instanceof Error ? err.message : 'Could not parse roster CSV.');
       return;
     }
-    const { data, error } = await client.from('characters').insert(parsed).select().single();
-    if (error) {
-      setRosterError(`Character import failed: ${error.message}`);
+    if (imported.length === 0) {
+      setRosterError('Roster CSV did not contain any character rows.');
       return;
     }
-    if (data) {
-      const inserted = data as Character;
-      setChars(prev => sortCharacters([...prev, inserted]));
-      selectChar(inserted.id);
-    }
-  }
 
-  async function handleRefreshXLSX(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file || !client) return;
-    e.target.value = '';
-    const targetId = refreshTargetId;
-    setRefreshTargetId(null);
-    if (!targetId) return;
-    setRosterError(null);
-    let parsed;
-    try {
-      const buffer = await file.arrayBuffer();
-      const playerName = file.name.replace(/\.[^.]+$/, '');
-      parsed = parseXLSXCharacter(buffer, playerName);
-    } catch (err) {
-      setRosterError(err instanceof Error ? err.message : 'Could not parse character sheet.');
-      return;
+    const withIds = imported.filter(character => character.id);
+    const withoutIds = imported.filter(character => !character.id).map(character => {
+      const copy = { ...character };
+      delete copy.id;
+      delete copy.created_at;
+      return copy;
+    });
+    const saved: Character[] = [];
+
+    if (withIds.length > 0) {
+      const { data, error } = await client.from('characters').upsert(withIds, { onConflict: 'id' }).select();
+      if (error) {
+        setRosterError(`Roster CSV import failed: ${error.message}`);
+        return;
+      }
+      if (data) saved.push(...data as Character[]);
     }
-    const { data, error } = await client.from('characters').update(parsed).eq('id', targetId).select().single();
-    if (error) {
-      setRosterError(`Character refresh failed: ${error.message}`);
-      return;
+    if (withoutIds.length > 0) {
+      const { data, error } = await client.from('characters').insert(withoutIds).select();
+      if (error) {
+        setRosterError(`Roster CSV import failed: ${error.message}`);
+        return;
+      }
+      if (data) saved.push(...data as Character[]);
     }
-    if (data) {
-      setChars(prev => sortCharacters(prev.map(c => c.id === targetId ? data as Character : c)));
-      selectChar(targetId);
+
+    if (saved.length > 0) {
+      setChars(prev => {
+        const byId = new Map(prev.map(character => [character.id, character]));
+        for (const character of saved) byId.set(character.id, character);
+        return sortCharacters([...byId.values()]);
+      });
+      selectChar(saved[0].id);
     }
+    loadChars();
   }
 
   function exportCsv() {
-    const header = csvRow(['Name', 'Player', 'Career', 'Rank', 'Homeworld', 'STR', 'DEX', 'END', 'INT', 'EDU', 'SOC', 'PSI', 'CHR', 'MOR', 'LCK', 'Skills', 'PsionicTalents', 'Notes']);
-    const rows = chars.map(c => csvRow([
-      c.name, c.player, c.career, c.rank, c.homeworld,
-      c.str, c.dex, c.end_stat, c.int_stat, c.edu, c.soc, c.psi, c.chr, c.mor, c.lck,
-      c.skills.map(s => `${s.name}-${s.level}`).join(', '),
-      c.psionic_talents.map(t => `${t.name}-${t.level}`).join(', '),
-      c.notes,
-    ]));
-    downloadCsv('travtools-roster.csv', [header, ...rows].join('\n'));
+    downloadCsv('travtools-roster.csv', rosterToCsv(chars));
   }
 
   const selectedChar = chars.find(c => c.id === selectedId) ?? null;
+  const activeChars = chars.filter(char => !isCharacterDeceased(char));
+  const deceasedChars = chars.filter(isCharacterDeceased);
 
   const numInput = (key: keyof CharForm, label: string) => {
     const val = (form[key] as number | null) ?? null;
@@ -2419,6 +2409,16 @@ export default function PartyRoster() {
         <Field name="Homeworld">
           <input className="input" value={form.homeworld ?? ''}
             onChange={e => setForm({ ...form, homeworld: e.target.value || null })} />
+        </Field>
+        <Field name="Traveller Status">
+          <select
+            className="select"
+            value={form.status ?? 'active'}
+            onChange={e => setForm({ ...form, status: e.target.value as Character['status'] })}
+          >
+            <option value="active">Active</option>
+            <option value="deceased">Deceased</option>
+          </select>
         </Field>
       </div>
       <Field name="Portrait URL">
@@ -3118,31 +3118,33 @@ export default function PartyRoster() {
         </div>
       )}
 
-      {/* Hidden file inputs — live outside both layouts so they're always in the DOM */}
+      {/* Hidden file input — lives outside both layouts so it is always in the DOM */}
       <input ref={fileRef} type="file"
-        accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        className="hidden" onChange={handleXLSX} />
-      <input ref={refreshFileRef} type="file"
-        accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        className="hidden" onChange={handleRefreshXLSX} />
+        accept=".csv,text/csv"
+        className="hidden" onChange={handleCsvUpload} />
 
       {/* ── Mobile layout (< lg) ────────────────────────────────────────────── */}
       <div className="lg:hidden flex-1 overflow-auto p-4 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="text-body text-xs tracking-wider">
-            {chars.length} CHARACTER{chars.length !== 1 ? 'S' : ''} REGISTERED
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="label text-amber">ACTIVE TRAVELLERS</div>
+            <div className="text-body text-xs tracking-wider">
+              {activeChars.length} ACTIVE / {chars.length} TOTAL
+            </div>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => fileRef.current?.click()} className="btn-steel flex items-center gap-1">
-              <Upload size={13} /> IMPORT XLSX
+            <button type="button" onClick={() => fileRef.current?.click()} title="Import roster CSV" aria-label="Import roster CSV" className="btn-steel w-8 h-8 flex items-center justify-center p-0">
+              <Upload size={14} />
             </button>
-            <button onClick={exportCsv} className="btn-steel flex items-center gap-1">
-              <Download size={13} /> EXPORT CSV
+            <button type="button" onClick={exportCsv} title="Export roster CSV" aria-label="Export roster CSV" className="btn-steel w-8 h-8 flex items-center justify-center p-0">
+              <Download size={14} />
             </button>
             <button
               onClick={() => { setForm(EMPTY); setSkillsRaw(''); setTalentsRaw(''); setEditing(null); setShowForm(v => !v); }}
-              className="btn-amber flex items-center gap-1">
-              <Plus size={13} /> ADD CHARACTER
+              title="Add Traveller"
+              aria-label="Add Traveller"
+              className="btn-amber w-8 h-8 flex items-center justify-center p-0">
+              <Plus size={14} />
             </button>
           </div>
         </div>
@@ -3150,11 +3152,10 @@ export default function PartyRoster() {
         {showForm && charForm}
 
         <div className="space-y-3">
-          {chars.map(char => (
+          {activeChars.map(char => (
             <CharCard key={char.id} char={char}
               onEdit={() => startEdit(char)}
               onDelete={() => deleteChar(char.id)}
-              onRefreshXLSX={() => { setRefreshTargetId(char.id); refreshFileRef.current?.click(); }}
               onRollSave={saveRoll}
               onStatAdjust={handleStatAdjust}
               onPortraitUpload={uploadPortrait}
@@ -3163,12 +3164,28 @@ export default function PartyRoster() {
           ))}
         </div>
 
-        {chars.length === 0 && !showForm && (
+        {activeChars.length === 0 && !showForm && (
           <div className="text-center py-16 text-body/65 text-sm space-y-2">
             <div className="text-4xl opacity-20">◈</div>
-            <div>No characters registered. Import an XLSX sheet or add manually.</div>
+            <div>No active Travellers registered. Import a roster CSV or add manually.</div>
           </div>
         )}
+
+        <div className="pt-2 border-t border-steel/40 space-y-3">
+          <div className="label text-alert">DECEASED TRAVELLERS</div>
+          {deceasedChars.length > 0 ? deceasedChars.map(char => (
+            <CharCard key={char.id} char={char}
+              onEdit={() => startEdit(char)}
+              onDelete={() => deleteChar(char.id)}
+              onRollSave={saveRoll}
+              onStatAdjust={handleStatAdjust}
+              onPortraitUpload={uploadPortrait}
+              uploadingPortrait={uploadingPortraitId === char.id}
+            />
+          )) : (
+            <div className="text-xs text-body/55 border border-steel/30 px-3 py-4 text-center">No deceased Travellers</div>
+          )}
+        </div>
       </div>
 
       {/* ── Desktop layout (≥ lg) ────────────────────────────────────────────── */}
@@ -3176,15 +3193,27 @@ export default function PartyRoster() {
 
         {/* Sidebar */}
         <div className="w-56 flex-shrink-0 border-r border-steel flex flex-col overflow-hidden">
-          <div className="p-2 border-b border-steel space-y-1.5 flex-shrink-0">
-            <button onClick={() => fileRef.current?.click()}
-              className="btn-steel w-full flex items-center justify-center gap-1 text-xs">
-              <Upload size={12} /> IMPORT XLSX
-            </button>
-            <button onClick={exportCsv}
-              className="btn-steel w-full flex items-center justify-center gap-1 text-xs">
-              <Download size={12} /> EXPORT CSV
-            </button>
+          <div className="p-3 border-b border-steel flex items-center justify-between gap-2 flex-shrink-0">
+            <div>
+              <div className="label text-amber">ACTIVE TRAVELLERS</div>
+              <div className="text-[10px] text-body/55 font-mono">{activeChars.length} ACTIVE</div>
+            </div>
+            <div className="flex gap-1">
+              <button type="button" onClick={() => fileRef.current?.click()}
+                title="Import roster CSV"
+                aria-label="Import roster CSV"
+                className="btn-steel w-7 h-7 flex items-center justify-center p-0">
+                <Upload size={12} />
+              </button>
+              <button type="button" onClick={exportCsv}
+                title="Export roster CSV"
+                aria-label="Export roster CSV"
+                className="btn-steel w-7 h-7 flex items-center justify-center p-0">
+                <Download size={12} />
+              </button>
+            </div>
+          </div>
+          <div className="p-2 border-b border-steel/50 flex-shrink-0">
             <button
               onClick={() => { setForm(EMPTY); setSkillsRaw(''); setTalentsRaw(''); setEditing(null); setShowForm(true); selectChar(null); }}
               className="btn-amber w-full flex items-center justify-center gap-1 text-xs">
@@ -3193,19 +3222,30 @@ export default function PartyRoster() {
           </div>
 
           <div className="flex-1 overflow-y-auto">
-            {chars.map(char => (
+            {activeChars.map(char => (
               <CharSidebarRow key={char.id} char={char}
                 selected={selectedId === char.id && !showForm}
                 onSelect={id => { selectChar(id); setShowForm(false); }}
               />
             ))}
-            {chars.length === 0 && (
-              <div className="text-xs text-body/55 p-4 text-center">No characters</div>
+            {activeChars.length === 0 && (
+              <div className="text-xs text-body/55 p-4 text-center">No active Travellers</div>
             )}
+            <div className="mt-4 border-t border-steel/50">
+              <div className="px-3 py-2 label text-alert">DECEASED TRAVELLERS</div>
+              {deceasedChars.length > 0 ? deceasedChars.map(char => (
+                <CharSidebarRow key={char.id} char={char}
+                  selected={selectedId === char.id && !showForm}
+                  onSelect={id => { selectChar(id); setShowForm(false); }}
+                />
+              )) : (
+                <div className="text-xs text-body/45 px-3 pb-4">None logged</div>
+              )}
+            </div>
           </div>
 
           <div className="border-t border-steel/50 px-3 py-2 text-[10px] text-body/55 flex-shrink-0">
-            {chars.length} CHARACTER{chars.length !== 1 ? 'S' : ''}
+            {chars.length} TRAVELLER{chars.length !== 1 ? 'S' : ''}
           </div>
         </div>
 
@@ -3233,7 +3273,6 @@ export default function PartyRoster() {
                       <CharacterActionsMenu
                         onEdit={() => startEdit(selectedChar)}
                         onDelete={() => deleteChar(selectedChar.id)}
-                        onRefreshXLSX={() => { setRefreshTargetId(selectedChar.id); refreshFileRef.current?.click(); }}
                       />
                     </div>
                     <div className="text-xs text-body/70 mt-1 flex flex-wrap gap-x-2">
