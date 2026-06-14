@@ -6,9 +6,12 @@ import {
   ExperienceLevel,
   lookupD66,
 } from '../data/quickCharacters';
+import { randomRace, randomName } from '../data/npcNames';
 import { Skill } from '../types';
 
 export interface GeneratedNPC {
+  name: string;
+  race: string;
   archetype: string;
   quirk: string;
   experienceLevel: ExperienceLevel;
@@ -61,11 +64,15 @@ export function generateQuickCharacter(opts?: { roller?: () => number }): Genera
   const archetypeEntry = lookupD66(ALLIES_ENEMIES, archetypeD66) ?? ALLIES_ENEMIES[0];
   const quirkEntry = lookupD66(CHARACTER_QUIRKS, quirkD66) ?? CHARACTER_QUIRKS[0];
   const experienceLevel = randomExperienceLevel(roller);
+  const race = randomRace(roller);
+  const name = randomName(race, roller);
 
   const raw = generateCharacteristics(roller);
   const [str, dex, end_stat, int_stat, edu, soc] = applyExperienceBonuses(raw, experienceLevel.charBonuses);
 
   return {
+    name,
+    race,
     archetype: archetypeEntry.archetype,
     quirk: quirkEntry.quirk,
     experienceLevel,

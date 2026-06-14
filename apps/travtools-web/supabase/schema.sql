@@ -151,6 +151,37 @@ create table if not exists session_journal (
 alter table session_journal enable row level security;
 create policy "anon_all_session_journal" on session_journal for all to anon using (true) with check (true);
 
+-- Ship Designs (custom-built spacecraft, realtime)
+create table if not exists ship_designs (
+  id uuid default gen_random_uuid() primary key,
+  name text not null default 'New Design',
+  design jsonb not null default '{}'::jsonb,
+  summary jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table ship_designs enable row level security;
+create policy "anon_all_ship_designs" on ship_designs for all to anon using (true) with check (true);
+
+-- NPCs (quick-generated non-player characters, separate from party roster)
+create table if not exists npcs (
+  id uuid default gen_random_uuid() primary key,
+  name text not null,
+  race text not null default 'Human',
+  archetype text,
+  quirk text,
+  experience_level text,
+  str integer, dex integer, end_stat integer,
+  int_stat integer, edu integer, soc integer,
+  skills jsonb not null default '[]'::jsonb,
+  notes text,
+  created_at timestamptz not null default now()
+);
+
+alter table npcs enable row level security;
+create policy "anon_all_npcs" on npcs for all to anon using (true) with check (true);
+
 -- ============================================================
 -- Storage bucket for custom ship schematic images.
 -- Create manually in Supabase Dashboard → Storage → New bucket.

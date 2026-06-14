@@ -6,6 +6,7 @@ import {
   generateQuickCharacter,
 } from '../lib/quickCharGen';
 import { ALLIES_ENEMIES, CHARACTER_QUIRKS, lookupD66 } from '../data/quickCharacters';
+import { randomRace, randomName, RACES } from '../data/npcNames';
 
 // Deterministic roller: cycles through provided sequence
 function seqRoller(values: number[]): () => number {
@@ -68,8 +69,11 @@ describe('randomExperienceLevel', () => {
 });
 
 describe('generateQuickCharacter', () => {
-  it('returns all required fields', () => {
+  it('returns all required fields including name and race', () => {
     const npc = generateQuickCharacter();
+    expect(typeof npc.name).toBe('string');
+    expect(npc.name.length).toBeGreaterThan(0);
+    expect(typeof npc.race).toBe('string');
     expect(typeof npc.archetype).toBe('string');
     expect(typeof npc.quirk).toBe('string');
     expect(npc.experienceLevel).toBeDefined();
@@ -96,6 +100,43 @@ describe('generateQuickCharacter', () => {
         expect(stat).toBeLessThanOrEqual(18);
       });
     }
+  });
+});
+
+describe('randomRace and randomName', () => {
+  it('randomRace returns a known race label', () => {
+    const labels = RACES.map(r => r.label);
+    for (let n = 0; n < 20; n++) {
+      expect(labels).toContain(randomRace());
+    }
+  });
+
+  it('Human probability is ~90% over many rolls', () => {
+    let humans = 0;
+    const N = 1000;
+    for (let i = 0; i < N; i++) {
+      if (randomRace() === 'Human') humans++;
+    }
+    // Allow ±5% tolerance
+    expect(humans / N).toBeGreaterThan(0.85);
+    expect(humans / N).toBeLessThan(0.95);
+  });
+
+  it('randomName returns a non-empty string for every race', () => {
+    for (const { label } of RACES) {
+      const name = randomName(label);
+      expect(typeof name).toBe('string');
+      expect(name.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('randomName uses injectable roller', () => {
+    // deterministic roller → deterministic name
+    const r = () => 0;
+    const name1 = randomName('Human', r);
+    const name2 = randomName('Human', r);
+    expect(name1).toBe(name2);
+    expect(typeof name1).toBe('string');
   });
 });
 
