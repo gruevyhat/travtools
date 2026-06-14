@@ -1,0 +1,38 @@
+[
+  {
+    "id": "37f39f31-ffe6-4088-8985-b795ba87ffcd",
+    "item": "Common Ore",
+    "quantity": 5,
+    "buy_price": 550,
+    "sell_price": 1000,
+    "status": "completed",
+    "world_bought": "Drinax",
+    "world_sold": "Cordan",
+    "notes": "Trade session Session Trade Run; purchase roll 17 -> 55%",
+    "created_at": "2026-06-14T23:29:58.526379+00:00",
+    "updated_at": "2026-06-14T23:31:15.13+00:00",
+    "session_ref": "Session Trade Run",
+    "base_price": 1000,
+    "purchase_pct": 55,
+    "sale_pct": 100,
+    "trade_code": "All"
+  },
+  {
+    "id": "42f6ee15-3f84-4c0a-ad08-5596a3add966",
+    "item": "Common Consumables",
+    "quantity": 20,
+    "buy_price": 275,
+    "sell_price": 575,
+    "status": "completed",
+    "world_bought": "Drinax",
+    "world_sold": "Cordan",
+    "notes": "Trade session Session Trade Run; purchase roll 17 -> 55%",
+    "created_at": "2026-06-14T23:29:58.394053+00:00",
+    "updated_at": "2026-06-14T23:31:16.463+00:00",
+    "session_ref": "Session Trade Run",
+    "base_price": 500,
+    "purchase_pct": 55,
+    "sale_pct": 115,
+    "trade_code": "All"
+  }
+]

@@ -1,0 +1,222 @@
+[
+  {
+    "id": "46c7770d-5597-4220-a05d-a3194809f4f7",
+    "name": "Naegz",
+    "race": "Vargr",
+    "archetype": "Conspirator",
+    "quirk": "Will betray characters",
+    "experience_level": "Experienced Combatant",
+    "str": 3,
+    "dex": 4,
+    "end_stat": 13,
+    "int_stat": 11,
+    "edu": 8,
+    "soc": 3,
+    "skills": [
+      {
+        "name": "Drive",
+        "level": 2
+      },
+      {
+        "name": "Gun Combat",
+        "level": 2
+      },
+      {
+        "name": "Heavy Weapons",
+        "level": 2
+      },
+      {
+        "name": "Melee",
+        "level": 2
+      },
+      {
+        "name": "Recon",
+        "level": 2
+      }
+    ],
+    "notes": "Will betray characters",
+    "created_at": "2026-06-14T02:13:11.170592+00:00"
+  },
+  {
+    "id": "478c6fc5-079d-4c99-b726-ebfc2560f5be",
+    "name": "Arlen Harlow",
+    "race": "Human",
+    "archetype": "Explorer",
+    "quirk": "Easily confused",
+    "experience_level": "Experienced Combatant",
+    "str": 10,
+    "dex": 3,
+    "end_stat": 2,
+    "int_stat": 9,
+    "edu": 6,
+    "soc": 6,
+    "skills": [
+      {
+        "name": "Drive",
+        "level": 2
+      },
+      {
+        "name": "Gun Combat",
+        "level": 2
+      },
+      {
+        "name": "Heavy Weapons",
+        "level": 2
+      },
+      {
+        "name": "Melee",
+        "level": 2
+      },
+      {
+        "name": "Recon",
+        "level": 2
+      }
+    ],
+    "notes": "Easily confused",
+    "created_at": "2026-06-14T02:13:44.852323+00:00"
+  },
+  {
+    "id": "fb44abeb-f496-4612-92ba-b7dd30fa361d",
+    "name": "Miro Inoue",
+    "race": "Human",
+    "archetype": "Starport Administrator",
+    "quirk": "Has a dangerous secret",
+    "experience_level": "Elite Combatant",
+    "str": 4,
+    "dex": 6,
+    "end_stat": 10,
+    "int_stat": 8,
+    "edu": 12,
+    "soc": 6,
+    "skills": [
+      {
+        "name": "Drive",
+        "level": 3
+      },
+      {
+        "name": "Gun Combat",
+        "level": 3
+      },
+      {
+        "name": "Heavy Weapons",
+        "level": 3
+      },
+      {
+        "name": "Melee",
+        "level": 3
+      },
+      {
+        "name": "Recon",
+        "level": 3
+      },
+      {
+        "name": "Tactics",
+        "level": 3
+      }
+    ],
+    "notes": "Has a dangerous secret",
+    "created_at": "2026-06-14T02:13:53.006528+00:00"
+  },
+  {
+    "id": "787dd3c7-e202-4b93-b91d-d2a43f898559",
+    "name": "Fiona Ueda",
+    "race": "Human",
+    "archetype": "Planetary Governor",
+    "quirk": "Mistakes a Traveller for someone else",
+    "experience_level": "Elite Combatant",
+    "str": 5,
+    "dex": 11,
+    "end_stat": 8,
+    "int_stat": 6,
+    "edu": 7,
+    "soc": 13,
+    "skills": [
+      {
+        "name": "Drive",
+        "level": 3
+      },
+      {
+        "name": "Gun Combat",
+        "level": 3
+      },
+      {
+        "name": "Heavy Weapons",
+        "level": 3
+      },
+      {
+        "name": "Melee",
+        "level": 3
+      },
+      {
+        "name": "Recon",
+        "level": 3
+      },
+      {
+        "name": "Tactics",
+        "level": 3
+      }
+    ],
+    "notes": "Mistakes a Traveller for someone else",
+    "created_at": "2026-06-14T02:14:15.107107+00:00"
+  },
+  {
+    "id": "fa3c79b4-24b1-43d7-afb5-92d00d1d71cd",
+    "name": "Neda Duvall",
+    "race": "Human",
+    "archetype": "Alien Thief",
+    "quirk": "Artistic",
+    "experience_level": "Average Combatant",
+    "str": 4,
+    "dex": 6,
+    "end_stat": 6,
+    "int_stat": 13,
+    "edu": 8,
+    "soc": 8,
+    "skills": [
+      {
+        "name": "Drive",
+        "level": 1
+      },
+      {
+        "name": "Gun Combat",
+        "level": 1
+      },
+      {
+        "name": "Melee",
+        "level": 1
+      },
+      {
+        "name": "Recon",
+        "level": 1
+      }
+    ],
+    "notes": "Artistic",
+    "created_at": "2026-06-14T02:38:06.024634+00:00"
+  },
+  {
+    "id": "51a6fea1-ada7-4beb-b740-24a957a641bf",
+    "name": "Lars Farrow",
+    "race": "Zhodani",
+    "archetype": "Famous Performer",
+    "quirk": "Shows pictures of their children",
+    "experience_level": "Average Non-combatant",
+    "str": 9,
+    "dex": 13,
+    "end_stat": 4,
+    "int_stat": 4,
+    "edu": 6,
+    "soc": 8,
+    "skills": [
+      {
+        "name": "Drive",
+        "level": 1
+      },
+      {
+        "name": "Profession",
+        "level": 1
+      }
+    ],
+    "notes": "Shows pictures of their children",
+    "created_at": "2026-06-14T04:10:33.155456+00:00"
+  }
+]
