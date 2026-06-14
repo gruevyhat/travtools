@@ -1,4 +1,6 @@
 docs/*.pdf
+docs/characters/
+data/*.json
 .DS_Store
 node_modules/
 dist/

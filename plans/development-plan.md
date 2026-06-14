@@ -653,7 +653,7 @@ The Traveller-specific 2D6 tab and boon/bane/flux mechanics stay exactly as they
 - [x] Fix over-tonnage handling: `computeShipSummary()` preserves negative remaining cargo/tonnage and emits a warning instead of clamping cargo to `0`
 - [x] Apply hull `hpMult` when calculating HP, especially for dispersed structure hulls
 - [x] Surface `ADD TO FLEET` insert failures inline instead of always showing `IN FLEET`
-- [ ] Decide whether untracked local `data/*.json` and `docs/characters/*.xlsx` campaign files should be committed or ignored
+- [x] Decide whether untracked local `data/*.json` and `docs/characters/*.xlsx` campaign files should be committed or ignored: ignore local campaign exports and character sheet files
 
 ### Background
 
