@@ -10,32 +10,72 @@ export type StarportClass = 'A' | 'B' | 'C' | 'D' | 'E' | 'X';
 export type TravelZone = 'normal' | 'amber' | 'red';
 
 export const TRAVELLER_TRADE_CODES = [
-  'Agricultural',
-  'Asteroid',
-  'Desert',
-  'Fluid Oceans',
-  'Garden',
-  'High Pop',
-  'High Tech',
-  'Ice-Capped',
-  'Industrial',
-  'Low Pop',
-  'Non-Agricultural',
-  'Non-Industrial',
-  'Poor',
-  'Rich',
-  'Vacuum',
-  'Water World',
+  'Ag',
+  'As',
+  'De',
+  'Fl',
+  'Ga',
+  'Hi',
+  'Ht',
+  'Ic',
+  'In',
+  'Lo',
+  'Lt',
+  'Na',
+  'Ni',
+  'Po',
+  'Ri',
+  'Va',
+  'Wa',
 ] as const;
+
+export type TravellerTradeCode = typeof TRAVELLER_TRADE_CODES[number];
+
+export const TRAVELLER_TRADE_CODE_LABELS: Record<TravellerTradeCode, string> = {
+  Ag: 'Agricultural',
+  As: 'Asteroid',
+  De: 'Desert',
+  Fl: 'Fluid Oceans',
+  Ga: 'Garden',
+  Hi: 'High Pop',
+  Ht: 'High Tech',
+  Ic: 'Ice-Capped',
+  In: 'Industrial',
+  Lo: 'Low Pop',
+  Lt: 'Low Tech',
+  Na: 'Non-Agricultural',
+  Ni: 'Non-Industrial',
+  Po: 'Poor',
+  Ri: 'Rich',
+  Va: 'Vacuum',
+  Wa: 'Water World',
+};
 
 export interface WorldProfile {
   name: string;
+  uwp?: string;
   tradeCodes: string[];
   starport: StarportClass;
+  size?: number;
+  atmosphere?: number;
+  hydrographics?: number;
   population: number;
+  government?: number;
   techLevel: number;
   lawLevel: number;
   zone: TravelZone;
+}
+
+export interface ParsedWorldUwp {
+  normalized: string;
+  starport: StarportClass;
+  size: number;
+  atmosphere: number;
+  hydrographics: number;
+  population: number;
+  government: number;
+  lawLevel: number;
+  techLevel: number;
 }
 
 export interface TradeFilters {
@@ -173,8 +213,80 @@ export function applySaleDMs(
   };
 }
 
-function normaliseTradeCode(value: string): string {
+function compactTradeCode(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+const TRADE_CODE_LOOKUP = new Map<string, TravellerTradeCode>(
+  TRAVELLER_TRADE_CODES.flatMap(code => [
+    [compactTradeCode(code), code],
+    [compactTradeCode(TRAVELLER_TRADE_CODE_LABELS[code]), code],
+  ]),
+);
+
+export function tradeCodeLabel(value: string): string {
+  return TRADE_CODE_LOOKUP.get(compactTradeCode(value)) ?? value;
+}
+
+export function tradeCodeDescription(value: string): string {
+  const code = tradeCodeLabel(value);
+  return code in TRAVELLER_TRADE_CODE_LABELS
+    ? `${code} - ${TRAVELLER_TRADE_CODE_LABELS[code as TravellerTradeCode]}`
+    : value;
+}
+
+export function formatTradeCodeList(value: string): string {
+  return value
+    .split(',')
+    .map(part => part.trim())
+    .filter(Boolean)
+    .map(tradeCodeLabel)
+    .join(', ');
+}
+
+export function formatTradeDmString(value: string): string {
+  return value
+    .replace(/[−–]/g, '-')
+    .split(',')
+    .map(part => {
+      const trimmed = part.trim();
+      const match = trimmed.match(/^(.+?)([+-]\d+)$/);
+      if (!match) return formatTradeCodeList(trimmed) || trimmed;
+      return `${tradeCodeLabel(match[1].trim())}${match[2]}`;
+    })
+    .join(', ');
+}
+
+function normaliseTradeCode(value: string): string {
+  return compactTradeCode(tradeCodeLabel(value));
+}
+
+function parseUwpCode(value: string): number | null {
+  if (!/^[0-9A-Z]$/.test(value)) return null;
+  return parseInt(value, 36);
+}
+
+export function parseWorldUwp(input: string): ParsedWorldUwp | null {
+  const compact = input.trim().toUpperCase().replace(/\s+/g, '');
+  const match = compact.match(/^([A-EX])([0-9A-Z])([0-9A-Z])([0-9A-Z])([0-9A-Z])([0-9A-Z])([0-9A-Z])-?([0-9A-Z])$/);
+  if (!match) return null;
+
+  const [, starport, sizeCode, atmosphereCode, hydrographicsCode, populationCode, governmentCode, lawCode, techCode] = match;
+  const values = [sizeCode, atmosphereCode, hydrographicsCode, populationCode, governmentCode, lawCode, techCode].map(parseUwpCode);
+  if (values.some(value => value === null)) return null;
+
+  const [size, atmosphere, hydrographics, population, government, lawLevel, techLevel] = values as number[];
+  return {
+    normalized: `${starport}${sizeCode}${atmosphereCode}${hydrographicsCode}${populationCode}${governmentCode}${lawCode}-${techCode}`,
+    starport: starport as StarportClass,
+    size,
+    atmosphere,
+    hydrographics,
+    population,
+    government,
+    lawLevel,
+    techLevel,
+  };
 }
 
 export function parseTradeDmString(value: string): TradeDmEntry[] {

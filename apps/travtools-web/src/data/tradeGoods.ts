@@ -4,6 +4,8 @@
 // BasePrice in Credits. null = Exotics (price set by roleplay).
 // Modified Price lives in modifiedPrice.ts. It uses the p.243 range from -3 to 25+.
 
+import { formatTradeCodeList, formatTradeDmString } from '../lib/trade';
+
 export interface TradeGood {
   d66: number;
   type: string;
@@ -395,11 +397,14 @@ export const TRADE_GOODS: TradeGood[] = [
 
 export function searchTradeGoods(query: string): TradeGood[] {
   if (!query.trim()) return TRADE_GOODS;
-  const q = query.toLowerCase();
+  const q = query.trim().toLowerCase();
   return TRADE_GOODS.filter(
     g =>
       g.type.toLowerCase().includes(q) ||
       g.availability.toLowerCase().includes(q) ||
+      formatTradeCodeList(g.availability).toLowerCase().includes(q) ||
+      formatTradeDmString(g.purchaseDM).toLowerCase().includes(q) ||
+      formatTradeDmString(g.saleDM).toLowerCase().includes(q) ||
       g.examples.toLowerCase().includes(q) ||
       String(g.d66).includes(q),
   );

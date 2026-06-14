@@ -3,6 +3,7 @@ import { BookOpen, Check, ChevronDown, ChevronUp, Dices, X } from 'lucide-react'
 import { DiceRoller } from '@dice-roller/rpg-dice-roller';
 import { useSupabase } from '../../lib/supabaseContext';
 import { DIFFICULTIES, fmtDM, rollD66, rollFlux, RollMode, rollTravellerCheck, TravellerRollResult, FluxRollResult } from '../../lib/dice';
+import { formatTradeCodeList } from '../../lib/trade';
 import { TRADE_GOODS, TradeGood } from '../../data/tradeGoods';
 import { lookupModifiedPrice, rollTonsExpr } from '../../data/modifiedPrice';
 import NumberStepper from '../shared/NumberStepper';
@@ -340,7 +341,7 @@ export default function GlobalToolsDrawer({ open, onClose }: GlobalToolsDrawerPr
                       </div>
                       {tradeRoll.good && (
                         <div className="text-xs text-body/65">
-                          {tradeRoll.good.availability} · {tradeRoll.tons}
+                          {formatTradeCodeList(tradeRoll.good.availability)} · {tradeRoll.tons}
                           {tradeRoll.tons !== null && tradeRoll.good.tons !== 'Varies' && (
                             <span className="text-amber ml-1">→ {tradeRoll.tons} tons</span>
                           )}

@@ -15,21 +15,23 @@ import {
   applySaleDMs,
   availableTradeGoods,
   calculateLotCost,
+  formatTradeCodeList,
   formatCr,
   freightTraffic,
   freightWorldDm,
   passengerTraffic,
+  parseWorldUwp,
   populationQuantityDm,
   rollDice,
   rollTonsWithDm,
   supplierStarportDm,
+  tradeCodeDescription,
   tradeGoodPurchaseDm,
   tradeGoodSaleDm,
   TRAVELLER_TRADE_CODES,
   type FreightLotSize,
   type ModifiedPriceResult,
   type RolledTons,
-  type StarportClass,
   type TravelZone,
   type WorldProfile,
 } from '../../lib/trade';
@@ -44,9 +46,14 @@ export type TradeDealDraft = Omit<TradeDeal, 'id' | 'created_at' | 'updated_at'>
 
 const DEFAULT_SOURCE: WorldProfile = {
   name: 'Regina',
-  tradeCodes: ['Rich', 'High Pop'],
+  uwp: 'A788866-C',
+  tradeCodes: ['Ri', 'Hi'],
   starport: 'A',
+  size: 7,
+  atmosphere: 8,
+  hydrographics: 8,
   population: 8,
+  government: 6,
   techLevel: 12,
   lawLevel: 6,
   zone: 'normal',
@@ -54,9 +61,14 @@ const DEFAULT_SOURCE: WorldProfile = {
 
 const DEFAULT_DESTINATION: WorldProfile = {
   name: 'Efate',
-  tradeCodes: ['Industrial'],
+  uwp: 'B666655-A',
+  tradeCodes: ['In'],
   starport: 'B',
+  size: 6,
+  atmosphere: 6,
+  hydrographics: 6,
   population: 6,
+  government: 5,
   techLevel: 10,
   lawLevel: 5,
   zone: 'normal',
@@ -206,18 +218,79 @@ function firstCharacterId(characters: Character[]): string {
   return characters[0]?.id ?? '';
 }
 
-function useSelectedCharacter(characters: Character[]) {
-  const [selectedId, setSelectedId] = useState(firstCharacterId(characters));
+function bestCharacterId(
+  characters: Character[],
+  scoreFor: (character: Character) => [number, number],
+): string {
+  let bestId = '';
+  let bestScore: [number, number] | null = null;
+
+  characters.forEach(character => {
+    const score = scoreFor(character);
+    if (
+      bestScore === null
+      || score[0] > bestScore[0]
+      || (score[0] === bestScore[0] && score[1] > bestScore[1])
+    ) {
+      bestId = character.id;
+      bestScore = score;
+    }
+  });
+
+  return bestId;
+}
+
+function bestSkillCharacterId(characters: Character[], skillName: string, statKey?: CharStat | null): string {
+  return bestCharacterId(characters, character => {
+    const check = characterSkillCheckDm(character, skillName, statKey);
+    return [check.skillLevel, check.totalDm];
+  });
+}
+
+function bestStatCharacterId(characters: Character[], statKey: CharStat): string {
+  return bestCharacterId(characters, character => {
+    const value = effectiveCharacterStat(character, statKey);
+    return [statDM(value), value ?? -999];
+  });
+}
+
+function useSelectedCharacter(characters: Character[], preferredId = firstCharacterId(characters), preferenceKey = preferredId) {
+  const validPreferredId = characters.some(character => character.id === preferredId)
+    ? preferredId
+    : firstCharacterId(characters);
+  const [selectedId, setSelectedIdState] = useState(validPreferredId);
+  const [manualOverride, setManualOverride] = useState(false);
+  const [activePreferenceKey, setActivePreferenceKey] = useState(preferenceKey);
 
   useEffect(() => {
     if (characters.length === 0) {
-      if (selectedId) setSelectedId('');
+      if (selectedId) setSelectedIdState('');
+      if (manualOverride) setManualOverride(false);
       return;
     }
-    if (!characters.some(character => character.id === selectedId)) {
-      setSelectedId(characters[0].id);
+
+    if (preferenceKey !== activePreferenceKey) {
+      setActivePreferenceKey(preferenceKey);
+      setManualOverride(false);
+      setSelectedIdState(validPreferredId);
+      return;
     }
-  }, [characters, selectedId]);
+
+    if (!characters.some(character => character.id === selectedId)) {
+      setSelectedIdState(validPreferredId);
+      setManualOverride(false);
+      return;
+    }
+
+    if (!manualOverride && selectedId !== validPreferredId) {
+      setSelectedIdState(validPreferredId);
+    }
+  }, [activePreferenceKey, characters, manualOverride, preferenceKey, selectedId, validPreferredId]);
+
+  function setSelectedId(id: string) {
+    setManualOverride(true);
+    setSelectedIdState(id);
+  }
 
   return {
     selectedId,
@@ -231,15 +304,17 @@ function CharacterSelect({
   characters,
   selectedId,
   onChange,
+  className = 'select text-xs',
 }: {
   label: string;
   characters: Character[];
   selectedId: string;
   onChange: (id: string) => void;
+  className?: string;
 }) {
   return (
     <select
-      className="select text-xs"
+      className={className}
       aria-label={label}
       value={selectedId}
       onChange={e => onChange(e.target.value)}
@@ -276,9 +351,17 @@ function CharacterCheckControl({
   result?: SkillCheck | null;
   onRolled: (check: SkillCheck) => void;
 }) {
-  const { selectedId, setSelectedId, selectedCharacter } = useSelectedCharacter(characters);
   const [skillName, setSkillName] = useState(defaultSkill);
   const [statKey, setStatKey] = useState<CharStat | null>(skillChar(defaultSkill));
+  const preferredCharacterId = useMemo(
+    () => bestSkillCharacterId(characters, skillName, statKey),
+    [characters, skillName, statKey],
+  );
+  const { selectedId, setSelectedId, selectedCharacter } = useSelectedCharacter(
+    characters,
+    preferredCharacterId,
+    `${skillName}:${statKey ?? 'none'}`,
+  );
   const [bonusDmInput, setBonusDmInput] = useState('0');
   const bonusDm = numberFromInput(bonusDmInput, 0);
   const checkDm = selectedCharacter ? characterSkillCheckDm(selectedCharacter, skillName, statKey) : null;
@@ -322,7 +405,13 @@ function CharacterCheckControl({
       <div className="label">{label.toUpperCase()}</div>
       <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
         <Field label="Character">
-          <CharacterSelect label={`${label} Character`} characters={characters} selectedId={selectedId} onChange={setSelectedId} />
+          <CharacterSelect
+            label={`${label} Character`}
+            characters={characters}
+            selectedId={selectedId}
+            onChange={setSelectedId}
+            className="select text-xs"
+          />
         </Field>
         <Field label="Skill">
           <select className="select text-xs" aria-label={`${label} Skill`} value={skillName} onChange={e => changeSkill(e.target.value)}>
@@ -380,29 +469,41 @@ function CharacterSkillSetter({
   buttonLabel,
   characters,
   onApply,
+  compact = false,
 }: {
   label: string;
   skillName: string;
   buttonLabel: string;
   characters: Character[];
   onApply: (skillLevel: number) => void;
+  compact?: boolean;
 }) {
-  const { selectedId, setSelectedId, selectedCharacter } = useSelectedCharacter(characters);
+  const preferredCharacterId = useMemo(
+    () => bestSkillCharacterId(characters, skillName),
+    [characters, skillName],
+  );
+  const { selectedId, setSelectedId, selectedCharacter } = useSelectedCharacter(characters, preferredCharacterId, skillName);
   const skill = selectedCharacter ? characterSkillLevel(selectedCharacter, skillName) : null;
 
   return (
-    <div className="border border-steel/50 bg-void/40 p-2 space-y-2">
+    <div className={`border border-steel/50 bg-void/40 ${compact ? 'px-2 py-1 space-y-1' : 'p-2 space-y-2'}`}>
       <div className="label">{label.toUpperCase()}</div>
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 items-end">
+      <div className={`grid grid-cols-[minmax(0,1fr)_auto] ${compact ? 'gap-1' : 'gap-2'} items-end`}>
         <Field label="Character">
-          <CharacterSelect label={`${label} Character`} characters={characters} selectedId={selectedId} onChange={setSelectedId} />
+          <CharacterSelect
+            label={`${label} Character`}
+            characters={characters}
+            selectedId={selectedId}
+            onChange={setSelectedId}
+            className={compact ? 'select text-xs h-7 py-0' : 'select text-xs'}
+          />
         </Field>
-        <button type="button" onClick={() => skill && onApply(skill.skillLevel)} disabled={!skill} className="btn-steel text-xs h-9">
+        <button type="button" onClick={() => skill && onApply(skill.skillLevel)} disabled={!skill} className={`btn-steel text-xs ${compact ? 'h-7 px-2 py-0' : 'h-9'}`}>
           {buttonLabel}
         </button>
       </div>
       {selectedCharacter && skill && (
-        <div className="text-[11px] font-mono text-body/70">
+        <div className={`${compact ? 'text-[10px]' : 'text-[11px]'} font-mono text-body/70 leading-tight`}>
           {selectedCharacter.name} {skillName} {fmtDM(skill.skillLevel)}
           {skill.trainedLevel === null && skill.jackOfAllTrades > 0 ? ` · JoAT +${skill.jackOfAllTrades}` : ''}
         </div>
@@ -424,7 +525,11 @@ function CharacterStatSetter({
   characters: Character[];
   onApply: (dm: number) => void;
 }) {
-  const { selectedId, setSelectedId, selectedCharacter } = useSelectedCharacter(characters);
+  const preferredCharacterId = useMemo(
+    () => bestStatCharacterId(characters, statKey),
+    [characters, statKey],
+  );
+  const { selectedId, setSelectedId, selectedCharacter } = useSelectedCharacter(characters, preferredCharacterId, statKey);
   const value = selectedCharacter ? effectiveCharacterStat(selectedCharacter, statKey) : null;
   const dm = statDM(value);
 
@@ -464,10 +569,29 @@ function WorldProfileForm({
     onChange({ ...value, tradeCodes: nextCodes });
   };
 
+  const handleUwpChange = (rawValue: string) => {
+    const nextUwp = rawValue.toUpperCase().replace(/\s+/g, '');
+    const parsed = parseWorldUwp(nextUwp);
+    onChange(parsed
+      ? {
+          ...value,
+          uwp: parsed.normalized,
+          starport: parsed.starport,
+          size: parsed.size,
+          atmosphere: parsed.atmosphere,
+          hydrographics: parsed.hydrographics,
+          population: parsed.population,
+          government: parsed.government,
+          lawLevel: parsed.lawLevel,
+          techLevel: parsed.techLevel,
+        }
+      : { ...value, uwp: nextUwp });
+  };
+
   return (
     <section className="panel p-3 space-y-3">
       <div className="panel-header -mx-3 -mt-3 mb-1">{title.toUpperCase()} WORLD</div>
-      <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
         <div className="col-span-2">
           <Field label={`${title} Name`}>
             <input
@@ -478,48 +602,16 @@ function WorldProfileForm({
             />
           </Field>
         </div>
-        <Field label="Starport">
-          <select
-            className="select text-xs"
-            aria-label={`${title} Starport`}
-            value={value.starport}
-            onChange={e => onChange({ ...value, starport: e.target.value as StarportClass })}
-          >
-            {(['A', 'B', 'C', 'D', 'E', 'X'] as StarportClass[]).map(starport => (
-              <option key={starport} value={starport}>{starport}</option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Pop">
-          <NumberStepper
-            ariaLabel={`${title} Population`}
-            min={0}
-            max={12}
-            value={value.population}
-            onChange={raw => onChange({ ...value, population: numberFromInput(raw, value.population) })}
-            inputClassName="input text-xs"
-          />
-        </Field>
-        <Field label="TL">
-          <NumberStepper
-            ariaLabel={`${title} Tech Level`}
-            min={0}
-            max={20}
-            value={value.techLevel}
-            onChange={raw => onChange({ ...value, techLevel: numberFromInput(raw, value.techLevel) })}
-            inputClassName="input text-xs"
-          />
-        </Field>
-        <Field label="Law">
-          <NumberStepper
-            ariaLabel={`${title} Law Level`}
-            min={0}
-            max={20}
-            value={value.lawLevel}
-            onChange={raw => onChange({ ...value, lawLevel: numberFromInput(raw, value.lawLevel) })}
-            inputClassName="input text-xs"
-          />
-        </Field>
+        <div className="col-span-2 md:col-span-3">
+          <Field label="UWP">
+            <input
+              className="input text-xs font-mono uppercase"
+              aria-label={`${title} UWP`}
+              value={value.uwp ?? ''}
+              onChange={e => handleUwpChange(e.target.value)}
+            />
+          </Field>
+        </div>
         <Field label="Zone">
           <select
             className="select text-xs"
@@ -534,21 +626,31 @@ function WorldProfileForm({
         </Field>
       </div>
 
-      <div className="flex flex-wrap gap-1.5">
-        {TRAVELLER_TRADE_CODES.map(code => (
-          <button
-            key={code}
-            type="button"
-            onClick={() => toggleCode(code)}
-            className={`px-2 py-1 border text-[10px] font-mono transition-colors ${
-              value.tradeCodes.includes(code)
-                ? 'border-amber bg-amber/10 text-amber'
-                : 'border-steel/50 text-body/60 hover:text-bright hover:border-cyan-trav/60'
-            }`}
-          >
-            {code}
-          </button>
-        ))}
+      <div className="space-y-1">
+        <div className="flex items-center justify-between gap-2">
+          <div className="label">Trade Codes</div>
+          <div className="text-[10px] font-mono text-amber truncate">
+            {value.tradeCodes.length > 0 ? value.tradeCodes.join(' ') : 'NONE'}
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-1">
+          {TRAVELLER_TRADE_CODES.map(code => (
+            <button
+              key={code}
+              type="button"
+              onClick={() => toggleCode(code)}
+              title={tradeCodeDescription(code)}
+              aria-label={`${value.tradeCodes.includes(code) ? 'Remove' : 'Add'} ${tradeCodeDescription(code)} trade code`}
+              className={`h-5 w-6 border font-mono text-[10px] font-bold leading-none transition-colors ${
+                value.tradeCodes.includes(code)
+                  ? 'border-amber bg-amber/20 text-amber shadow-[0_0_8px_rgba(212,160,23,0.35)]'
+                  : 'border-steel/45 bg-void/60 text-body/55 hover:border-cyan-trav/70 hover:bg-cyan-trav/10 hover:text-cyan-trav'
+              }`}
+            >
+              {code}
+            </button>
+          ))}
+        </div>
       </div>
     </section>
   );
@@ -767,29 +869,29 @@ export function TradeSessionPanel({ deals, characters = [], onCreateDeals, onUpd
             <WorldProfileForm title="Destination" value={destination} onChange={setDestination} />
           </div>
 
-          <section className="panel p-3 space-y-3">
-            <div className="panel-header -mx-3 -mt-3 mb-1">ROUTE AND PRICING</div>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+          <section className="panel px-2 py-2 space-y-2">
+            <div className="panel-header -mx-2 -mt-2 mb-0">ROUTE AND PRICING</div>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-1.5">
               <Field label="Session">
-                <input className="input text-xs" aria-label="Trade Session Reference" value={sessionRef} onChange={e => setSessionRef(e.target.value)} />
+                <input className="input text-xs h-7 py-0" aria-label="Trade Session Reference" value={sessionRef} onChange={e => setSessionRef(e.target.value)} />
               </Field>
               <Field label="Parsecs">
-                <NumberStepper ariaLabel="Trade Session Parsecs" min={1} max={6} value={parsecs} onChange={value => setParsecs(numberFromInput(value, parsecs))} inputClassName="input text-xs" />
+                <NumberStepper ariaLabel="Trade Session Parsecs" min={1} max={6} value={parsecs} onChange={value => setParsecs(numberFromInput(value, parsecs))} inputClassName="input text-xs h-7 py-0" />
               </Field>
               <Field label="Broker">
-                <NumberStepper ariaLabel="Trade Session Broker Skill" value={brokerSkill} onChange={value => setBrokerSkill(numberFromInput(value, brokerSkill))} inputClassName="input text-xs" />
+                <NumberStepper ariaLabel="Trade Session Broker Skill" value={brokerSkill} onChange={value => setBrokerSkill(numberFromInput(value, brokerSkill))} inputClassName="input text-xs h-7 py-0" />
               </Field>
               <Field label="Supplier Broker">
-                <NumberStepper ariaLabel="Supplier Broker Skill" value={supplierBroker} onChange={value => setSupplierBroker(numberFromInput(value, supplierBroker))} inputClassName="input text-xs" />
+                <NumberStepper ariaLabel="Supplier Broker Skill" value={supplierBroker} onChange={value => setSupplierBroker(numberFromInput(value, supplierBroker))} inputClassName="input text-xs h-7 py-0" />
               </Field>
               <Field label="Buyer Broker">
-                <NumberStepper ariaLabel="Buyer Broker Skill" value={buyerBroker} onChange={value => setBuyerBroker(numberFromInput(value, buyerBroker))} inputClassName="input text-xs" />
+                <NumberStepper ariaLabel="Buyer Broker Skill" value={buyerBroker} onChange={value => setBuyerBroker(numberFromInput(value, buyerBroker))} inputClassName="input text-xs h-7 py-0" />
               </Field>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <CharacterSkillSetter label="Price Broker" skillName="Broker" buttonLabel="USE BROKER" characters={characters} onApply={setBrokerSkill} />
-              <CharacterSkillSetter label="Supplier Counterparty" skillName="Broker" buttonLabel="USE SKILL" characters={characters} onApply={setSupplierBroker} />
-              <CharacterSkillSetter label="Buyer Counterparty" skillName="Broker" buttonLabel="USE SKILL" characters={characters} onApply={setBuyerBroker} />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-1.5">
+              <CharacterSkillSetter compact label="Price Broker" skillName="Broker" buttonLabel="USE" characters={characters} onApply={setBrokerSkill} />
+              <CharacterSkillSetter compact label="Supplier Counterparty" skillName="Broker" buttonLabel="USE" characters={characters} onApply={setSupplierBroker} />
+              <CharacterSkillSetter compact label="Buyer Counterparty" skillName="Broker" buttonLabel="USE" characters={characters} onApply={setBuyerBroker} />
             </div>
           </section>
         </>
@@ -856,7 +958,7 @@ export function TradeSessionPanel({ deals, characters = [], onCreateDeals, onUpd
                   <tr key={lot.id} className="table-row">
                     <td className="table-cell">
                       <div className="font-bold text-bright">{lot.good.type}</div>
-                      <div className="text-[10px] text-body/55">{lot.good.availability}</div>
+                      <div className="text-[10px] text-body/55">{formatTradeCodeList(lot.good.availability)}</div>
                     </td>
                     <td className="table-cell">
                       <div>{lot.tons}t</div>

@@ -9,8 +9,11 @@ import {
   dealsToCsv,
   filterTradeDeals,
   freightTraffic,
+  formatTradeCodeList,
+  formatTradeDmString,
   formatCr,
   passengerTraffic,
+  parseWorldUwp,
   profit,
   splitPassengerIncome,
   tradeSummary,
@@ -116,6 +119,18 @@ const baseCharacter: Character = {
   weapons: [],
   notes: null,
   created_at: '2026-01-01T00:00:00Z',
+};
+
+const brokerSpecialist: Character = {
+  ...baseCharacter,
+  id: 'char-2',
+  name: 'Talia Quon',
+  int_stat: 7,
+  skills: [
+    { name: 'Broker', level: 4 },
+    { name: 'Streetwise', level: 0 },
+    { name: 'Steward', level: 0 },
+  ],
 };
 
 function makeTradeClient(initialDeals: TradeDeal[] = [], initialCharacters: Character[] = []) {
@@ -237,6 +252,27 @@ describe('trade helpers', () => {
     expect(calculateProfit(20_000, 75, 110, 4)).toBe(28_000);
   });
 
+  it('formats trade classifications as Traveller trade codes', () => {
+    expect(formatTradeCodeList('Industrial, High Tech, Rich')).toBe('In, Ht, Ri');
+    expect(formatTradeDmString('Industrial+2, High Tech+3, Non-Industrial−2')).toBe('In+2, Ht+3, Ni-2');
+  });
+
+  it('parses UWP strings into trade world profile values', () => {
+    expect(parseWorldUwp('a788899-c')).toEqual({
+      normalized: 'A788899-C',
+      starport: 'A',
+      size: 7,
+      atmosphere: 8,
+      hydrographics: 8,
+      population: 8,
+      government: 9,
+      lawLevel: 9,
+      techLevel: 12,
+    });
+    expect(parseWorldUwp('Q788899-C')).toBeNull();
+    expect(parseWorldUwp('A78889-C')).toBeNull();
+  });
+
   it('looks up passenger and freight traffic dice', () => {
     expect(lookupPassengerTraffic(7).passengerDice).toBe(3);
     expect(lookupPassengerTraffic(0).passengerDice).toBe(0);
@@ -328,6 +364,11 @@ describe('TradeLedger', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'TRADE SESSION' }));
     expect(await screen.findByText(/TRADE SESSION · ROUTE/i)).toBeTruthy();
+    expect(screen.getByLabelText('Source UWP')).toBeTruthy();
+    expect(screen.queryByLabelText('Source Starport')).toBeNull();
+    expect(screen.queryByLabelText('Source Population')).toBeNull();
+    fireEvent.change(screen.getByLabelText('Source UWP'), { target: { value: 'C100200-8' } });
+    expect((screen.getByLabelText('Source UWP') as HTMLInputElement).value).toBe('C100200-8');
     expect(screen.getByRole('button', { name: /2 SUPPLIER/i })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /3 LOTS/i }));
     expect(screen.getByRole('button', { name: /ROLL LOTS/i })).toBeTruthy();
@@ -366,6 +407,36 @@ describe('TradeLedger', () => {
         purchase_pct: expect.any(Number),
       }));
     });
+  });
+
+  it('preselects the best roster character for the selected trade check while allowing override', async () => {
+    const mock = makeTradeClient([], [baseCharacter, brokerSpecialist]);
+    vi.spyOn(SupabaseContext, 'useSupabase').mockReturnValue({
+      client: mock.client as never,
+      isConfigured: true,
+      configure: vi.fn(),
+      reset: vi.fn(),
+    });
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
+
+    render(<TradeLedger />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'TRADE SESSION' }));
+    fireEvent.click(await screen.findByRole('button', { name: /2 SUPPLIER/i }));
+
+    const characterSelect = await screen.findByLabelText('Supplier Check Character') as HTMLSelectElement;
+    expect(characterSelect.value).toBe('char-2');
+
+    fireEvent.change(screen.getByLabelText('Supplier Check Skill'), { target: { value: 'Streetwise' } });
+    await waitFor(() => {
+      expect(characterSelect.value).toBe('char-1');
+    });
+
+    fireEvent.change(characterSelect, { target: { value: 'char-2' } });
+    expect(characterSelect.value).toBe('char-2');
+    fireEvent.click(screen.getByRole('button', { name: /ROLL SUPPLIER/i }));
+
+    expect(await screen.findByText(/Talia Quon · Streetwise\/INT/i)).toBeTruthy();
   });
 
   it('lets roster characters roll trade and traffic checks', async () => {

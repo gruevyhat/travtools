@@ -62,6 +62,12 @@ describe('searchTradeGoods', () => {
     results.forEach(g => expect(g.availability.toLowerCase()).toContain('asteroid'));
   });
 
+  it('filters by abbreviated trade code', () => {
+    const results = searchTradeGoods('Ht');
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.some(g => [g.availability, g.purchaseDM, g.saleDM].some(value => value.includes('High Tech')))).toBe(true);
+  });
+
   it('filters by d66 code as string', () => {
     const results = searchTradeGoods('45');
     expect(results.some(g => g.d66 === 45)).toBe(true);

@@ -5,6 +5,8 @@ import { Character, TradeDeal } from '../../types';
 import {
   dealsToCsv,
   filterTradeDeals,
+  formatTradeCodeList,
+  formatTradeDmString,
   formatCr,
   profit,
   sortDeals,
@@ -408,7 +410,7 @@ export default function TradeLedger() {
                     {g.exotic && <span className="text-[9px] font-mono text-cyan-trav border border-cyan-trav/50 px-1">EXOTIC</span>}
                   </div>
                   <div className="flex gap-4 text-[10px] pl-8">
-                    <span className="text-body/65">{g.availability}</span>
+                    <span className="text-body/65">{formatTradeCodeList(g.availability)}</span>
                     {!g.exotic && (
                       <>
                         <span className="text-body/70">TONS <span className="text-bright">{g.tons}</span></span>
@@ -418,8 +420,8 @@ export default function TradeLedger() {
                   </div>
                   {!g.exotic && (
                     <div className="text-[10px] pl-8 space-y-0.5">
-                      <div><span className="text-body/55">BUY </span><span className="text-body/60">{g.purchaseDM}</span></div>
-                      <div><span className="text-body/55">SELL </span><span className="text-body/60">{g.saleDM}</span></div>
+                      <div><span className="text-body/55">BUY </span><span className="text-body/60">{formatTradeDmString(g.purchaseDM)}</span></div>
+                      <div><span className="text-body/55">SELL </span><span className="text-body/60">{formatTradeDmString(g.saleDM)}</span></div>
                     </div>
                   )}
                 </button>

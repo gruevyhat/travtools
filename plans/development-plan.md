@@ -6,7 +6,7 @@ A group companion app for Traveller RPG (2022 Core Rulebook edition), runnable a
 
 ### Current State
 
-The app is live on GitHub Pages at `https://gruevyhat.github.io/travtools/` and connected to the live Supabase project. The test suite, lint, production build, and GitHub Pages workflow are all active. The current suite has 178 Vitest tests plus a Playwright smoke script covering landing, ships/fleet, shipyard, global tools, roster, trade session, form typing, and roll log.
+The app is live on GitHub Pages at `https://gruevyhat.github.io/travtools/` and connected to the live Supabase project. The test suite, lint, production build, and GitHub Pages workflow are all active. The current suite has 198 Vitest tests plus a Playwright smoke script covering landing, ships/fleet, shipyard, global tools, roster, trade session, form typing, and roll log.
 
 The core app now has a landing dashboard, roster, ships, trade ledger, inventory manager, roll log, and global tools drawer. The four local character XLSX files under `docs/characters/` have been imported into Supabase with the current parser. Character portraits are stored as data URLs; the `ship-schematics` Storage bucket remains relevant only for custom ship schematic uploads.
 
@@ -825,7 +825,7 @@ CREATE TABLE party_treasury (
 
 ### Status: Implemented
 
-The Trade route now has `DEALS LEDGER`, `TRADE SESSION`, and `PASSENGERS & FREIGHT` tabs. The existing ledger remains intact. The Trade Session tab supports source/destination world profiles, supplier/buyer checks, market and random lot generation, purchase-price rolls, cart purchase into active ledger deals, and sale-price rolls that complete active deals. The Passengers & Freight tab rolls passenger traffic, freight lots, mail availability, random passenger hooks, and shows an income summary. Party Treasury posting is deferred until Milestone 10 creates the treasury table and transaction workflow.
+The Trade route now has `DEALS LEDGER`, `TRADE SESSION`, and `PASSENGERS & FREIGHT` tabs. The existing ledger remains intact. The Trade Session tab supports source/destination UWP world profiles, compact trade-code tiles, supplier/buyer checks, market and random lot generation, purchase-price rolls, cart purchase into active ledger deals, and sale-price rolls that complete active deals. Roster-backed trade checks preselect the character with the best matching skill while preserving manual override. The Passengers & Freight tab rolls passenger traffic, freight lots, mail availability, random passenger hooks, and shows an income summary. Party Treasury posting is deferred until Milestone 10 creates the treasury table and transaction workflow.
 
 ### Background
 
@@ -852,7 +852,7 @@ The existing Deals Ledger content moves into tab 1 unchanged.
 A stateful wizard driven by the 7-step checklist. State is local (one session at a time); completed deals are pushed to the Deals Ledger (tab 1) and optionally to Party Treasury (M10).
 
 **Step 1 — Source World Profile**  
-Inputs: World name, Trade Codes (multi-select chips: Agricultural, Asteroid, Desert, Fluid Oceans, Garden, High Pop, High Tech, Ice-Capped, Industrial, Low Pop, Non-Agricultural, Non-Industrial, Poor, Rich, Vacuum, Water World), Starport class (A/B/C/D/E/X), Population code (0–9+), Tech Level, Law Level, Zone (Normal/Amber/Red). Stored in component state and used to derive all DMs below.
+Inputs: World name, UWP string, compact Trade Codes (multi-select tiles: Ag, As, De, Fl, Ga, Hi, Ht, Ic, In, Lo, Lt, Na, Ni, Po, Ri, Va, Wa), and Zone (Normal/Amber/Red). UWP is parsed into starport, population, tech level, law level, and other world profile values for DMs, but the UI does not restate the parsed scores under the field.
 
 **Step 2 — Find Supplier**  
 Skill check panel (reuses roster roll visual language):
@@ -884,7 +884,7 @@ For each lot in cart:
 Parsec distance input. Displayed as a reminder only — no game mechanic here beyond setting the distance for fare calculation.
 
 **Step 6 — Find Buyer**  
-Same as Step 2 but at destination world. Destination World Profile inputs appear (same fields as Step 1). Starport and world DMs for destination apply.
+Same as Step 2 but at destination world. Destination World Profile inputs appear (same compact UWP + trade-code tile fields as Step 1). Starport and world DMs for destination apply.
 
 **Step 7 — Sale Price**  
 For each active deal in the ledger:
@@ -896,7 +896,7 @@ For each active deal in the ledger:
 
 ### Tab 3 — Passengers & Freight
 
-Two sub-sections, each with a world profile input (reuses/caches the source world state from tab 2) and an integrated roll workflow.
+Two sub-sections, each with a compact UWP + trade-code world profile input and an integrated roll workflow.
 
 **Passengers sub-section**  
 Inputs: Parsec distance, Steward skill on ship (DM+ highest), Chief Steward (DM+ highest), source and destination world population + starport + zone.
@@ -957,6 +957,9 @@ ALTER TABLE trade_deals ADD COLUMN IF NOT EXISTS trade_code text;
 - [x] Unit: Freight Traffic table lookup — 2D roll 8 → correct lot count
 - [x] Unit: `splitPassengerIncome(classes, parsecs)` sums fares correctly
 - [x] Unit: `modifiedPrice.ts` audit — spot-check verified book values
+- [x] Unit: UWP parser maps `A788899-C` style strings to world profile values
+- [x] Unit: trade classification names display as Traveller trade codes in availability and DM strings
+- [x] Component: trade-session character selectors preselect the best skilled roster character while allowing manual override
 - [x] Component: Trade Session tab renders; world profile inputs flow into DM display; dice roller shows breakdown
 - [x] Component: Deals Ledger tab unaffected by tab 2 and 3 additions
 - [x] E2E smoke: open Trade, switch to Trade Session tab, enter world profile, roll supplier check, see goods table
