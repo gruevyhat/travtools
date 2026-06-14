@@ -84,6 +84,10 @@
            placeholder:text-body/65 focus:outline-none focus:border-amber transition-colors;
   }
 
+  .input-base {
+    @apply input;
+  }
+
   .select {
     @apply input appearance-none cursor-pointer;
   }

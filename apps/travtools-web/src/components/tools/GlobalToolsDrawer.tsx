@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { BookOpen, Check, ChevronDown, ChevronUp, Dices, Minus, Plus, X } from 'lucide-react';
 import { DiceRoller } from '@dice-roller/rpg-dice-roller';
 import { useSupabase } from '../../lib/supabaseContext';
-import { DIFFICULTIES, fmtDM, rollFlux, RollMode, rollTravellerCheck, TravellerRollResult, FluxRollResult } from '../../lib/dice';
+import { DIFFICULTIES, fmtDM, rollD66, rollFlux, RollMode, rollTravellerCheck, TravellerRollResult, FluxRollResult } from '../../lib/dice';
 import { TRADE_GOODS, TradeGood } from '../../data/tradeGoods';
 import { lookupModifiedPrice, rollTonsExpr } from '../../data/modifiedPrice';
 
@@ -11,12 +11,6 @@ const diceRoller = new DiceRoller();
 interface GlobalToolsDrawerProps {
   open: boolean;
   onClose: () => void;
-}
-
-function rollD66(): { d1: number; d2: number; d66: number } {
-  const d1 = Math.ceil(Math.random() * 6);
-  const d2 = Math.ceil(Math.random() * 6);
-  return { d1, d2, d66: d1 * 10 + d2 };
 }
 
 function roll3D6(): number[] {

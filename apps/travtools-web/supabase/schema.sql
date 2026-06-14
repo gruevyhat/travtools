@@ -163,6 +163,7 @@ create table if not exists ship_designs (
 
 alter table ship_designs enable row level security;
 create policy "anon_all_ship_designs" on ship_designs for all to anon using (true) with check (true);
+alter table ship_designs add column if not exists diagram_url text;
 
 -- NPCs (quick-generated non-player characters, separate from party roster)
 create table if not exists npcs (
@@ -184,6 +185,26 @@ create policy "anon_all_npcs" on npcs for all to anon using (true) with check (t
 
 -- ============================================================
 -- Storage bucket for custom ship schematic images.
--- Create manually in Supabase Dashboard → Storage → New bucket.
--- Bucket name: ship-schematics (Public bucket)
 -- ============================================================
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'ship-schematics',
+  'ship-schematics',
+  true,
+  52428800,
+  array['image/jpeg','image/jpg','image/png','image/gif','image/webp','image/svg+xml']
+)
+on conflict (id) do nothing;
+
+create policy if not exists "Public read ship-schematics" on storage.objects
+  for select using (bucket_id = 'ship-schematics');
+
+create policy if not exists "Anon insert ship-schematics" on storage.objects
+  for insert with check (bucket_id = 'ship-schematics');
+
+create policy if not exists "Anon update ship-schematics" on storage.objects
+  for update using (bucket_id = 'ship-schematics');
+
+create policy if not exists "Anon delete ship-schematics" on storage.objects
+  for delete using (bucket_id = 'ship-schematics');

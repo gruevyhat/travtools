@@ -332,20 +332,34 @@ export default function NPCGenerator() {
 
               {/* Name */}
               <div className="flex-shrink-0 min-w-[8rem]">
-                <div className="font-mono text-bright font-bold text-sm leading-tight">{npc.name}</div>
+                <div className="font-mono text-bright font-bold text-sm">{npc.name}</div>
               </div>
 
-              {/* Race & Archetype */}
+              {/* Race */}
+              <div className="flex-shrink-0 min-w-[5rem]">
+                <div className="label text-[8px]">RACE</div>
+                <div className="text-body/70 text-xs font-mono">{npc.race}</div>
+              </div>
+
+              {/* Archetype */}
+              <div className="flex-shrink-0 min-w-[7rem]">
+                <div className="label text-[8px]">ARCHETYPE</div>
+                <div className="text-body/70 text-xs font-mono">{npc.archetype}</div>
+              </div>
+
+              {/* Experience */}
               <div className="flex-shrink-0 min-w-[8rem]">
-                <div className="text-body/70 text-xs font-mono leading-snug">{npc.race}</div>
-                <div className="text-body/55 text-xs font-mono leading-snug">{npc.archetype}</div>
+                <div className="label text-[8px]">EXPERIENCE</div>
+                <div className="text-body/70 text-xs font-mono">{npc.experience_level}</div>
               </div>
 
-              {/* Experience & Quirk */}
-              <div className="flex-shrink-0 min-w-[9rem] max-w-[14rem]">
-                <div className="text-body/70 text-xs font-mono leading-snug">{npc.experience_level}</div>
-                {npc.quirk && <div className="text-body/50 text-xs font-mono italic leading-snug truncate">{npc.quirk}</div>}
-              </div>
+              {/* Quirk */}
+              {npc.quirk && (
+                <div className="flex-shrink-0 min-w-[7rem] max-w-[12rem]">
+                  <div className="label text-[8px]">QUIRK</div>
+                  <div className="text-body/55 text-xs font-mono italic truncate">{npc.quirk}</div>
+                </div>
+              )}
 
               {/* Stats — clickable */}
               <div className="flex gap-1 flex-shrink-0">

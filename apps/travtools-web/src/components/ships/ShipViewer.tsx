@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Pencil, Plus, Trash2, Upload, Tag, X } from 'lucide-react';
+import { Plus, Trash2, Upload, Tag, X, Settings } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
 import { Ship, ShipSpecs, Annotation } from '../../types';
 import { CANONICAL_SHIPS } from './canonicalShips';
@@ -29,28 +29,46 @@ const SPECS_FIELDS: { key: keyof ShipSpecs; label: string; type: 'number' | 'tex
 
 interface ShipSpecsPanelProps {
   specs: ShipSpecs | null;
-  editing: boolean;
+  editable: boolean;
   form: ShipSpecs;
   onFormChange: (s: ShipSpecs) => void;
-  onEdit: () => void;
   onSave: () => void;
-  onCancel: () => void;
+  onReset: () => void;
 }
 
-function ShipSpecsPanel({ specs, editing, form, onFormChange, onEdit, onSave, onCancel }: ShipSpecsPanelProps) {
-  const hasSpecs = specs && Object.values(specs).some(v => v != null);
+function hasSpecValues(specs: ShipSpecs | null) {
+  return Boolean(specs && Object.values(specs).some(v => v != null && v !== ''));
+}
 
-  if (editing) {
-    return (
-      <div className="panel p-3 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="label">SHIP SPECS</div>
-          <div className="flex gap-2">
-            <button type="button" onClick={onSave} className="btn-amber text-xs">SAVE</button>
-            <button type="button" onClick={onCancel} className="btn-steel text-xs">CANCEL</button>
+function effectiveShipSpecs(ship: Ship | null): ShipSpecs {
+  if (!ship) return {};
+  const canonicalDef = ship.canonical_id
+    ? CANONICAL_SHIPS.find(c => c.id === ship.canonical_id)
+    : undefined;
+  return { ...(canonicalDef?.defaultSpecs ?? {}), ...(ship.specs ?? {}) };
+}
+
+function ShipSpecsPanel({ specs, editable, form, onFormChange, onSave, onReset }: ShipSpecsPanelProps) {
+  const hasSpecs = hasSpecValues(specs);
+
+  return (
+    <div className="border border-steel/50 bg-panel/45">
+      <div className="border-b border-steel/40 px-3 py-2 flex items-center justify-between gap-2">
+        <div>
+          <div className="label">SHIP RECORD</div>
+          <div className="text-[10px] text-body/45 font-mono">
+            {editable ? 'Editing technical specifications' : hasSpecs ? 'Technical specifications' : 'No specs recorded yet'}
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-2 text-xs">
+        {editable && (
+          <div className="flex gap-2 flex-shrink-0">
+            <button type="button" onClick={onReset} className="btn-steel text-xs py-1 px-2">RESET</button>
+            <button type="button" onClick={onSave} className="btn-amber text-xs py-1 px-2">SAVE SPECS</button>
+          </div>
+        )}
+      </div>
+      {editable ? (
+        <div className="grid grid-cols-2 gap-2 p-3 text-xs">
           {SPECS_FIELDS.map(({ key, label, type }) => (
             <label key={key} className="space-y-0.5 block">
               <span className="text-body/60 font-mono text-[10px] tracking-wider">{label.toUpperCase()}</span>
@@ -67,45 +85,31 @@ function ShipSpecsPanel({ specs, editing, form, onFormChange, onEdit, onSave, on
               />
             </label>
           ))}
-          <div className="col-span-2">
-            <label className="space-y-0.5 block">
-              <span className="text-body/60 font-mono text-[10px] tracking-wider">CREW NOTES</span>
-              <input className="input py-1 text-xs" type="text"
-                value={form.crew_notes ?? ''}
-                onChange={e => onFormChange({ ...form, crew_notes: e.target.value || null })}
-              />
-            </label>
-          </div>
+          <label className="space-y-0.5 block col-span-2">
+            <span className="text-body/60 font-mono text-[10px] tracking-wider">CREW NOTES</span>
+            <input className="input py-1 text-xs" type="text"
+              value={form.crew_notes ?? ''}
+              onChange={e => onFormChange({ ...form, crew_notes: e.target.value || null })}
+            />
+          </label>
         </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="panel p-3">
-      <div className="flex items-center justify-between mb-2">
-        <div className="label">SHIP SPECS</div>
-        <button type="button" onClick={onEdit} className="btn-steel text-xs flex items-center gap-1">
-          <Pencil size={10} /> EDIT
-        </button>
-      </div>
-      {hasSpecs ? (
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-          {SPECS_FIELDS.filter(f => specs[f.key] != null).map(({ key, label }) => (
-            <div key={key} className="flex justify-between border-b border-steel/20 pb-0.5">
-              <span className="text-body/70">{label}</span>
-              <span className="text-amber font-mono">{String(specs[key])}</span>
+      ) : hasSpecs ? (
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1 p-3 text-xs">
+          {SPECS_FIELDS.filter(({ key }) => specs?.[key] != null && specs[key] !== '').map(({ key, label }) => (
+            <div key={key} className="border-b border-steel/20 pb-1">
+              <div className="text-body/45 font-mono text-[10px] tracking-wider">{label.toUpperCase()}</div>
+              <div className="text-amber font-mono truncate">{String(specs?.[key])}</div>
             </div>
           ))}
-          {specs.crew_notes && (
-            <div className="col-span-2 flex justify-between border-b border-steel/20 pb-0.5">
-              <span className="text-body/70">Crew</span>
-              <span className="text-amber font-mono">{specs.crew_notes}</span>
+          {specs?.crew_notes && (
+            <div className="col-span-2 border-b border-steel/20 pb-1">
+              <div className="text-body/45 font-mono text-[10px] tracking-wider">CREW NOTES</div>
+              <div className="text-amber font-mono">{specs.crew_notes}</div>
             </div>
           )}
         </div>
       ) : (
-        <div className="text-xs text-body/55 text-center py-2">No specs recorded. Click EDIT to add.</div>
+        <div className="p-3 text-xs text-body/55 font-mono">Click the ship row cog to edit this record.</div>
       )}
     </div>
   );
@@ -122,10 +126,13 @@ export default function ShipViewer() {
   const [newShipName, setNewShipName] = useState('');
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [editingSpecs, setEditingSpecs] = useState(false);
   const [specsForm, setSpecsForm] = useState<ShipSpecs>({});
+  const [editingName, setEditingName] = useState(false);
+  const [nameForm, setNameForm] = useState('');
+  const [nameRequired, setNameRequired] = useState(false);
   const schematicRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const replaceImageRef = useRef<HTMLInputElement>(null);
 
   const loadShips = useCallback(async () => {
     if (!client) return;
@@ -163,7 +170,18 @@ export default function ShipViewer() {
     setAnnotating(false);
     setPendingPos(null);
     setSelectedAnnotationId(null);
+    setEditingName(false);
   }
+
+  function startEditShip(ship: Ship) {
+    selectShip(ship);
+    setNameForm(ship.name);
+    setEditingName(true);
+  }
+
+  useEffect(() => {
+    setSpecsForm(effectiveShipSpecs(selected));
+  }, [selected]);
 
   async function addCustomShip(imageUrl: string) {
     const name = newShipName.trim();
@@ -195,7 +213,7 @@ export default function ShipViewer() {
     const ext = file.name.split('.').pop();
     const path = `${uuid()}.${ext}`;
     const bucket = client.storage.from('ship-schematics');
-    const { error } = await bucket.upload(path, file);
+    const { error } = await bucket.upload(path, file, { contentType: file.type });
     e.target.value = '';
     if (error) {
       setErrorMessage(`Ship image upload failed: ${error.message}`);
@@ -299,24 +317,49 @@ export default function ShipViewer() {
     }
   }
 
-  function startEditSpecs() {
-    const canonicalDef = selected?.canonical_id
-      ? CANONICAL_SHIPS.find(c => c.id === selected.canonical_id)
-      : undefined;
-    setSpecsForm({ ...(canonicalDef?.defaultSpecs ?? {}), ...(selected?.specs ?? {}) });
-    setEditingSpecs(true);
-  }
-
   async function saveSpecs() {
     if (!client || !selected) return;
-    const specs = Object.values(specsForm).some(v => v != null) ? specsForm : null;
+    const specs = hasSpecValues(specsForm) ? specsForm : null;
     updateShipInState({ ...selected, specs });
-    setEditingSpecs(false);
     const { error } = await client.from('ships').update({ specs }).eq('id', selected.id);
     if (error) {
       setErrorMessage(`Ship specs could not be saved: ${error.message}`);
       loadShips();
     }
+  }
+
+  async function saveName() {
+    if (!client || !selected || !nameForm.trim()) return;
+    const name = nameForm.trim();
+    updateShipInState({ ...selected, name });
+    setEditingName(false);
+    const { error } = await client.from('ships').update({ name }).eq('id', selected.id);
+    if (error) {
+      setErrorMessage(`Ship name could not be saved: ${error.message}`);
+      loadShips();
+    }
+  }
+
+  async function handleReplaceImage(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !client || !selected) return;
+    e.target.value = '';
+    const ext = file.name.split('.').pop();
+    const path = `${crypto.randomUUID()}.${ext}`;
+    const bucket = client.storage.from('ship-schematics');
+    const { error } = await bucket.upload(path, file, { contentType: file.type });
+    if (error) {
+      setErrorMessage(`Image upload failed: ${error.message}`);
+      return;
+    }
+    const { data: urlData } = bucket.getPublicUrl(path);
+    const { error: updateError } = await client.from('ships').update({ image_url: urlData.publicUrl }).eq('id', selected.id);
+    if (updateError) {
+      setErrorMessage(`Image update failed: ${updateError.message}`);
+      return;
+    }
+    updateShipInState({ ...selected, image_url: urlData.publicUrl });
+    setErrorMessage(null);
   }
 
   function renderAnnotations() {
@@ -402,14 +445,20 @@ export default function ShipViewer() {
             <div className="text-xs text-amber tracking-wider mt-2">ADD CUSTOM</div>
             <input
               className="input text-xs py-1"
-              placeholder="Ship name"
+              placeholder="Ship name (required)"
               value={newShipName}
-              onChange={e => setNewShipName(e.target.value)}
+              onChange={e => { setNewShipName(e.target.value); setNameRequired(false); }}
             />
+            {nameRequired && (
+              <div className="text-[10px] text-alert font-mono">Enter a ship name first.</div>
+            )}
             <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={!newShipName}
-              className="btn-amber w-full text-center text-xs disabled:opacity-40"
+              onClick={() => {
+                if (!newShipName.trim()) { setNameRequired(true); return; }
+                setNameRequired(false);
+                fileInputRef.current?.click();
+              }}
+              className="btn-amber w-full text-center text-xs"
             >
               <Upload size={11} className="inline mr-1" />UPLOAD IMAGE
             </button>
@@ -434,6 +483,15 @@ export default function ShipViewer() {
                   <div className="text-[10px] text-body/60 mt-0.5">
                     {ship.schematic_type === 'canonical' ? `${ship.ship_class} · ${ship.tonnage}t` : 'Custom'}
                   </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => startEditShip(ship)}
+                  className="text-body/45 hover:text-amber focus:text-amber transition-all pl-3"
+                  aria-label={`Edit ${ship.name} ship`}
+                  title="Edit ship"
+                >
+                  <Settings size={12} />
                 </button>
                 <button
                   onClick={() => deleteShip(ship.id)}
@@ -466,9 +524,44 @@ export default function ShipViewer() {
 
         {selected ? (
           <>
-            <div className="panel-header border-b border-steel flex items-center justify-between flex-shrink-0">
-              <span>{selected.name.toUpperCase()}</span>
-              <div className="flex items-center gap-3">
+            <div className="panel-header border-b border-steel flex items-center justify-between flex-shrink-0 gap-3">
+              {editingName ? (
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <input
+                    autoFocus
+                    aria-label="Ship name"
+                    className="input text-xs py-0.5 flex-1 min-w-0"
+                    value={nameForm}
+                    onChange={e => setNameForm(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') setEditingName(false); }}
+                  />
+                  <button onClick={saveName} aria-label="Save ship name" className="btn-amber text-xs py-0.5 px-2 flex-shrink-0">SAVE</button>
+                  <button onClick={() => setEditingName(false)} className="btn-steel text-xs py-0.5 px-2 flex-shrink-0">✕</button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => { setNameForm(selected.name); setEditingName(true); }}
+                  className="flex items-center gap-1.5 text-xs font-mono tracking-widest text-left hover:text-amber transition-colors group"
+                  title="Click to rename"
+                >
+                  {selected.name.toUpperCase()}
+                  <Pencil size={10} className="opacity-30 group-hover:opacity-80 transition-opacity flex-shrink-0" />
+                </button>
+              )}
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {selected.schematic_type === 'custom' && (
+                  <>
+                    <button
+                      onClick={() => replaceImageRef.current?.click()}
+                      className="btn-steel text-xs flex items-center gap-1"
+                      title="Replace schematic image"
+                    >
+                      <Upload size={11} /> IMAGE
+                    </button>
+                    <input ref={replaceImageRef} type="file" accept="image/*" className="hidden" onChange={handleReplaceImage} />
+                  </>
+                )}
                 <button
                   onClick={() => { setAnnotating(v => !v); setPendingPos(null); setSelectedAnnotationId(null); }}
                   className={`btn text-xs flex items-center gap-1 ${annotating ? 'btn-amber' : 'btn-steel'}`}
@@ -501,113 +594,88 @@ export default function ShipViewer() {
               </div>
             )}
 
-            {/* Schematic display */}
+            {/* Ship record + schematic */}
             <div className="flex-1 overflow-auto p-4">
-              {selected.schematic_type === 'canonical' && selected.canonical_id ? (
-                <div className="max-w-5xl mx-auto space-y-3">
-                  {(() => {
-                    const def = CANONICAL_SHIPS.find(c => c.id === selected.canonical_id);
-                    const effectiveSpecs = { ...(def?.defaultSpecs ?? {}), ...(selected.specs ?? {}) };
-                    const hasEffectiveSpecs = Object.values(effectiveSpecs).some(v => v != null);
-                    return (
-                      <>
-                        <ShipSpecsPanel
-                          specs={hasEffectiveSpecs ? effectiveSpecs : null}
-                          editing={editingSpecs}
-                          form={specsForm}
-                          onFormChange={setSpecsForm}
-                          onEdit={startEditSpecs}
-                          onSave={saveSpecs}
-                          onCancel={() => setEditingSpecs(false)}
-                        />
-                        {def && (
+              <div className="grid grid-cols-1 xl:grid-cols-[22rem_minmax(0,1fr)] gap-4 max-w-7xl mx-auto">
+                <aside className="space-y-3">
+                  <ShipSpecsPanel
+                    specs={effectiveShipSpecs(selected)}
+                    form={specsForm}
+                    onFormChange={setSpecsForm}
+                    onSave={saveSpecs}
+                    onReset={() => setSpecsForm(effectiveShipSpecs(selected))}
+                  />
+                  <section className="border border-steel/50 bg-panel/45">
+                    <div className="border-b border-steel/40 px-3 py-2 label">SHIP NOTES</div>
+                    <div className="p-3">
+                      <textarea
+                        id="ship-notes"
+                        aria-label="Ship Notes"
+                        className="input min-h-36 resize-y"
+                        value={selected.notes ?? ''}
+                        onChange={e => updateSelectedNotes(e.target.value)}
+                        onBlur={saveNotes}
+                      />
+                    </div>
+                  </section>
+                </aside>
+
+                <section className="border border-steel/50 bg-panel/30 min-h-[30rem] flex flex-col">
+                  <div className="border-b border-steel/40 px-3 py-2 flex items-center justify-between gap-3">
+                    <div>
+                      <div className="label">ANNOTATABLE SCHEMATIC</div>
+                      <div className="text-[10px] text-body/45 font-mono">
+                        {selected.schematic_type === 'canonical'
+                          ? `${selected.ship_class ?? 'Canonical'} · ${selected.tonnage ?? '?'}t`
+                          : 'Custom ship record'}
+                      </div>
+                    </div>
+                    <div className="text-[10px] text-body/45 font-mono">
+                      {(selected.annotations ?? []).length} label{(selected.annotations ?? []).length === 1 ? '' : 's'}
+                    </div>
+                  </div>
+
+                  <div className="flex-1 overflow-auto p-4 flex items-start justify-center">
+                    {selected.schematic_type === 'canonical' && selected.canonical_id ? (
+                      (() => {
+                        const def = CANONICAL_SHIPS.find(c => c.id === selected.canonical_id);
+                        return def ? (
                           <div
                             ref={schematicRef}
-                            className={`relative border border-steel bg-void ${annotating ? 'cursor-crosshair' : ''}`}
+                            className={`relative w-full max-w-5xl border border-steel bg-void ${annotating ? 'cursor-crosshair' : ''}`}
                             onClick={handleSchematicClick}
                           >
                             <def.Component />
                             {renderAnnotations()}
                           </div>
-                        )}
-                      </>
-                    );
-                  })()}
-                  <div>
-                    <label htmlFor="ship-notes" className="block text-xs text-amber tracking-wider mb-1">SHIP NOTES</label>
-                    <textarea
-                      id="ship-notes"
-                      aria-label="Ship Notes"
-                      className="input min-h-24 resize-y"
-                      value={selected.notes ?? ''}
-                      onChange={e => updateSelectedNotes(e.target.value)}
-                      onBlur={saveNotes}
-                    />
+                        ) : (
+                          <div className="flex items-center justify-center h-72 w-full text-body/65 text-sm border border-steel bg-void">
+                            Canonical schematic unavailable.
+                          </div>
+                        );
+                      })()
+                    ) : selected.image_url ? (
+                      <div
+                        ref={schematicRef}
+                        className={`relative inline-block max-w-full border border-steel bg-void ${annotating ? 'cursor-crosshair' : ''}`}
+                        onClick={handleSchematicClick}
+                      >
+                        <img
+                          src={selected.image_url}
+                          alt={selected.name}
+                          className="block max-w-full"
+                        />
+                        {renderAnnotations()}
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center h-72 w-full text-body/65 text-sm border border-steel bg-void">
+                        No schematic image available.
+                      </div>
+                    )}
                   </div>
-                </div>
-              ) : selected.image_url ? (
-                <div className="space-y-3">
-                  <ShipSpecsPanel
-                    specs={selected.specs}
-                    editing={editingSpecs}
-                    form={specsForm}
-                    onFormChange={setSpecsForm}
-                    onEdit={startEditSpecs}
-                    onSave={saveSpecs}
-                    onCancel={() => setEditingSpecs(false)}
-                  />
-                  <div
-                    ref={schematicRef}
-                    className={`relative inline-block max-w-full border border-steel bg-void ${annotating ? 'cursor-crosshair' : ''}`}
-                    onClick={handleSchematicClick}
-                  >
-                    <img
-                      src={selected.image_url}
-                      alt={selected.name}
-                      className="block max-w-full"
-                    />
-                    {renderAnnotations()}
-                  </div>
-                  <div>
-                    <label htmlFor="ship-notes" className="block text-xs text-amber tracking-wider mb-1">SHIP NOTES</label>
-                    <textarea
-                      id="ship-notes"
-                      aria-label="Ship Notes"
-                      className="input min-h-24 resize-y"
-                      value={selected.notes ?? ''}
-                      onChange={e => updateSelectedNotes(e.target.value)}
-                      onBlur={saveNotes}
-                    />
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <ShipSpecsPanel
-                    specs={selected.specs}
-                    editing={editingSpecs}
-                    form={specsForm}
-                    onFormChange={setSpecsForm}
-                    onEdit={startEditSpecs}
-                    onSave={saveSpecs}
-                    onCancel={() => setEditingSpecs(false)}
-                  />
-                  <div className="flex items-center justify-center h-64 text-body/65 text-sm border border-steel bg-panel">
-                    No schematic image available.
-                  </div>
-                  <div>
-                    <label htmlFor="ship-notes" className="block text-xs text-amber tracking-wider mb-1">SHIP NOTES</label>
-                    <textarea
-                      id="ship-notes"
-                      aria-label="Ship Notes"
-                      className="input min-h-24 resize-y"
-                      value={selected.notes ?? ''}
-                      onChange={e => updateSelectedNotes(e.target.value)}
-                      onBlur={saveNotes}
-                    />
-                  </div>
-                </div>
-              )}
-                    </div>
+                </section>
+              </div>
+            </div>
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center">

@@ -139,6 +139,7 @@ async function installSupabaseMock(page) {
     inventory_items: [],
     roll_log: [],
     ships: [],
+    ship_designs: [],
   };
 
   function filterIds(url) {
@@ -353,16 +354,17 @@ async function checkRosterInteractions(browser, baseUrl) {
   await desktopRoster.getByRole('button', { name: 'UNKNOWN' }).click();
   const customRollPanel = page.locator('.fixed .panel');
   await replaceByTyping(customRollPanel.getByPlaceholder('e.g. Pilot (Small Craft)'), 'Astrogation');
-  await customRollPanel.getByLabel('Mod').type('+2');
+  const rollModifierInput = customRollPanel.getByRole('textbox', { name: 'Modifier' });
+  await rollModifierInput.type('+2');
   const typedValues = {
     label: await customRollPanel.getByPlaceholder('e.g. Pilot (Small Craft)').inputValue(),
-    bonus: await customRollPanel.getByLabel('Mod').inputValue(),
+    bonus: await rollModifierInput.inputValue(),
   };
   if (typedValues.label !== 'Astrogation' || typedValues.bonus !== '+2') {
     throw new Error(`Roll tool input lost characters: ${JSON.stringify(typedValues)}`);
   }
   await customRollPanel.getByRole('button', { name: 'ROLL 2D6' }).click();
-  await customRollPanel.getByText('Mod +2', { exact: false }).waitFor({ state: 'visible', timeout: 5_000 });
+  await customRollPanel.getByText('Modifier +2', { exact: false }).waitFor({ state: 'visible', timeout: 5_000 });
   await page.screenshot({ path: new URL('roster.png', outputDir).pathname, fullPage: false });
   await context.close();
 
@@ -390,11 +392,15 @@ async function checkShipInteractions(browser, baseUrl) {
   await page.getByLabel('Add ship').click();
   await page.getByRole('button').filter({ hasText: 'Type-S' }).click();
   await page.getByLabel('Type-S Scout/Courier deck plan').waitFor({ state: 'visible', timeout: 5_000 });
+  await page.getByRole('button', { name: 'Edit Scout/Courier ship' }).click();
+  await replaceByTyping(page.getByRole('textbox', { name: 'Ship name' }), 'Smoke Scout');
+  await page.getByRole('button', { name: 'Save ship name' }).click();
+  await page.locator('aside').getByText('Smoke Scout', { exact: true }).waitFor({ state: 'visible', timeout: 5_000 });
 
   await page.getByRole('button', { name: 'LABEL' }).click();
   await page.getByLabel('Type-S Scout/Courier deck plan').click({ position: { x: 200, y: 120 } });
   await page.getByPlaceholder('Label text...').type('Bridge Watch');
-  await page.getByRole('button', { name: 'SAVE' }).click();
+  await page.getByRole('button', { name: 'SAVE', exact: true }).click();
   await page.getByLabel('Annotation Bridge Watch').waitFor({ state: 'visible', timeout: 5_000 });
   await page.getByLabel('Annotation Bridge Watch').click();
   await page.getByLabel('Delete annotation Bridge Watch').click();
@@ -423,6 +429,51 @@ async function checkShipInteractions(browser, baseUrl) {
   };
 }
 
+async function checkShipyardInteractions(browser, baseUrl) {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  await context.addInitScript(() => {
+    localStorage.setItem('tt_sb_url', 'https://smoke.supabase.co');
+    localStorage.setItem('tt_sb_key', 'smoke-key');
+  });
+
+  const page = await context.newPage();
+  const errors = collectPageErrors(page);
+
+  await installSupabaseMock(page);
+  await page.goto(`${baseUrl}#/ships`, { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1_000);
+
+  await page.getByRole('button', { name: 'SHIPYARD', exact: true }).click();
+  await page.getByRole('button', { name: 'NEW DESIGN' }).click();
+  await replaceByTyping(page.getByPlaceholder('Enter ship name...'), 'Smoke Yard');
+
+  for (let i = 0; i < 8; i += 1) {
+    await page.getByRole('button', { name: 'NEXT' }).click();
+  }
+
+  await page.getByRole('button', { name: 'SAVE DESIGN' }).click();
+  await page.getByText('TECHNICAL SCHEMATIC').waitFor({ state: 'visible', timeout: 5_000 });
+  await page.getByText('SYSTEMS MANIFEST').waitFor({ state: 'visible', timeout: 5_000 });
+  await page.getByRole('button', { name: 'Edit Smoke Yard design' }).click();
+  await page.getByText('EDITING: Smoke Yard').waitFor({ state: 'visible', timeout: 5_000 });
+  await page.getByRole('button', { name: 'CANCEL EDIT' }).click();
+  await page.getByText('TECHNICAL SCHEMATIC').waitFor({ state: 'visible', timeout: 5_000 });
+  await page.screenshot({ path: new URL('shipyard.png', outputDir).pathname, fullPage: false });
+
+  await page.getByRole('button', { name: 'ADD TO FLEET' }).click();
+  await page.getByText('IN FLEET').waitFor({ state: 'visible', timeout: 5_000 });
+  await page.getByRole('button', { name: 'FLEET', exact: true }).click();
+  await page.locator('aside').getByText('Smoke Yard', { exact: true }).waitFor({ state: 'visible', timeout: 5_000 });
+
+  await context.close();
+
+  return {
+    route: 'shipyard-interactions',
+    ok: true,
+    errors,
+  };
+}
+
 async function checkGlobalTools(browser, baseUrl) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   await context.addInitScript(() => {
@@ -437,7 +488,7 @@ async function checkGlobalTools(browser, baseUrl) {
   await page.goto(`${baseUrl}#/ships`, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'TOOLS' }).click();
   await replaceByTyping(page.getByLabel('CHECK LABEL'), 'Standalone Astrogation');
-  await replaceByTyping(page.getByLabel('Standalone Modifier'), '+2');
+  await replaceByTyping(page.getByRole('textbox', { name: 'Standalone Modifier' }), '+2');
   await page.getByRole('button', { name: 'ROLL 2D6' }).click();
   await page.getByText('Logged to Roll Log').waitFor({ state: 'visible', timeout: 5_000 });
   await page.getByLabel('Close session tools').click();
@@ -550,6 +601,7 @@ async function main() {
     const results = [
       await checkLanding(browser, baseUrl),
       await checkShipInteractions(browser, baseUrl),
+      await checkShipyardInteractions(browser, baseUrl),
       await checkGlobalTools(browser, baseUrl),
       await checkRosterInteractions(browser, baseUrl),
       await checkFormTyping(browser, baseUrl),

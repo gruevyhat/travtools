@@ -6,14 +6,13 @@ import SetupScreen from './components/SetupScreen';
 import Shell from './components/layout/Shell';
 
 const LandingPage = lazy(() => import('./components/home/LandingPage'));
-const ShipViewer = lazy(() => import('./components/ships/ShipViewer'));
+const ShipsHub = lazy(() => import('./components/ships/ShipsHub'));
 const TradeLedger = lazy(() => import('./components/trade/TradeLedger'));
 const InventoryManager = lazy(() => import('./components/inventory/InventoryManager'));
 const PartyRoster = lazy(() => import('./components/roster/PartyRoster'));
 const RollLog = lazy(() => import('./components/log/RollLog'));
 const CombatTracker = lazy(() => import('./components/combat/CombatTracker'));
 const SessionJournal = lazy(() => import('./components/journal/SessionJournal'));
-const ShipBuilder = lazy(() => import('./components/ships/ShipBuilder'));
 const NPCGenerator = lazy(() => import('./components/npc/NPCGenerator'));
 
 function CombatDisabled() {
@@ -41,14 +40,13 @@ function AppRoutes() {
         <Routes>
           <Route path="/" element={<Shell />}>
             <Route index element={<LandingPage />} />
-            <Route path="ships" element={<ShipViewer />} />
+            <Route path="ships" element={<ShipsHub />} />
             <Route path="trade" element={<TradeLedger />} />
             <Route path="inventory" element={<InventoryManager />} />
             <Route path="roster" element={<PartyRoster />} />
             <Route path="log" element={<RollLog />} />
             <Route path="combat" element={COMBAT_MODULE_DISABLED ? <CombatDisabled /> : <CombatTracker />} />
             <Route path="journal" element={<SessionJournal />} />
-            <Route path="shipbuilder" element={<ShipBuilder />} />
             <Route path="npc" element={<NPCGenerator />} />
           </Route>
         </Routes>

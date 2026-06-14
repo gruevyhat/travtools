@@ -308,6 +308,83 @@ export interface SessionJournalEntry {
   updated_at: string;
 }
 
+// ── Ship Builder types ─────────────────────────────────────────────────────
+
+export interface MountConfig {
+  id: string;
+  mount_type: 'fixed' | 'single' | 'double' | 'triple';
+  weapons: string[];
+}
+
+export interface OptionalSystemEntry {
+  id: string;
+  type: string;
+  quantity: number;
+}
+
+export interface ShipDesignState {
+  name: string;
+  tech_level: number;
+  tonnage: number;
+  hull_config: 'standard' | 'streamlined' | 'dispersed';
+  armour_type: 'none' | 'crystaliron' | 'bonded_superdense';
+  armour_points: number;
+  m_drive: number;
+  j_drive: number;
+  pp_type: 'tl8' | 'tl12' | 'tl15';
+  pp_power: number;
+  pp_fuel_weeks: number;
+  bridge_type: 'standard' | 'cockpit' | 'dual_cockpit';
+  computer_model: number;
+  computer_bis: boolean;
+  sensors: 'basic' | 'civilian' | 'military' | 'improved' | 'advanced';
+  mounts: MountConfig[];
+  optional_systems: OptionalSystemEntry[];
+  staterooms: number;
+  high_staterooms: number;
+  luxury_staterooms: number;
+  low_berths: number;
+  common_area_tons: number;
+  software_jump_control: number;
+  software_fire_control: number;
+  software_intellect: boolean;
+  notes: string;
+}
+
+export interface ShipDesignSummary {
+  totalTons: number;
+  usedTons: number;
+  cargoTons: number;
+  powerGenerated: number;
+  powerUsed: number;
+  powerBalance: number;
+  totalCostMCr: number;
+  maintenanceCrPerMonth: number;
+  constructionDays: number;
+  hullHP: number;
+  hardpoints: number;
+  firmpoints: number;
+  jumpFuelTons: number;
+  ppFuelTons: number;
+  crewPilot: number;
+  crewAstrogator: number;
+  crewEngineer: number;
+  crewMedic: number;
+  crewSteward: number;
+  crewGunner: number;
+  warnings: string[];
+}
+
+export interface ShipDesign {
+  id: string;
+  name: string;
+  design: ShipDesignState;
+  summary: ShipDesignSummary;
+  diagram_url: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export type RangeBand = 'adjacent' | 'close' | 'short' | 'medium' | 'long' | 'very-long' | 'distant';
 
 export interface CombatCombatant {

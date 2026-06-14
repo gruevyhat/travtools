@@ -6,7 +6,7 @@ A group companion app for Traveller RPG (2022 Core Rulebook edition), runnable a
 
 ### Current State
 
-The app is live on GitHub Pages at `https://gruevyhat.github.io/travtools/` and connected to the live Supabase project. The test suite, lint, production build, and GitHub Pages workflow are all active. The current suite has 113 Vitest tests plus a Playwright smoke script.
+The app is live on GitHub Pages at `https://gruevyhat.github.io/travtools/` and connected to the live Supabase project. The test suite, lint, production build, and GitHub Pages workflow are all active. The current suite has 170 Vitest tests plus a Playwright smoke script covering landing, ships/fleet, shipyard, global tools, roster, form typing, and roll log.
 
 The core app now has a landing dashboard, roster, ships, trade ledger, inventory manager, roll log, and global tools drawer. The four local character XLSX files under `docs/characters/` have been imported into Supabase with the current parser. Character portraits are stored as data URLs; the `ship-schematics` Storage bucket remains relevant only for custom ship schematic uploads.
 
@@ -27,13 +27,19 @@ Travtools is an unofficial fan tool for a private campaign. It is not affiliated
 | # | Name | Goal | Status |
 |---|------|------|--------|
 | 0 | Foundation | App live in production, test infra in place | Complete |
-| 1 | Party Roster | Roster is production-ready: import, display, edit, sync | In Progress |
-| 2 | Inventory Manager | Inventory is production-ready: add/edit, filters, totals, sync | In Progress |
-| 3 | Ship Schematic Viewer | Ships is production-ready: canonical SVGs, custom upload, annotations, sync | In Progress |
-| 4 | Trade Ledger | Trade is production-ready: full deal arc, profit calc, sync | In Progress |
-| 5 | Dice & Reference | Session-critical tools: dice roller + quick rulebook lookups | In Progress |
+| 1 | Party Roster | Roster is production-ready: import, display, edit, sync | Mostly Complete |
+| 2 | Inventory Manager | Inventory is production-ready: add/edit, filters, totals, sync | Mostly Complete |
+| 3 | Ship Schematic Viewer | Ships is production-ready: canonical SVGs, custom upload, annotations, sync | Mostly Complete |
+| 4 | Trade Ledger | Trade is production-ready: full deal arc, profit calc, sync | Mostly Complete |
+| 5 | Dice & Reference | Session-critical tools: dice roller + quick rulebook lookups | Complete |
 | 6 | Polish & Resilience | Mobile layout, error handling, offline resilience | In Progress |
-| 7 | Depth | Trade route mapping, cargo generator, character advancement | Backlog |
+| 7 | Depth | Campaign-depth additions: combat, journal, analytics, richer refs | In Progress |
+| 8 | Arbitrary Dice Notation Roller | Free-form dice expressions in global tools | Implemented |
+| 9 | Ship Builder | Guided spacecraft construction and Fleet integration | In Progress |
+| 10 | Party Treasury & Loot Shares | Shared credits ledger and split-loot workflow | Backlog |
+| 11 | Full Trade Mini-Game | Complete passenger, freight, and speculative-trade workflow | Backlog |
+| 12 | Ammunition Tracking | Persistent weapon ammo and magazine tracking | Backlog |
+| 13 | Quick Character Generator | Fast NPC generation from Core Rules quick-character tables | Shipped as NPC route |
 
 ---
 
@@ -311,7 +317,7 @@ Questions to answer:
 - [ ] Test: upload a custom image, place 3 annotations, verify they persist after page reload
 - [ ] Test: remove an annotation; verify removal syncs to a second tab
 - [x] Decide and implement: canonical ships support annotations for cabin assignments, damage, and table notes
-- [ ] Storage bucket: confirm `ship-schematics` bucket is Public and custom schematic upload/read works end-to-end
+- [x] Storage bucket: `ship-schematics` bucket created (Public, anon RLS, JPEG/PNG/GIF/WebP/SVG allowed); provisioning added to `supabase/schema.sql`
 
 **UX improvements**
 - [x] Annotation tooltip: hovering an annotation dot shows the label without cluttering the view; clicking selects it for deletion
@@ -469,7 +475,7 @@ Questions to answer:
 
 **Performance**
 - [x] Lazy-load routes so the initial bundle is smaller
-- [x] Resolve or consciously accept the current Vite chunk-size warning after production builds
+- [x] Consciously accept the current Vite chunk-size warning for now; `PartyRoster` and the main bundle remain known optimisation targets
 - [ ] Verify Lighthouse score ≥ 80 on mobile
 
 **Code quality**
@@ -562,6 +568,10 @@ Questions to answer:
 
 **Goal:** The standalone dice roller accepts any standard dice notation string (not just 2D6/boon/bane/flux) and evaluates it correctly, showing a full breakdown of individual dice.
 
+### Status: Implemented
+
+The global tools drawer now includes a notation roller powered by `@dice-roller/rpg-dice-roller`, with inline parse errors, optional Roll Log persistence, and a collapsible syntax reference. It is implemented as a section in the existing tools drawer rather than a separate tab.
+
 ### Background
 
 The current roller in `GlobalToolsDrawer.tsx` covers the Traveller-specific mechanics (2D6, boon, bane, flux, trade goods rolls). Players occasionally need ad hoc rolls — damage expressions like `3D6+2`, percentile rolls `D100`, skill checks for other systems, or complex expressions like `(2D6+3)*2`. Rather than hard-coding every variant, the `@dice-roller/rpg-dice-roller` npm package (documentation: https://dice-roller.github.io/documentation/guide/notation/) provides a full notation parser and evaluator.
@@ -588,13 +598,13 @@ The current roller in `GlobalToolsDrawer.tsx` covers the Traveller-specific mech
 ### Tasks
 
 **Implementation**
-- [ ] Install `@dice-roller/rpg-dice-roller` (MIT licence)
-- [ ] Add a **NOTATION** tab to the standalone dice roller section in `GlobalToolsDrawer.tsx` alongside the existing 2D6 / Boon-Bane / Flux / Trade tabs
-- [ ] Render a single text input field accepting free-form notation (placeholder: `3d6+2`, `2d20kh1`, `d%`)
-- [ ] Parse and evaluate with the library; surface parse errors inline (amber warning, no crash)
-- [ ] Display results using the existing roll-result visual language: individual die values in brackets, modifier(s), total (e.g. `[3][5][2] + 2 = 12`)
-- [ ] Optional "Save to Roll Log" toggle — if enabled, write the notation string and total to `roll_log` (caller-supplied label or the notation string itself)
-- [ ] Show the dice notation syntax reference in a collapsible HELP panel below the input (the notation table above)
+- [x] Install `@dice-roller/rpg-dice-roller` (MIT licence)
+- [x] Add a **NOTATION** section to the standalone dice roller area in `GlobalToolsDrawer.tsx`
+- [x] Render a single text input field accepting free-form notation (placeholder: `3d6+2`, `2d20kh1`, `d%`)
+- [x] Parse and evaluate with the library; surface parse errors inline (amber warning, no crash)
+- [x] Display results using the existing roll-result visual language
+- [x] Optional "Save to Roll Log" toggle — if enabled, write the notation string and total to `roll_log`
+- [x] Show the dice notation syntax reference in a collapsible HELP panel below the input
 
 **Tests**
 - [ ] Unit: `3d6` produces three values in [1,6], total in [3,18]
@@ -602,8 +612,8 @@ The current roller in `GlobalToolsDrawer.tsx` covers the Traveller-specific mech
 - [ ] Unit: `2d6kh1` keeps exactly one die (the higher)
 - [ ] Unit: `dF` produces values in {-1, 0, 1}
 - [ ] Unit: parse error on invalid notation returns an error object, does not throw
-- [ ] Component: notation input renders, submit calls roll, result panel appears
-- [ ] Component: invalid notation shows inline error, does not crash
+- [x] Component: notation input renders, submit calls roll, result panel appears
+- [x] Component: invalid notation shows inline error, does not crash
 
 **Non-goals for M8**
 The Traveller-specific 2D6 tab and boon/bane/flux mechanics stay exactly as they are. The notation roller is additive only.
@@ -614,11 +624,42 @@ The Traveller-specific 2D6 tab and boon/bane/flux mechanics stay exactly as they
 
 **Goal:** Players can design a spacecraft from scratch following the 13-step Core Rules construction process (pp.176–187). The builder tracks tonnage used, running cost, power balance, and produces a shareable ship design saved to Supabase.
 
+### Status: In Progress
+
+**Completed:**
+- [x] `ship_designs` Supabase table created with `diagram_url` column and anon RLS policy
+- [x] `ship-schematics` Storage bucket is wired for custom schematic and Shipyard diagram uploads; provisioning block is in `supabase/schema.sql`
+- [x] `ShipsHub` component routes Fleet (ShipViewer) and Shipyard (ShipBuilder) under a single SHIPS nav tab
+- [x] Ship Builder implemented as a 9-step guided wizard (Foundation → Protection → Drives → Power → Bridge → Weapons → Systems → Quarters → Review)
+- [x] Four canonical presets in `src/data/shipPresets.ts`: Type S Scout, Type A Free Trader, Type A2 Far Trader, Seeker Mining Ship
+- [x] `computeShipSummary()` pure function in `src/lib/shipBuilder.ts` computes all totals, power balance, cargo, warnings
+- [x] Running amber stats bar: Hull / Used / Remaining / Power / Cost / Maint; power deficit highlights when negative
+- [x] Stepper controls (−/value/+) with hidden browser spinners
+- [x] Designs persist to Supabase; new designs switch to detail view on save; edit stays in detail view
+- [x] Design detail view: stat block, diagram upload, ADD TO FLEET, EDIT, JSON export, DELETE
+- [x] Diagram upload to `ship-schematics` Storage with `contentType: file.type` for correct MIME handling
+- [x] Upload errors shown inline in DesignDetail; upload failures no longer silent
+- [x] Fleet integration: ADD TO FLEET inserts into `ships` table with computed specs from `designToFleetSpecs()`
+- [x] Fleet ship name editing: click ship name → inline input → SAVE/cancel; `selectShip()` resets edit state
+- [x] Fleet ship image replacement for custom ships (IMAGE button in header)
+- [x] Fleet ship specs panel: view and edit all ship specs fields inline
+- [x] CSS `input-base` alias fixed to prevent white browser-default input backgrounds
+
+**Open: Ship Builder Hardening**
+- [x] **Completed design detail** (Shipyard): redesign `DesignDetail` to look like a technical schematic document — blueprint-style layout with instrument-panel stat readouts, prominent diagram area, and systems manifest
+- [x] **Fleet ship detail** (Fleet): redesign the selected-ship view to be a proper editable record — two-column layout with editable specs on the left and the annotatable schematic on the right; fields always visible and editable without a separate EDIT mode
+- [x] E2E smoke covers Shipyard create/save/detail/add-to-fleet flow with mocked `ship_designs`
+- [ ] Fix Supabase Storage policy provisioning in `supabase/schema.sql`: `CREATE POLICY IF NOT EXISTS` is not valid Postgres syntax; replace with `DROP POLICY IF EXISTS` + `CREATE POLICY` or a guarded `DO` block
+- [ ] Fix over-tonnage handling: `computeShipSummary()` should preserve negative remaining cargo/tonnage or emit a warning instead of clamping cargo to `0`
+- [ ] Apply hull `hpMult` when calculating HP, especially for dispersed structure hulls
+- [ ] Surface `ADD TO FLEET` insert failures inline instead of always showing `IN FLEET`
+- [ ] Decide whether untracked local `data/*.json` and `docs/characters/*.xlsx` campaign files should be committed or ignored
+
 ### Background
 
 Spacecraft Construction (p.176) is a 13-step process. Each step consumes hull tonnage and adds to total cost. Two running tallies must always be visible: **Tonnage Remaining** and **Power Balance** (generated minus consumed). The design is illegal if either goes negative.
 
-The builder is a new `/shipbuilder` route. It is read/write-shared via a new `ship_designs` Supabase table, so all players can see each other's designs live. Completed designs link through to the existing Ship Viewer for annotation.
+The builder's Fleet (ShipViewer) and Shipyard (ShipBuilder) now share the `/ships` tab via `ShipsHub`. Completed designs can be added directly to the Fleet from the Shipyard.
 
 ### Design Checklist (source: p.177)
 
@@ -667,41 +708,52 @@ Step 1 → Step 2 → Step 3 → Step 4 → Step 5 → Step 6 → Step 7 → Ste
 
 ### Tasks
 
-**Schema**
-- [ ] Create `ship_designs` Supabase table: `id, name, tonnage, hull_config, tech_level, components jsonb, notes text, created_at, updated_at`
-- [ ] Add TypeScript types: `ShipDesign`, `ShipComponent`, `ShipDesignSummary` (computed: tonnage used, tonnage remaining, total cost, power generated, power consumed, power balance, maintenance/month, HP, hardpoints)
+Note: the historical 13-step checklist above is retained as source context. The implemented builder consolidates those steps into Foundation, Protection, Drives, Power, Bridge, Weapons, Systems, Quarters, and Review while preserving the running tonnage/power/cost checks.
 
-**Step forms (one collapsible section per step)**
-- [ ] **Step 1 — Hull**: tonnage input (min 10), hull config selector (Standard/Streamlined/Dispersed), armour type + protection points with TL gate, show hull cost + HP
-- [ ] **Step 2 — Drives**: M-drive rating (0–9) and J-drive rating (0–6) selectors; show tonnage consumed and TL requirements; auto-flag if rating exceeds TL
-- [ ] **Step 3 — Power Plant**: fusion type selector (TL8/12/15); auto-calculate minimum tons needed to meet power requirements; show power generated, power required breakdown
-- [ ] **Step 4 — Fuel**: show calculated required fuel (jump + PP); allow adding extra PP fuel for extended range; read-only derived from drive selections
-- [ ] **Step 5 — Bridge**: auto-select size from hull tonnage; show tonnage and cost; cockpit option appears only if tonnage ≤ 50
-- [ ] **Step 6 — Computer**: model selector with TL gate; optional /bis checkbox; show cost
-- [ ] **Step 7 — Sensors**: tier selector; show DM, Power, Tons, Cost
-- [ ] **Step 8 — Weapons**: hardpoint count shown (hull / 100, firmpoints for <100t); add turret/firmpoint entries with mount type and up to 3 weapons each; show Power consumed
-- [ ] **Step 9 — Optional Systems**: multi-select list of optional equipment with quantity/tonnage inputs and derived cost; auto-calculate crew implications where applicable
-- [ ] **Step 10 — Crew**: derived automatically from drive, turret, passenger, and tonnage selections; display as read-only requirements table with monthly salary total
-- [ ] **Step 11 — Staterooms**: stateroom count (standard/high/luxury), low berths; show tonnage and cost; warn if insufficient staterooms for required crew
-- [ ] **Step 12 — Cargo**: derived automatically as hull − all allocated tonnage; read-only
-- [ ] **Step 13 — Finalise**: summary panel showing all totals; monthly maintenance; construction time; SAVE button writes to Supabase
+**Schema**
+- [x] Create `ship_designs` Supabase table with `id`, `name`, `design jsonb`, `summary jsonb`, `diagram_url`, `created_at`, and `updated_at`
+- [x] Add TypeScript types: `ShipDesignState`, `ShipDesignSummary`, `ShipDesign`, `MountConfig`, and `OptionalSystemEntry`
+- [x] Add `specs jsonb` to `ships` for Fleet records created from Shipyard designs
+- [x] Add `ship-schematics` bucket provisioning block to `supabase/schema.sql`
+- [ ] Correct `ship-schematics` policy SQL so a fresh Supabase SQL-editor run succeeds
+
+**Guided wizard**
+- [x] **Foundation**: name, TL, tonnage, hull config, and canonical preset loading
+- [x] **Protection**: armour type and protection points with TL warnings
+- [x] **Drives**: M-drive and J-drive selectors with TL warnings, tonnage, fuel, and power impact
+- [x] **Power**: fusion plant type, power output, PP fuel endurance, generated/used power display
+- [x] **Bridge**: bridge/cockpit selection, computer model, `/bis`, sensors, and software
+- [x] **Weapons**: hardpoint/firmpoint count, mount entries, weapon slots, power, and cost
+- [x] **Systems**: optional systems with quantities, derived tonnage, power, and cost
+- [x] **Quarters**: standard/high/luxury staterooms, low berths, common area, and crew implications
+- [x] **Review**: summary panel, monthly maintenance, construction time, save/update, diagram upload after save
 
 **Running display (persistent header while building)**
-- [ ] Amber stats bar at top of builder: `Hull: 200t | Used: 143t | Remaining: 57t | Power: +12 | Cost: MCr45.3 | Maint: Cr3,775/mo`
-- [ ] Red highlight on Remaining or Power if negative
+- [x] Amber stats bar at top of builder: used tonnage, cargo, power, cost, HP, hardpoints, and crew
+- [x] Red/amber highlight for power deficit
+- [ ] Red highlight for over-tonnage designs after negative cargo handling is fixed
 
 **UX**
-- [ ] Designs list sidebar (like Ship Viewer): load saved designs, create new, delete
-- [ ] Realtime sync: another player loading the same design sees changes within ~1s
-- [ ] "Compare to canonical" button: opens the Type-S / Type-A stats in a side panel for reference
-- [ ] Export design as a text summary (copy to clipboard)
+- [x] Designs list sidebar: load saved designs, create new, edit, delete
+- [x] Designs persist to Supabase and refresh through a realtime `ship_designs` subscription
+- [x] Export design as JSON
+- [x] Add completed design to Fleet with computed technical specs
+- [x] Fleet detail supports inline ship name, specs, notes, annotations, and custom image replacement
+- [ ] Manual two-browser realtime sync check for Shipyard design save/update/delete
+- [ ] Optional: compare to canonical side panel for Type-S / Type-A / Type-A2 / Seeker stats
+- [ ] Optional: export design as a human-readable text summary or copy-to-clipboard stat block
 
 **Tests**
-- [ ] Unit: `computeShipSummary()` — hull cost, drive tonnage, fuel requirements, power balance, HP, hardpoints, cargo, maintenance for a canonical Type-S Scout/Courier (100t, J2, M2, PP TL12) match expected values
-- [ ] Unit: TL gate validation — M-drive rating 2 requires TL10; lower TL returns an error
-- [ ] Unit: power balance — excess power is positive; deficit is negative
-- [ ] Unit: cargo = hull − Σ components; negative cargo is an error
-- [ ] Component: step form renders, input change updates running totals display
+- [x] Unit: `computeShipSummary()` — Type-S Scout cargo, fuel, HP, hardpoints, power generated, TL warnings, crew
+- [x] Unit: `computeShipSummary()` — Type-A Free Trader cargo and fuel
+- [x] Unit: validation warnings for dispersed armour and power deficit
+- [x] Unit: no-J-drive design has no astrogator
+- [x] E2E smoke: Shipyard create/save/detail/add-to-fleet flow with mocked `ship_designs`
+- [ ] Unit: TL gate validation — low-TL M-drive/J-drive/power plant/sensors produce expected warnings
+- [ ] Unit: dispersed hull applies `hpMult`
+- [ ] Unit: over-tonnage design produces negative remaining cargo or a warning, not silent clamp to zero
+- [ ] Component: `ADD TO FLEET` failure surfaces visibly and does not show `IN FLEET`
+- [ ] Component: step input changes update the running totals display
 
 ---
 
@@ -1043,6 +1095,10 @@ When a character is first given an ammo state (or a new weapon is added), `curre
 
 **Goal:** The GM can instantly generate a plausible NPC using the Quick Characters tables from Core Rulebook pp.91–92, then save the result directly to the party roster.
 
+### Status: Shipped as Standalone NPC Route
+
+The implementation is a dedicated `/npc` module backed by an `npcs` Supabase table rather than a roster modal. It uses `src/data/quickCharacters.ts`, `src/lib/quickCharGen.ts`, generated species/name data, saved NPC records, realtime updates, and NPC roll support. A future pass can add "Save to Roster" if generated NPCs should become full party characters.
+
 ### Background
 
 Pages 91–92 of the 2022 Core Rulebook define a three-table rapid NPC generation system:
@@ -1050,11 +1106,11 @@ Pages 91–92 of the 2022 Core Rulebook define a three-table rapid NPC generatio
 - **Character Quirks** (D66 → 36 personality traits): Loyal, In debt to criminals, Spying on the Travellers, etc.
 - **Experience Levels** (8 templates): Green/Average/Experienced/Elite × Combatant/Non-combatant — each specifying a skill list, average skill level, and characteristic bonuses (+0 to +1/+2/+3)
 
-Characteristics (STR/DEX/END/INT/EDU/SOC) are generated with 2D6 each, then the experience level's bonuses are applied to the three highest results. The generated character can be saved to Supabase and immediately participates in the app's roster, rolls, and combat tracker.
+Characteristics (STR/DEX/END/INT/EDU/SOC) are generated with 2D6 each, then the experience level's bonuses are applied to the three highest results. The original milestone envisioned saving generated characters directly to the party roster; the shipped version saves them as standalone NPC records with NPC roll support, and roster promotion is deferred.
 
-### Data additions needed
+### Implemented Data Additions
 
-New file: `src/data/quickCharacters.ts`
+File: `src/data/quickCharacters.ts`
 
 ```typescript
 export const ALLIES_ENEMIES: { d66: number; archetype: string }[]  // 36 entries, D66 11–66
@@ -1084,7 +1140,7 @@ Experience level templates (source: p.92):
 | Elite Non-combatant | Admin, Drive/Flyer, Investigate, Profession | 3 | +1, +2, +3 |
 | Elite Combatant | Drive/Flyer, Gun Combat, Heavy Weapons, Melee, Recon, Tactics | 3 | +1, +2, +3 |
 
-### New library file: `src/lib/quickCharGen.ts`
+### Implemented Library File: `src/lib/quickCharGen.ts`
 
 Pure functions, unit-testable with an injectable roller:
 
@@ -1098,29 +1154,26 @@ export function generateQuickCharacter(opts?: { roller? }): GeneratedNPC
 
 ### Tasks
 
-**Data & logic**
-- [ ] Encode all three tables into `src/data/quickCharacters.ts` (36 + 36 + 8 entries)
-- [ ] Extract `rollD66()` from `GlobalToolsDrawer.tsx` into `src/lib/dice.ts` and update the drawer import
-- [ ] Write `src/lib/quickCharGen.ts` with `generateCharacteristics()`, `applyExperienceBonuses()`, `generateQuickCharacter()`
+**Shipped standalone route**
+- [x] Encode quick-character data in `src/data/quickCharacters.ts`
+- [x] Extract `rollD66()` into `src/lib/dice.ts` and update Global Tools to import it
+- [x] Write `src/lib/quickCharGen.ts` with `generateCharacteristics()`, `applyExperienceBonuses()`, and `generateQuickCharacter()`
+- [x] Add `/npc` route with generated NPC display, reroll controls, editable names/notes, saved NPC list, and NPC roll support
+- [x] Add `npcs` Supabase table with anon RLS policy
+- [x] Saved NPCs persist to Supabase and update through realtime subscriptions
 
-**UI**
-- [ ] Add **GENERATE NPC** button to the Party Roster header alongside ADD CHARACTER and IMPORT XLSX
-- [ ] Create `src/components/roster/QuickCharGenModal.tsx` — modal with three roll rows (Archetype, Quirk, Experience Level), each with a ROLL button and result display
-- [ ] Show generated UPP and skill list as read-only output in the modal
-- [ ] Provide editable Name field (pre-filled with the archetype)
-- [ ] REROLL ALL button regenerates everything; individual REROLL buttons per row
-- [ ] SAVE TO ROSTER inserts character via Supabase; quirk → `notes`, archetype → `career`; closes modal on success
-- [ ] Show inline error if name is blank; show Supabase error banner on insert failure
+**Deferred roster integration**
+- [ ] Decide whether generated NPCs should remain in the standalone `npcs` table or gain a "Save to Roster" promotion flow
+- [ ] If promotion is needed, map NPC fields into the full `characters` table shape and preserve archetype/quirk provenance
+- [ ] If promotion is needed, add tests for `supabase.from('characters').insert(...)` with the mapped character payload
 
-**Tests (write before implementing)**
-- [ ] Unit: `generateCharacteristics()` — all 6 values in [2, 12]
-- [ ] Unit: `applyExperienceBonuses([7,8,5,6,9,4], [1,2])` — bonuses added to the two highest stats (9 and 8), not the lowest
-- [ ] Unit: `generateQuickCharacter()` — archetype is a valid ALLIES_ENEMIES entry, skills match the drawn experience level template
-- [ ] Unit: D66 lookup — all 36 ALLIES_ENEMIES entries covered without gaps; same for CHARACTER_QUIRKS
-- [ ] Component: modal renders with three roll rows; REROLL ALL updates all displayed values; name field is editable
-- [ ] Component: SAVE TO ROSTER is blocked and shows warning when name is empty
-- [ ] Component: SAVE TO ROSTER calls `supabase.from('characters').insert(...)` with correct shape (mocked)
-- [ ] `npm run lint` / `npm test` / `npm run build`
+**Tests**
+- [x] Unit: `generateCharacteristics()` — all 6 values in [2, 12]
+- [x] Unit: `applyExperienceBonuses()` — bonuses are added to the highest stats, not the lowest
+- [x] Unit: `generateQuickCharacter()` — archetype and skills match valid table entries
+- [x] Unit: D66 table coverage for quick-character tables
+- [x] Quick-character unit coverage included in the current 170-test Vitest suite
+- [x] `npm run lint` / `npm test` / `npm run build` pass locally as of repo-state review
 
 ### Milestone 13 Retrospective
 
