@@ -1,4 +1,4 @@
-import type { FocusEventHandler, KeyboardEventHandler } from 'react';
+import type { FocusEventHandler, KeyboardEventHandler, ReactNode } from 'react';
 import { Minus, Plus } from 'lucide-react';
 
 type NumberStepperProps = {
@@ -16,6 +16,15 @@ type NumberStepperProps = {
   buttonClassName?: string;
   onKeyDown?: KeyboardEventHandler<HTMLInputElement>;
   onBlur?: FocusEventHandler<HTMLInputElement>;
+};
+
+type StepControlProps = {
+  label: string;
+  title: string;
+  disabled: boolean;
+  className: string;
+  onPress: () => void;
+  children: ReactNode;
 };
 
 function asNumber(value: string | number | null | undefined): number | null {
@@ -37,6 +46,32 @@ function formatStepValue(value: number, step: number | string): string {
   const places = decimals(step);
   if (places === 0) return String(Math.trunc(value));
   return Number(value.toFixed(places)).toString();
+}
+
+function StepControl({ label, title, disabled, className, onPress, children }: StepControlProps) {
+  function activate() {
+    if (!disabled) onPress();
+  }
+
+  return (
+    <span
+      role="button"
+      tabIndex={disabled ? -1 : 0}
+      aria-label={label}
+      title={title}
+      aria-disabled={disabled}
+      onClick={activate}
+      onKeyDown={e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          activate();
+        }
+      }}
+      className={`${className} ${disabled ? 'opacity-35 cursor-not-allowed' : 'cursor-pointer'}`}
+    >
+      {children}
+    </span>
+  );
 }
 
 export default function NumberStepper({
@@ -72,15 +107,15 @@ export default function NumberStepper({
 
   return (
     <div className={`grid grid-cols-[1.75rem_minmax(0,1fr)_1.75rem] ${className}`}>
-      <button
-        type="button"
-        aria-label={`Decrease ${ariaLabel}`}
+      <StepControl
+        label="Decrease value"
+        title={`Decrease ${ariaLabel}`}
         disabled={!canDecrease}
-        onClick={() => stepBy(-1)}
+        onPress={() => stepBy(-1)}
         className={`border border-steel bg-panel text-body hover:border-amber hover:text-amber disabled:opacity-35 disabled:cursor-not-allowed flex items-center justify-center ${buttonClassName}`}
       >
         <Minus size={11} />
-      </button>
+      </StepControl>
       <input
         id={id}
         aria-label={ariaLabel}
@@ -94,15 +129,15 @@ export default function NumberStepper({
         onKeyDown={onKeyDown}
         onBlur={onBlur}
       />
-      <button
-        type="button"
-        aria-label={`Increase ${ariaLabel}`}
+      <StepControl
+        label="Increase value"
+        title={`Increase ${ariaLabel}`}
         disabled={!canIncrease}
-        onClick={() => stepBy(1)}
+        onPress={() => stepBy(1)}
         className={`border border-steel bg-panel text-body hover:border-amber hover:text-amber disabled:opacity-35 disabled:cursor-not-allowed flex items-center justify-center ${buttonClassName}`}
       >
         <Plus size={11} />
-      </button>
+      </StepControl>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import GlobalToolsDrawer from '../components/tools/GlobalToolsDrawer';
@@ -24,15 +24,18 @@ describe('GlobalToolsDrawer', () => {
 
     expect(screen.getByText('MODIFIER')).toBeTruthy();
     const input = screen.getByLabelText('Standalone Modifier') as HTMLInputElement;
+    const stepper = input.closest('div');
+    expect(stepper).toBeTruthy();
+    const [decrease, increase] = within(stepper as HTMLElement).getAllByRole('button');
 
     expect(input.value).toBe('0');
-    fireEvent.click(screen.getByRole('button', { name: /Increase standalone modifier/i }));
+    fireEvent.click(increase);
     await waitFor(() => expect(input.value).toBe('1'));
-    fireEvent.click(screen.getByRole('button', { name: /Decrease standalone modifier/i }));
+    fireEvent.click(decrease);
     await waitFor(() => expect(input.value).toBe('0'));
 
     fireEvent.change(input, { target: { value: '' } });
-    fireEvent.click(screen.getByRole('button', { name: /Decrease standalone modifier/i }));
+    fireEvent.click(decrease);
     await waitFor(() => expect(input.value).toBe('-1'));
   });
 });

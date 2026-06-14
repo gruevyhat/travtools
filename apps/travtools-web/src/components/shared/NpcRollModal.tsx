@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { X, Plus, Minus } from 'lucide-react';
+import { X } from 'lucide-react';
 import { RollMode, fmtDM, DIFFICULTIES } from '../../lib/dice';
 import { CharStat, STAT_LABELS, statDM, toHex } from '../../lib/traveller';
 import { useSupabase } from '../../lib/supabaseContext';
+import NumberStepper from './NumberStepper';
 
 export interface NpcRollTarget {
   label: string;
@@ -131,21 +132,13 @@ export default function NpcRollModal({ npcName, statValues, target, onClose }: P
             {/* Bonus DM */}
             <div className="space-y-1">
               <label className="label">Modifier</label>
-              <div className="grid grid-cols-[1.75rem_minmax(0,1fr)_1.75rem]">
-                <button type="button" aria-label="Decrease modifier"
-                  onClick={() => setBonusInput(s => String(parseBonus(s) - 1))}
-                  className="border border-steel bg-panel text-body hover:border-amber hover:text-amber flex items-center justify-center">
-                  <Minus size={11} />
-                </button>
-                <input className="input rounded-none text-center text-xs" type="text"
-                  inputMode="numeric" placeholder="0"
-                  value={bonusInput} onChange={e => setBonusInput(e.target.value)} />
-                <button type="button" aria-label="Increase modifier"
-                  onClick={() => setBonusInput(s => String(parseBonus(s) + 1))}
-                  className="border border-steel bg-panel text-body hover:border-amber hover:text-amber flex items-center justify-center">
-                  <Plus size={11} />
-                </button>
-              </div>
+              <NumberStepper
+                ariaLabel="modifier"
+                value={bonusInput}
+                onChange={setBonusInput}
+                placeholder="0"
+                inputClassName="input text-xs"
+              />
             </div>
           </div>
 

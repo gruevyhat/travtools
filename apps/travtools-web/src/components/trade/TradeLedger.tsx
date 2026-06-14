@@ -13,6 +13,7 @@ import {
 import { downloadCsv, parseCsvRows } from '../../lib/csv';
 import { TRADE_GOODS, searchTradeGoods, formatBasePrice } from '../../data/tradeGoods';
 import { PassengersFreightPanel, TradeSessionPanel, type TradeDealDraft } from './TradeMiniGame';
+import NumberStepper from '../shared/NumberStepper';
 
 type Status = 'all' | 'active' | 'completed' | 'cancelled';
 type TradeTab = 'deals' | 'session' | 'traffic';
@@ -442,13 +443,13 @@ export default function TradeLedger() {
                   <input className="input" required value={form.item} onChange={e => setForm({ ...form, item: e.target.value })} />
                 </Field>
                 <Field name="Quantity">
-                  <input className="input" type="number" min={0} value={form.quantity} onChange={e => setForm({ ...form, quantity: Math.max(0, parseInt(e.target.value) || 0) })} />
+                  <NumberStepper ariaLabel="Quantity" min={0} value={form.quantity} onChange={value => setForm({ ...form, quantity: Math.max(0, parseInt(value, 10) || 0) })} />
                 </Field>
                 <Field name="Buy Price (Cr/unit)">
-                  <input className="input" type="number" step="0.01" value={form.buy_price ?? ''} onChange={e => setForm({ ...form, buy_price: e.target.value ? parseFloat(e.target.value) : null })} />
+                  <NumberStepper ariaLabel="Buy Price (Cr/unit)" step="0.01" value={form.buy_price ?? ''} onChange={value => setForm({ ...form, buy_price: value ? parseFloat(value) : null })} />
                 </Field>
                 <Field name="Sell Price (Cr/unit)">
-                  <input className="input" type="number" step="0.01" value={form.sell_price ?? ''} onChange={e => setForm({ ...form, sell_price: e.target.value ? parseFloat(e.target.value) : null })} />
+                  <NumberStepper ariaLabel="Sell Price (Cr/unit)" step="0.01" value={form.sell_price ?? ''} onChange={value => setForm({ ...form, sell_price: value ? parseFloat(value) : null })} />
                 </Field>
                 <Field name="World Bought">
                   <input className="input" value={form.world_bought ?? ''} onChange={e => setForm({ ...form, world_bought: e.target.value || null })} />

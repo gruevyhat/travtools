@@ -63,7 +63,7 @@ const smokeCharacter = {
   rank: 'Detached Duty',
   homeworld: 'Regina',
   skills: [{ name: 'Pilot', level: 1 }],
-  psionic_talents: [],
+  psionic_talents: [{ name: 'Awareness', level: 1 }],
   weapons: [{ name: 'Unarmed', skill: 'Melee (Unarmed)', range: 'Melee', damage: '1D+STR DM', traits: '' }],
   notes: null,
   created_at: new Date(0).toISOString(),
@@ -365,6 +365,24 @@ async function checkRosterInteractions(browser, baseUrl) {
   }
   await customRollPanel.getByRole('button', { name: 'ROLL 2D6' }).click();
   await customRollPanel.getByText('Modifier +2', { exact: false }).waitFor({ state: 'visible', timeout: 5_000 });
+
+  await page.keyboard.press('Escape');
+
+  await desktopRoster.getByRole('button', { name: /Awareness/i }).click();
+  const psiRollPanel = page.locator('.fixed .panel');
+  await psiRollPanel.getByLabel('PSI Cost').fill('3');
+  const psiPreviewText = await psiRollPanel.innerText({ timeout: 5_000 });
+  if (!psiPreviewText.includes('after 9/12')) {
+    throw new Error(`PSI cost preview did not show expected spend:\n${psiPreviewText}`);
+  }
+  await psiRollPanel.getByRole('button', { name: 'ROLL 2D6' }).click();
+  await psiRollPanel.getByText('PSI cost 3 spent', { exact: false }).waitFor({ state: 'visible', timeout: 5_000 });
+  await page.keyboard.press('Escape');
+  const rosterAfterPsi = await desktopRoster.innerText({ timeout: 5_000 });
+  if (!rosterAfterPsi.includes('9/12')) {
+    throw new Error(`Psionic talent use did not spend PSI:\n${rosterAfterPsi}`);
+  }
+
   await page.screenshot({ path: new URL('roster.png', outputDir).pathname, fullPage: false });
   await context.close();
 

@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { BookOpen, Check, ChevronDown, ChevronUp, Dices, Minus, Plus, X } from 'lucide-react';
+import { BookOpen, Check, ChevronDown, ChevronUp, Dices, X } from 'lucide-react';
 import { DiceRoller } from '@dice-roller/rpg-dice-roller';
 import { useSupabase } from '../../lib/supabaseContext';
 import { DIFFICULTIES, fmtDM, rollD66, rollFlux, RollMode, rollTravellerCheck, TravellerRollResult, FluxRollResult } from '../../lib/dice';
 import { TRADE_GOODS, TradeGood } from '../../data/tradeGoods';
 import { lookupModifiedPrice, rollTonsExpr } from '../../data/modifiedPrice';
+import NumberStepper from '../shared/NumberStepper';
 
 const diceRoller = new DiceRoller();
 
@@ -96,13 +97,6 @@ export default function GlobalToolsDrawer({ open, onClose }: GlobalToolsDrawerPr
     setSaved(false);
     setErrorMessage(null);
     saveResult(nextResult);
-  }
-
-  function adjustModifier(delta: number) {
-    setModifier(previous => {
-      const parsed = parseInt(previous, 10);
-      return String((Number.isNaN(parsed) ? 0 : parsed) + delta);
-    });
   }
 
   function doRollFlux() {
@@ -222,33 +216,12 @@ export default function GlobalToolsDrawer({ open, onClose }: GlobalToolsDrawerPr
               <div className="grid grid-cols-2 gap-3">
                 <div className="block space-y-1">
                   <label className="label" htmlFor="standalone-modifier">MODIFIER</label>
-                  <div className="grid grid-cols-[2rem_minmax(0,1fr)_2rem]">
-                    <button
-                      type="button"
-                      aria-label="Decrease standalone modifier"
-                      onClick={() => adjustModifier(-1)}
-                      className="border border-steel bg-panel text-body hover:border-amber hover:text-amber flex items-center justify-center"
-                    >
-                      <Minus size={12} />
-                    </button>
-                    <input
-                      id="standalone-modifier"
-                      aria-label="Standalone Modifier"
-                      className="input rounded-none text-center"
-                      type="text"
-                      inputMode="numeric"
-                      value={modifier}
-                      onChange={e => setModifier(e.target.value)}
-                    />
-                    <button
-                      type="button"
-                      aria-label="Increase standalone modifier"
-                      onClick={() => adjustModifier(1)}
-                      className="border border-steel bg-panel text-body hover:border-amber hover:text-amber flex items-center justify-center"
-                    >
-                      <Plus size={12} />
-                    </button>
-                  </div>
+                  <NumberStepper
+                    id="standalone-modifier"
+                    ariaLabel="Standalone Modifier"
+                    value={modifier}
+                    onChange={setModifier}
+                  />
                 </div>
                 <label className="block space-y-1">
                   <span className="label">DIFFICULTY</span>
@@ -343,13 +316,11 @@ export default function GlobalToolsDrawer({ open, onClose }: GlobalToolsDrawerPr
               <div className="grid grid-cols-2 gap-3">
                 <label className="block space-y-1">
                   <span className="label">PURCHASE DM</span>
-                  <input className="input text-xs" type="text" inputMode="numeric"
-                    value={purchaseDMInput} onChange={e => setPurchaseDMInput(e.target.value)} />
+                  <NumberStepper ariaLabel="Purchase DM" value={purchaseDMInput} onChange={setPurchaseDMInput} inputClassName="input text-xs" />
                 </label>
                 <label className="block space-y-1">
                   <span className="label">SALE DM</span>
-                  <input className="input text-xs" type="text" inputMode="numeric"
-                    value={saleDMInput} onChange={e => setSaleDMInput(e.target.value)} />
+                  <NumberStepper ariaLabel="Sale DM" value={saleDMInput} onChange={setSaleDMInput} inputClassName="input text-xs" />
                 </label>
               </div>
 

@@ -19,6 +19,7 @@ import { parseXLSXCharacter } from '../../lib/parseXLSX';
 import { csvRow, downloadCsv } from '../../lib/csv';
 import { CORE_EQUIPMENT } from '../../data/equipment';
 import { fmtDM, DIFFICULTIES, RollMode } from '../../lib/dice';
+import NumberStepper from '../shared/NumberStepper';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -527,20 +528,27 @@ function RollModal({
   char,
   target: initialTarget,
   statValues,
+  psiCurrent,
+  psiMax,
   onClose,
   onSave,
   onSaveDamage,
+  onSpendPsi,
 }: {
   char: Character;
   target: RollTarget;
   statValues: Partial<Record<CharStat, number | null>>;
+  psiCurrent: number;
+  psiMax: number;
   onClose: () => void;
   onSave: (result: { d1: number; d2: number; charDM: number; skillLevel: number; bonusDM: number; total: number }, difficulty: number, label: string) => void;
   onSaveDamage?: (weaponName: string, rolls: number[], constant: number, strDM: number, effect: number, total: number) => void;
+  onSpendPsi?: (cost: number) => void;
 }) {
   const isWeapon = !!initialTarget.weapon;
   const isMelee = isWeapon && initialTarget.weapon!.range === 'Melee';
   const isInitiative = initialTarget.kind === 'initiative';
+  const isPsionic = initialTarget.isPsionic;
 
   const defaultCharKey = initialTarget.charKey ?? (isMelee ? 'str' : null);
 
@@ -549,9 +557,11 @@ function RollModal({
   const [label, setLabel] = useState(initialTarget.label);
   const [skillLevelInput] = useState(initialTarget.skillLevel === null ? 'None' : String(initialTarget.skillLevel));
   const [bonusDMInput, setBonusDMInput] = useState('');
+  const [psiCostInput, setPsiCostInput] = useState('');
   const [rollMode, setRollMode] = useState<RollMode>('normal');
   const [attackResult, setAttackResult] = useState<AttackResult | null>(null);
   const [damageResult, setDamageResult] = useState<DamageResult | null>(null);
+  const [lastPsiCostSpent, setLastPsiCostSpent] = useState<number | null>(null);
   const [saved, setSaved] = useState(false);
   const isCustom = initialTarget.isCustom === true;
 
@@ -565,6 +575,9 @@ function RollModal({
   const joatLevel = skillLevelIsNone && initialTarget.applyJackOfAllTrades ? knownSkillLevel(char, ['Jack-of-all-Trades', 'Jack of All Trades']) ?? 0 : 0;
   const skillLevel = isInitiative ? 0 : skillLevelIsNone ? -3 + joatLevel : parseIntegerInput(skillLevelInput);
   const bonusDM = parseIntegerInput(bonusDMInput);
+  const psiCost = Math.max(0, parseIntegerInput(psiCostInput));
+  const hasPsiPool = psiMax > 0;
+  const psiAfterCost = hasPsiPool ? Math.max(0, psiCurrent - psiCost) : 0;
   const availableStats = ALL_STATS.filter(k => statValue(k) !== null);
   const attackHit = attackResult !== null && attackResult.total >= difficulty;
   const skillSummary = skillLevelIsNone
@@ -577,11 +590,8 @@ function RollModal({
     return () => document.removeEventListener('keydown', handler);
   }, [onClose]);
 
-  function adjustBonusDM(delta: number) {
-    setBonusDMInput(previous => String(parseIntegerInput(previous) + delta));
-  }
-
   function rollAttack() {
+    const spentPsiCost = isPsionic ? psiCost : 0;
     const d6 = () => Math.ceil(Math.random() * 6);
     const rawDice = rollMode === 'normal' ? [d6(), d6()] : [d6(), d6(), d6()];
     const sorted = [...rawDice].sort((a, b) => a - b);
@@ -595,6 +605,13 @@ function RollModal({
     setDamageResult(null);
     setSaved(false);
     onSave({ d1, d2, charDM, skillLevel, bonusDM, total }, difficulty, label || 'Unknown');
+    if (spentPsiCost > 0 && onSpendPsi) {
+      onSpendPsi(spentPsiCost);
+      setLastPsiCostSpent(spentPsiCost);
+      setPsiCostInput('');
+    } else {
+      setLastPsiCostSpent(null);
+    }
     setSaved(true);
   }
 
@@ -666,34 +683,46 @@ function RollModal({
             )}
             <div className="space-y-1">
               <label className="label" htmlFor="roll-bonus-dm">Modifier</label>
-              <div className="grid grid-cols-[1.75rem_minmax(0,1fr)_1.75rem]">
-                <button
-                  type="button"
-                  aria-label="Decrease roll modifier"
-                  onClick={() => adjustBonusDM(-1)}
-                  className="border border-steel bg-panel text-body hover:border-amber hover:text-amber flex items-center justify-center"
-                >
-                  <Minus size={11} />
-                </button>
-                <input id="roll-bonus-dm" className="input rounded-none text-center text-xs" type="text" inputMode="numeric" pattern="[+-]?[0-9]*"
-                  placeholder="0"
-                  value={bonusDMInput}
-                  onChange={e => setBonusDMInput(e.target.value)} />
-                <button
-                  type="button"
-                  aria-label="Increase roll modifier"
-                  onClick={() => adjustBonusDM(1)}
-                  className="border border-steel bg-panel text-body hover:border-amber hover:text-amber flex items-center justify-center"
-                >
-                  <Plus size={11} />
-                </button>
-              </div>
+              <NumberStepper
+                id="roll-bonus-dm"
+                ariaLabel="roll modifier"
+                value={bonusDMInput}
+                onChange={setBonusDMInput}
+                placeholder="0"
+                inputClassName="input text-xs"
+              />
             </div>
           </div>
 
           {isCustom && (
             <div className="text-xs text-body/65 font-mono">
               Unknown skills use None: DM-3, plus Jack of All Trades if present.
+            </div>
+          )}
+
+          {isPsionic && (
+            <div className="flex items-center gap-2 flex-wrap border border-cyan-dim/40 px-2 py-1 text-xs font-mono">
+              <label className="text-[10px] uppercase tracking-wider text-cyan-trav" htmlFor="roll-psi-cost">PSI Cost</label>
+              <NumberStepper
+                id="roll-psi-cost"
+                ariaLabel="PSI Cost"
+                className="w-20"
+                inputClassName="input text-xs h-7 py-0 px-2"
+                min={0}
+                step={1}
+                placeholder="0"
+                disabled={!hasPsiPool}
+                value={psiCostInput}
+                onChange={setPsiCostInput}
+              />
+              <span className="text-body/60">PSI</span>
+              <span className="text-cyan-trav">{hasPsiPool ? `${psiCurrent}/${psiMax}` : '--'}</span>
+              {hasPsiPool && psiCost > 0 && (
+                <span className={psiCost > psiCurrent ? 'text-alert' : 'text-body/55'}>
+                  after {psiAfterCost}/{psiMax}
+                </span>
+              )}
+              {!hasPsiPool && <span className="text-alert text-[10px]">No PSI score</span>}
             </div>
           )}
 
@@ -773,7 +802,14 @@ function RollModal({
                   <span className="text-bright text-xs ml-2">Effect {fmtDM(effect)}</span>
                 </div>
               )}
-              {saved && !isWeapon && <div className="text-xs text-body/65">Logged to Roll Log</div>}
+              {saved && !isWeapon && (
+                <div className="text-xs text-body/65">
+                  Logged to Roll Log
+                  {lastPsiCostSpent !== null && (
+                    <span className="text-cyan-trav ml-2">PSI cost {lastPsiCostSpent} spent</span>
+                  )}
+                </div>
+              )}
 
               {isWeapon && attackHit && (
                 <div className="border-t border-steel/40 pt-2 space-y-2">
@@ -1076,6 +1112,13 @@ function CharDetailContent({
     setPsiInput('');
   }
 
+  function spendPsiCost(cost: number) {
+    const normalizedCost = Math.max(0, Math.trunc(cost));
+    if (normalizedCost <= 0 || psiMax <= 0) return;
+    setTrackingPsi(true);
+    onStatAdjust(char.id, { psi_cur: Math.max(0, psiCur - normalizedCost) });
+  }
+
   const profileSection = profileRows.length > 0 ? (
     <DetailSection title="PROFILE" className="order-1">
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-xs font-mono">
@@ -1242,11 +1285,16 @@ function CharDetailContent({
             </div>
           ) : (
             <div className="flex items-center gap-2">
-              <input type="number" min={1} placeholder="Damage…"
+              <NumberStepper
+                ariaLabel="Damage"
+                min={1}
+                placeholder="Damage..."
                 value={damageInput}
-                onChange={e => setDamageInput(e.target.value)}
+                onChange={setDamageInput}
                 onKeyDown={e => { if (e.key === 'Enter') applyDamage(); }}
-                className="input text-xs w-28 py-1" />
+                className="w-32"
+                inputClassName="input text-xs py-1"
+              />
               <button onClick={applyDamage} className="btn-danger text-xs py-1">APPLY</button>
               <span className="text-body/55 text-[10px] font-mono ml-1">END first, then STR or DEX</span>
             </div>
@@ -1282,11 +1330,16 @@ function CharDetailContent({
       {trackingPsi && hasPsionics && psiMax > 0 && (
         <div className="mt-3 space-y-2 border-t border-steel/40 pt-3">
           <div className="flex items-center gap-2">
-            <input type="number" min={1} placeholder="PSI cost…"
+            <NumberStepper
+              ariaLabel="PSI cost"
+              min={1}
+              placeholder="PSI cost..."
               value={psiInput}
-              onChange={e => setPsiInput(e.target.value)}
+              onChange={setPsiInput}
               onKeyDown={e => { if (e.key === 'Enter') applyPsiCost(); }}
-              className="input text-xs w-28 py-1" />
+              className="w-32"
+              inputClassName="input text-xs py-1"
+            />
             <button onClick={applyPsiCost} className="btn-steel text-xs py-1">SPEND</button>
           </div>
           <div className="flex items-center gap-4">
@@ -1317,9 +1370,12 @@ function CharDetailContent({
           char={char}
           target={rollTarget}
           statValues={effectiveStatValues}
+          psiCurrent={psiCur}
+          psiMax={psiMax}
           onClose={() => setRollTarget(null)}
           onSave={handleRollSave}
           onSaveDamage={handleDamageSave}
+          onSpendPsi={spendPsiCost}
         />
       )}
 
@@ -1988,8 +2044,14 @@ export default function PartyRoster() {
           <span>{label}</span>
           {val !== null && <span className="text-amber font-mono">{toHex(val)}</span>}
         </label>
-        <input id={inputId} className="input" type="number" min={0} max={15} value={val ?? ''}
-          onChange={e => setForm({ ...form, [key]: e.target.value ? parseInt(e.target.value) : null })} />
+        <NumberStepper
+          id={inputId}
+          ariaLabel={label}
+          min={0}
+          max={15}
+          value={val ?? ''}
+          onChange={value => setForm({ ...form, [key]: value ? parseInt(value, 10) : null })}
+        />
       </div>
     );
   };
@@ -2193,9 +2255,12 @@ export default function PartyRoster() {
                 { key: 'psi_cur', label: 'PSI Cur' },
               ].map(({ key, label }) => (
                 <Field key={key} name={label}>
-                  <input className="input" type="number" min={0}
+                  <NumberStepper
+                    ariaLabel={label}
+                    min={0}
                     value={(form[key as keyof CharForm] as number | null) ?? ''}
-                    onChange={e => setForm({ ...form, [key]: parseNullableNumber(e.target.value) })} />
+                    onChange={value => setForm({ ...form, [key]: parseNullableNumber(value) })}
+                  />
                 </Field>
               ))}
             </div>
@@ -2205,9 +2270,13 @@ export default function PartyRoster() {
             <div className="grid grid-cols-5 gap-2">
               {ALL_STATS.map(key => (
                 <Field key={key} name={STAT_LABELS[key]}>
-                  <input className="input" type="number" min={TEMP_MOD_MIN} max={TEMP_MOD_MAX}
+                  <NumberStepper
+                    ariaLabel={`${STAT_LABELS[key]} temporary modifier`}
+                    min={TEMP_MOD_MIN}
+                    max={TEMP_MOD_MAX}
                     value={normalizeTempMods(form.temp_mods)[key] ?? ''}
-                    onChange={e => updateTempMod(key, parseNullableNumber(e.target.value))} />
+                    onChange={value => updateTempMod(key, parseNullableNumber(value))}
+                  />
                 </Field>
               ))}
             </div>
@@ -2325,9 +2394,12 @@ export default function PartyRoster() {
             { key: 'total_debts', label: 'Total Debts (Cr)' },
           ].map(({ key, label }) => (
             <Field key={key} name={label}>
-              <input className="input" type="number" step="1"
+              <NumberStepper
+                ariaLabel={label}
+                step={1}
                 value={(form.finances as Record<string, number | null | undefined>)?.[key] ?? ''}
-                onChange={e => setForm({ ...form, finances: { ...form.finances, [key]: e.target.value ? parseFloat(e.target.value) : null } })} />
+                onChange={value => setForm({ ...form, finances: { ...form.finances, [key]: value ? parseFloat(value) : null } })}
+              />
             </Field>
           ))}
         </div>
@@ -2361,13 +2433,23 @@ export default function PartyRoster() {
                     onChange={e => updateWeapon(i, { damage: e.target.value })} />
                 </Field>
                 <Field name="Qty">
-                  <input className="input" type="number" min={0} step="1" value={weapon.quantity ?? ''}
-                    onChange={e => updateWeapon(i, { quantity: parseNullableNumber(e.target.value) })} />
+                  <NumberStepper
+                    ariaLabel="Weapon quantity"
+                    min={0}
+                    step={1}
+                    value={weapon.quantity ?? ''}
+                    onChange={value => updateWeapon(i, { quantity: parseNullableNumber(value) })}
+                  />
                 </Field>
                 <Field name="Mass kg">
-                  <input className="input" type="number" min={0} step="0.001" value={weapon.mass ?? ''}
+                  <NumberStepper
+                    ariaLabel="Weapon mass"
+                    min={0}
+                    step="0.001"
+                    value={weapon.mass ?? ''}
                     placeholder={String(coreMassFor(weapon.name, ['Weapon']) ?? '')}
-                    onChange={e => updateWeapon(i, { mass: parseNullableNumber(e.target.value) })} />
+                    onChange={value => updateWeapon(i, { mass: parseNullableNumber(value) })}
+                  />
                 </Field>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-[1fr_8rem_auto] gap-2 items-end">
@@ -2376,8 +2458,13 @@ export default function PartyRoster() {
                     onChange={e => updateWeapon(i, { traits: e.target.value })} />
                 </Field>
                 <Field name="Cost Cr">
-                  <input className="input" type="number" min={0} step="1" value={weapon.cost ?? ''}
-                    onChange={e => updateWeapon(i, { cost: parseNullableNumber(e.target.value) })} />
+                  <NumberStepper
+                    ariaLabel="Weapon cost"
+                    min={0}
+                    step={1}
+                    value={weapon.cost ?? ''}
+                    onChange={value => updateWeapon(i, { cost: parseNullableNumber(value) })}
+                  />
                 </Field>
                 <button type="button" onClick={() => removeWeapon(i)} className="btn-steel text-alert hover:border-alert">
                   <Trash2 size={12} />
@@ -2414,25 +2501,46 @@ export default function PartyRoster() {
                     onChange={e => updateArmour(i, { name: e.target.value })} />
                 </Field>
                 <Field name="Prot">
-                  <input className="input" type="number" value={item.protection ?? ''}
-                    onChange={e => updateArmour(i, { protection: parseNullableNumber(e.target.value) })} />
+                  <NumberStepper
+                    ariaLabel="Armour protection"
+                    value={item.protection ?? ''}
+                    onChange={value => updateArmour(i, { protection: parseNullableNumber(value) })}
+                  />
                 </Field>
                 <Field name="Rad">
-                  <input className="input" type="number" value={item.radiation ?? ''}
-                    onChange={e => updateArmour(i, { radiation: parseNullableNumber(e.target.value) })} />
+                  <NumberStepper
+                    ariaLabel="Armour radiation"
+                    value={item.radiation ?? ''}
+                    onChange={value => updateArmour(i, { radiation: parseNullableNumber(value) })}
+                  />
                 </Field>
                 <Field name="Qty">
-                  <input className="input" type="number" min={0} step="1" value={item.quantity ?? ''}
-                    onChange={e => updateArmour(i, { quantity: parseNullableNumber(e.target.value) })} />
+                  <NumberStepper
+                    ariaLabel="Armour quantity"
+                    min={0}
+                    step={1}
+                    value={item.quantity ?? ''}
+                    onChange={value => updateArmour(i, { quantity: parseNullableNumber(value) })}
+                  />
                 </Field>
                 <Field name="Mass kg">
-                  <input className="input" type="number" min={0} step="0.001" value={item.mass ?? ''}
+                  <NumberStepper
+                    ariaLabel="Armour mass"
+                    min={0}
+                    step="0.001"
+                    value={item.mass ?? ''}
                     placeholder={String(coreMassFor(item.name, ['Armour']) ?? '')}
-                    onChange={e => updateArmour(i, { mass: parseNullableNumber(e.target.value) })} />
+                    onChange={value => updateArmour(i, { mass: parseNullableNumber(value) })}
+                  />
                 </Field>
                 <Field name="Cost Cr">
-                  <input className="input" type="number" min={0} step="1" value={item.cost ?? ''}
-                    onChange={e => updateArmour(i, { cost: parseNullableNumber(e.target.value) })} />
+                  <NumberStepper
+                    ariaLabel="Armour cost"
+                    min={0}
+                    step={1}
+                    value={item.cost ?? ''}
+                    onChange={value => updateArmour(i, { cost: parseNullableNumber(value) })}
+                  />
                 </Field>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-2 items-end">
@@ -2463,24 +2571,43 @@ export default function PartyRoster() {
             <div key={i} className="border border-steel/35 p-2 space-y-2">
               <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
                 <Field name="Qty">
-                  <input className="input" type="number" min={0} step="1" value={item.quantity ?? ''}
-                    onChange={e => updateEquipment(i, { quantity: parseNullableNumber(e.target.value) })} />
+                  <NumberStepper
+                    ariaLabel="Equipment quantity"
+                    min={0}
+                    step={1}
+                    value={item.quantity ?? ''}
+                    onChange={value => updateEquipment(i, { quantity: parseNullableNumber(value) })}
+                  />
                 </Field>
                 <Field name="Name">
                   <input className="input" value={item.name}
                     onChange={e => updateEquipment(i, { name: e.target.value })} />
                 </Field>
                 <Field name="TL">
-                  <input className="input" type="number" min={0} value={item.tech_level ?? ''}
-                    onChange={e => updateEquipment(i, { tech_level: parseNullableNumber(e.target.value) })} />
+                  <NumberStepper
+                    ariaLabel="Equipment tech level"
+                    min={0}
+                    value={item.tech_level ?? ''}
+                    onChange={value => updateEquipment(i, { tech_level: parseNullableNumber(value) })}
+                  />
                 </Field>
                 <Field name="Mass kg">
-                  <input className="input" type="number" min={0} step="0.001" value={item.mass ?? ''}
-                    onChange={e => updateEquipment(i, { mass: parseNullableNumber(e.target.value) })} />
+                  <NumberStepper
+                    ariaLabel="Equipment mass"
+                    min={0}
+                    step="0.001"
+                    value={item.mass ?? ''}
+                    onChange={value => updateEquipment(i, { mass: parseNullableNumber(value) })}
+                  />
                 </Field>
                 <Field name="Cost Cr">
-                  <input className="input" type="number" min={0} step="1" value={item.cost ?? ''}
-                    onChange={e => updateEquipment(i, { cost: parseNullableNumber(e.target.value) })} />
+                  <NumberStepper
+                    ariaLabel="Equipment cost"
+                    min={0}
+                    step={1}
+                    value={item.cost ?? ''}
+                    onChange={value => updateEquipment(i, { cost: parseNullableNumber(value) })}
+                  />
                 </Field>
                 <button type="button" onClick={() => removeEquipment(i)} className="btn-steel text-alert hover:border-alert self-end">
                   <Trash2 size={12} />
@@ -2512,12 +2639,21 @@ export default function PartyRoster() {
                   onChange={e => updateAugment(i, { name: e.target.value })} />
               </Field>
               <Field name="TL">
-                <input className="input" type="number" min={0} value={augment.tech_level ?? ''}
-                  onChange={e => updateAugment(i, { tech_level: parseNullableNumber(e.target.value) })} />
+                <NumberStepper
+                  ariaLabel="Augment tech level"
+                  min={0}
+                  value={augment.tech_level ?? ''}
+                  onChange={value => updateAugment(i, { tech_level: parseNullableNumber(value) })}
+                />
               </Field>
               <Field name="Cost Cr">
-                <input className="input" type="number" min={0} step="1" value={augment.cost ?? ''}
-                  onChange={e => updateAugment(i, { cost: parseNullableNumber(e.target.value) })} />
+                <NumberStepper
+                  ariaLabel="Augment cost"
+                  min={0}
+                  step={1}
+                  value={augment.cost ?? ''}
+                  onChange={value => updateAugment(i, { cost: parseNullableNumber(value) })}
+                />
               </Field>
               <button type="button" onClick={() => removeAugment(i)} className="btn-steel text-alert hover:border-alert">
                 <Trash2 size={12} />
@@ -2597,8 +2733,12 @@ export default function PartyRoster() {
             <div key={i} className="border border-steel/35 p-2 space-y-2">
               <div className="grid grid-cols-2 md:grid-cols-[5rem_1fr_1fr_1fr_auto] gap-2 items-end">
                 <Field name="Term">
-                  <input className="input" type="number" min={0} value={term.term ?? ''}
-                    onChange={e => updateLifepath(i, { term: parseNullableNumber(e.target.value) })} />
+                  <NumberStepper
+                    ariaLabel="Lifepath term"
+                    min={0}
+                    value={term.term ?? ''}
+                    onChange={value => updateLifepath(i, { term: parseNullableNumber(value) })}
+                  />
                 </Field>
                 <Field name="Career">
                   <input className="input" value={term.career ?? ''}

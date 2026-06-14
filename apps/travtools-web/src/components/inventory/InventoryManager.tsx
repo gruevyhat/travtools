@@ -19,6 +19,7 @@ import {
   formatEquipmentMass,
   searchCoreEquipment,
 } from '../../data/equipment';
+import NumberStepper from '../shared/NumberStepper';
 
 type ItemForm = Omit<InventoryItem, 'id' | 'created_at'>;
 
@@ -394,13 +395,13 @@ export default function InventoryManager() {
               </select>
             </Field>
             <Field name="Quantity">
-              <input className="input" type="number" min={0} value={form.quantity} onChange={e => setForm({ ...form, quantity: parseInt(e.target.value) || 0 })} />
+              <NumberStepper ariaLabel="Quantity" min={0} value={form.quantity} onChange={value => setForm({ ...form, quantity: parseInt(value, 10) || 0 })} />
             </Field>
             <Field name="Weight (kg each)">
-              <input className="input" type="number" step="0.001" value={form.weight_kg ?? ''} onChange={e => setForm({ ...form, weight_kg: e.target.value ? parseFloat(e.target.value) : null })} />
+              <NumberStepper ariaLabel="Weight kg each" step="0.001" value={form.weight_kg ?? ''} onChange={value => setForm({ ...form, weight_kg: value ? parseFloat(value) : null })} />
             </Field>
             <Field name="Value (Cr each)">
-              <input className="input" type="number" step="0.01" value={form.value_cr ?? ''} onChange={e => setForm({ ...form, value_cr: e.target.value ? parseFloat(e.target.value) : null })} />
+              <NumberStepper ariaLabel="Value credits each" step="0.01" value={form.value_cr ?? ''} onChange={value => setForm({ ...form, value_cr: value ? parseFloat(value) : null })} />
             </Field>
             <Field name="Owner">
               <input className="input" value={form.owner ?? ''} onChange={e => setForm({ ...form, owner: e.target.value || null })} />

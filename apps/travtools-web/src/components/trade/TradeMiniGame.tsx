@@ -38,6 +38,7 @@ import { lookupPassageFare, type PassengerClass } from '../../data/passageFares'
 import { mailTrafficDm } from '../../data/freightTraffic';
 import { lookupRandomPassenger } from '../../data/randomPassenger';
 import type { Character, TradeDeal } from '../../types';
+import NumberStepper from '../shared/NumberStepper';
 
 export type TradeDealDraft = Omit<TradeDeal, 'id' | 'created_at' | 'updated_at'>;
 
@@ -343,7 +344,12 @@ function CharacterCheckControl({
           <input className="input text-xs" aria-label={`${label} Context DM`} value={fmtDM(contextDm)} readOnly />
         </Field>
         <Field label="Bonus DM">
-          <input className="input text-xs" aria-label={`${label} Bonus DM`} type="number" value={bonusDmInput} onChange={e => setBonusDmInput(e.target.value)} />
+          <NumberStepper
+            ariaLabel={`${label} Bonus DM`}
+            value={bonusDmInput}
+            onChange={setBonusDmInput}
+            inputClassName="input text-xs"
+          />
         </Field>
       </div>
       <div className="flex flex-wrap items-center gap-2">
@@ -485,36 +491,33 @@ function WorldProfileForm({
           </select>
         </Field>
         <Field label="Pop">
-          <input
-            className="input text-xs"
-            aria-label={`${title} Population`}
-            type="number"
+          <NumberStepper
+            ariaLabel={`${title} Population`}
             min={0}
             max={12}
             value={value.population}
-            onChange={e => onChange({ ...value, population: numberFromInput(e.target.value, value.population) })}
+            onChange={raw => onChange({ ...value, population: numberFromInput(raw, value.population) })}
+            inputClassName="input text-xs"
           />
         </Field>
         <Field label="TL">
-          <input
-            className="input text-xs"
-            aria-label={`${title} Tech Level`}
-            type="number"
+          <NumberStepper
+            ariaLabel={`${title} Tech Level`}
             min={0}
             max={20}
             value={value.techLevel}
-            onChange={e => onChange({ ...value, techLevel: numberFromInput(e.target.value, value.techLevel) })}
+            onChange={raw => onChange({ ...value, techLevel: numberFromInput(raw, value.techLevel) })}
+            inputClassName="input text-xs"
           />
         </Field>
         <Field label="Law">
-          <input
-            className="input text-xs"
-            aria-label={`${title} Law Level`}
-            type="number"
+          <NumberStepper
+            ariaLabel={`${title} Law Level`}
             min={0}
             max={20}
             value={value.lawLevel}
-            onChange={e => onChange({ ...value, lawLevel: numberFromInput(e.target.value, value.lawLevel) })}
+            onChange={raw => onChange({ ...value, lawLevel: numberFromInput(raw, value.lawLevel) })}
+            inputClassName="input text-xs"
           />
         </Field>
         <Field label="Zone">
@@ -771,16 +774,16 @@ export function TradeSessionPanel({ deals, characters = [], onCreateDeals, onUpd
                 <input className="input text-xs" aria-label="Trade Session Reference" value={sessionRef} onChange={e => setSessionRef(e.target.value)} />
               </Field>
               <Field label="Parsecs">
-                <input className="input text-xs" aria-label="Trade Session Parsecs" type="number" min={1} max={6} value={parsecs} onChange={e => setParsecs(numberFromInput(e.target.value, parsecs))} />
+                <NumberStepper ariaLabel="Trade Session Parsecs" min={1} max={6} value={parsecs} onChange={value => setParsecs(numberFromInput(value, parsecs))} inputClassName="input text-xs" />
               </Field>
               <Field label="Broker">
-                <input className="input text-xs" aria-label="Trade Session Broker Skill" type="number" value={brokerSkill} onChange={e => setBrokerSkill(numberFromInput(e.target.value, brokerSkill))} />
+                <NumberStepper ariaLabel="Trade Session Broker Skill" value={brokerSkill} onChange={value => setBrokerSkill(numberFromInput(value, brokerSkill))} inputClassName="input text-xs" />
               </Field>
               <Field label="Supplier Broker">
-                <input className="input text-xs" aria-label="Supplier Broker Skill" type="number" value={supplierBroker} onChange={e => setSupplierBroker(numberFromInput(e.target.value, supplierBroker))} />
+                <NumberStepper ariaLabel="Supplier Broker Skill" value={supplierBroker} onChange={value => setSupplierBroker(numberFromInput(value, supplierBroker))} inputClassName="input text-xs" />
               </Field>
               <Field label="Buyer Broker">
-                <input className="input text-xs" aria-label="Buyer Broker Skill" type="number" value={buyerBroker} onChange={e => setBuyerBroker(numberFromInput(e.target.value, buyerBroker))} />
+                <NumberStepper ariaLabel="Buyer Broker Skill" value={buyerBroker} onChange={value => setBuyerBroker(numberFromInput(value, buyerBroker))} inputClassName="input text-xs" />
               </Field>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -797,10 +800,10 @@ export function TradeSessionPanel({ deals, characters = [], onCreateDeals, onUpd
           <div className="panel-header -mx-3 -mt-3 mb-1">FIND SUPPLIER</div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             <Field label="Attempts">
-              <input className="input text-xs" aria-label="Supplier Attempts" type="number" min={0} value={supplierAttempts} onChange={e => setSupplierAttempts(numberFromInput(e.target.value, supplierAttempts))} />
+              <NumberStepper ariaLabel="Supplier Attempts" min={0} value={supplierAttempts} onChange={value => setSupplierAttempts(numberFromInput(value, supplierAttempts))} inputClassName="input text-xs" />
             </Field>
             <Field label="Supplier Broker">
-              <input className="input text-xs" aria-label="Supplier Broker Skill" type="number" value={supplierBroker} onChange={e => setSupplierBroker(numberFromInput(e.target.value, supplierBroker))} />
+              <NumberStepper ariaLabel="Supplier Broker Skill" value={supplierBroker} onChange={value => setSupplierBroker(numberFromInput(value, supplierBroker))} inputClassName="input text-xs" />
             </Field>
             <div className="flex items-end">
               <button type="button" onClick={() => setBlackMarket(value => !value)} className={`btn text-xs h-9 ${blackMarket ? 'btn-amber' : 'btn-steel'}`}>
@@ -900,12 +903,12 @@ export function TradeSessionPanel({ deals, characters = [], onCreateDeals, onUpd
                     </button>
                   </div>
                   <Field label="Tons">
-                    <input
-                      className="input text-xs py-1"
-                      type="number"
+                    <NumberStepper
+                      ariaLabel={`${item.good.type} tons`}
                       min={1}
                       value={item.tons}
-                      onChange={e => setCart(current => current.map(row => row.id === item.id ? { ...row, tons: numberFromInput(e.target.value, row.tons) } : row))}
+                      onChange={value => setCart(current => current.map(row => row.id === item.id ? { ...row, tons: numberFromInput(value, row.tons) } : row))}
+                      inputClassName="input text-xs py-1"
                     />
                   </Field>
                   {item.price && (
@@ -935,7 +938,7 @@ export function TradeSessionPanel({ deals, characters = [], onCreateDeals, onUpd
           <div className="panel-header -mx-3 -mt-3 mb-1">FIND BUYER</div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             <Field label="Buyer Broker">
-              <input className="input text-xs" aria-label="Buyer Broker Skill" type="number" value={buyerBroker} onChange={e => setBuyerBroker(numberFromInput(e.target.value, buyerBroker))} />
+              <NumberStepper ariaLabel="Buyer Broker Skill" value={buyerBroker} onChange={value => setBuyerBroker(numberFromInput(value, buyerBroker))} inputClassName="input text-xs" />
             </Field>
             <SmallReadout label="BUYER CONTEXT" value={fmtDM(buyerFindDm)} />
             <SmallReadout label="ACTIVE DEALS" value={String(activeDeals.length)} tone="text-amber" />
@@ -1122,25 +1125,25 @@ export function PassengersFreightPanel({ characters = [] }: PassengersFreightPan
         <div className="panel-header -mx-3 -mt-3 mb-1">PASSAGE AND FREIGHT CONTROL</div>
         <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
           <Field label="Parsecs">
-            <input className="input text-xs" type="number" min={1} max={6} value={parsecs} onChange={e => setParsecs(numberFromInput(e.target.value, parsecs))} />
+            <NumberStepper ariaLabel="Passenger Freight Parsecs" min={1} max={6} value={parsecs} onChange={value => setParsecs(numberFromInput(value, parsecs))} inputClassName="input text-xs" />
           </Field>
           <Field label="Passenger Effect">
-            <input className="input text-xs" type="number" value={passengerEffect} onChange={e => setPassengerEffect(numberFromInput(e.target.value, passengerEffect))} />
+            <NumberStepper ariaLabel="Passenger Effect" value={passengerEffect} onChange={value => setPassengerEffect(numberFromInput(value, passengerEffect))} inputClassName="input text-xs" />
           </Field>
           <Field label="Chief Steward">
-            <input className="input text-xs" type="number" value={chiefStewardDm} onChange={e => setChiefStewardDm(numberFromInput(e.target.value, chiefStewardDm))} />
+            <NumberStepper ariaLabel="Chief Steward" value={chiefStewardDm} onChange={value => setChiefStewardDm(numberFromInput(value, chiefStewardDm))} inputClassName="input text-xs" />
           </Field>
           <Field label="Steward">
-            <input className="input text-xs" type="number" value={stewardSkill} onChange={e => setStewardSkill(numberFromInput(e.target.value, stewardSkill))} />
+            <NumberStepper ariaLabel="Steward" value={stewardSkill} onChange={value => setStewardSkill(numberFromInput(value, stewardSkill))} inputClassName="input text-xs" />
           </Field>
           <Field label="Freight Effect">
-            <input className="input text-xs" type="number" value={freightEffect} onChange={e => setFreightEffect(numberFromInput(e.target.value, freightEffect))} />
+            <NumberStepper ariaLabel="Freight Effect" value={freightEffect} onChange={value => setFreightEffect(numberFromInput(value, freightEffect))} inputClassName="input text-xs" />
           </Field>
           <Field label="Rank DM">
-            <input className="input text-xs" type="number" value={rankDm} onChange={e => setRankDm(numberFromInput(e.target.value, rankDm))} />
+            <NumberStepper ariaLabel="Rank DM" value={rankDm} onChange={value => setRankDm(numberFromInput(value, rankDm))} inputClassName="input text-xs" />
           </Field>
           <Field label="SOC DM">
-            <input className="input text-xs" type="number" value={socDm} onChange={e => setSocDm(numberFromInput(e.target.value, socDm))} />
+            <NumberStepper ariaLabel="SOC DM" value={socDm} onChange={value => setSocDm(numberFromInput(value, socDm))} inputClassName="input text-xs" />
           </Field>
         </div>
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">

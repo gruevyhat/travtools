@@ -5,6 +5,7 @@ import { fmtDM } from '../../lib/dice';
 import { parseDamageExpr, statDM, toHex } from '../../lib/traveller';
 import { Character, CombatCombatant, RangeBand, Weapon, ArmourItem } from '../../types';
 import { CORE_NPC_ARCHETYPES, CoreNpcArchetype } from '../../data/npcArchetypes';
+import NumberStepper from '../shared/NumberStepper';
 
 const STORAGE_KEY = 'travtools-combat-state';
 
@@ -589,17 +590,15 @@ export default function CombatTracker() {
       const segs = hMax ? Math.min(hMax, 20) : 10;
       return (
         <div className="space-y-3">
-          <div className="grid grid-cols-[6rem_1fr] items-end gap-3">
+          <div className="grid grid-cols-[8.5rem_1fr] items-end gap-3">
             <label className="space-y-1">
               <span className="label text-[10px]">Max Hits</span>
-              <input
-                className="input text-xs"
-                type="text"
-                inputMode="numeric"
+              <NumberStepper
+                ariaLabel={`${c.name} max hits`}
                 value={hMax ?? ''}
-                onChange={e => updateNpcHitsMax(c.id, e.target.value)}
+                onChange={value => updateNpcHitsMax(c.id, value)}
                 placeholder="none"
-                aria-label={`${c.name} max hits`}
+                inputClassName="input text-xs"
               />
             </label>
             <div className="min-w-0">
@@ -616,18 +615,18 @@ export default function CombatTracker() {
             </div>
           </div>
           {hMax === null && <div className="text-xs text-body/70 font-mono">No hits tracked. Enter max hits to enable the wound bar.</div>}
-          <div className="grid grid-cols-[5.5rem_auto_auto_auto] gap-1.5 items-end">
+          <div className="grid grid-cols-[8.5rem_auto_auto_auto] gap-1.5 items-end">
             <label htmlFor={fieldId} className="space-y-1 min-w-0">
               <span className="label text-[10px]">Dmg</span>
-              <input
+              <NumberStepper
                 id={fieldId}
-                className="input text-xs h-8"
-                type="text"
-                inputMode="numeric"
+                ariaLabel={`${c.name} damage`}
+                min={0}
                 placeholder="damage"
                 value={damageValue}
-                onChange={e => setDamageInputs(prev => ({ ...prev, [c.id]: e.target.value }))}
+                onChange={value => setDamageInputs(prev => ({ ...prev, [c.id]: value }))}
                 onKeyDown={e => e.key === 'Enter' && applyWound(c.id)}
+                inputClassName="input text-xs h-8"
               />
             </label>
             <button type="button" onClick={() => applyWound(c.id)} className="btn-danger text-[10px] h-8 px-2">DAMAGE</button>
@@ -658,18 +657,18 @@ export default function CombatTracker() {
           ))}
           <div className="text-[10px] text-body/65 font-mono">UPP {toHex(strMax)}{toHex(dexMax)}{toHex(endMax)} {'->'} current {toHex(strCur)}{toHex(dexCur)}{toHex(endCur)}</div>
         </div>
-        <div className="grid grid-cols-[5.5rem_auto] gap-1.5 items-end">
+        <div className="grid grid-cols-[8.5rem_auto] gap-1.5 items-end">
           <label htmlFor={fieldId} className="space-y-1 min-w-0">
             <span className="label text-[10px]">Dmg</span>
-            <input
+            <NumberStepper
               id={fieldId}
-              className="input text-xs h-8"
-              type="text"
-              inputMode="numeric"
+              ariaLabel={`${c.name} damage`}
+              min={0}
               placeholder="damage"
               value={damageValue}
-              onChange={e => setDamageInputs(prev => ({ ...prev, [c.id]: e.target.value }))}
+              onChange={value => setDamageInputs(prev => ({ ...prev, [c.id]: value }))}
               onKeyDown={e => e.key === 'Enter' && applyWound(c.id)}
+              inputClassName="input text-xs h-8"
             />
           </label>
           <button type="button" onClick={() => applyWound(c.id)} className="btn-danger text-[10px] h-8 px-2">DAMAGE</button>
@@ -974,7 +973,7 @@ export default function CombatTracker() {
             </button>
           )}
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-[minmax(12rem,1fr)_5rem_5rem_auto_auto] gap-2 items-end">
+        <div className="grid grid-cols-1 md:grid-cols-[minmax(12rem,1fr)_8rem_8rem_auto_auto] gap-2 items-end">
           <label className="space-y-1">
             <span className="label">NPC Name</span>
             <input className="input text-xs" value={npcName} onChange={e => setNpcName(e.target.value)}
@@ -982,13 +981,26 @@ export default function CombatTracker() {
           </label>
           <label className="space-y-1">
             <span className="label">Init</span>
-            <input className="input text-xs" type="text" inputMode="numeric" value={npcInitiative}
-              onChange={e => setNpcInitiative(e.target.value)} placeholder="auto" onKeyDown={e => e.key === 'Enter' && addNPC()} />
+            <NumberStepper
+              ariaLabel="NPC initiative"
+              value={npcInitiative}
+              onChange={setNpcInitiative}
+              placeholder="auto"
+              onKeyDown={e => e.key === 'Enter' && addNPC()}
+              inputClassName="input text-xs"
+            />
           </label>
           <label className="space-y-1">
             <span className="label">Hits</span>
-            <input className="input text-xs" type="text" inputMode="numeric" value={npcHits}
-              onChange={e => setNpcHits(e.target.value)} placeholder="opt" onKeyDown={e => e.key === 'Enter' && addNPC()} />
+            <NumberStepper
+              ariaLabel="NPC hits"
+              min={0}
+              value={npcHits}
+              onChange={setNpcHits}
+              placeholder="opt"
+              onKeyDown={e => e.key === 'Enter' && addNPC()}
+              inputClassName="input text-xs"
+            />
           </label>
           <div className="space-y-1">
             <div className="label">Side</div>
