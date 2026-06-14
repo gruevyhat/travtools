@@ -480,14 +480,15 @@ function ShipDamagePanel({
             const tone = damageTone(value, max);
             return (
               <div key={field.key} className="space-y-1">
-                <div className="flex items-center gap-2 text-xs font-mono">
+                <div className="flex items-center gap-2 text-xs font-mono select-none">
                   <span className="text-body/70 flex-1 min-w-0 truncate">{field.label.replace(' Damage', '').toUpperCase()}</span>
                   <button
                     type="button"
                     aria-label={`Decrease ${field.label}`}
                     disabled={value <= 0}
+                    onMouseDown={e => e.preventDefault()}
                     onClick={() => onAdjust(field.key, -1)}
-                    className="w-5 h-5 border border-steel/60 text-body/70 hover:border-alert hover:text-alert disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center"
+                    className="w-5 h-5 select-none border border-steel/60 text-body/70 hover:border-alert hover:text-alert disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center"
                   >
                     <Minus size={8} />
                   </button>
@@ -498,8 +499,9 @@ function ShipDamagePanel({
                     type="button"
                     aria-label={`Increase ${field.label}`}
                     disabled={max !== undefined && value >= max}
+                    onMouseDown={e => e.preventDefault()}
                     onClick={() => onAdjust(field.key, 1)}
-                    className="w-5 h-5 border border-steel/60 text-body/70 hover:border-safe hover:text-safe disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center"
+                    className="w-5 h-5 select-none border border-steel/60 text-body/70 hover:border-safe hover:text-safe disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center"
                   >
                     <Plus size={8} />
                   </button>
@@ -601,14 +603,14 @@ function ShipAmmoPanel({
                       <Trash2 size={10} />
                     </button>
                   </div>
-                  <div className="flex items-center gap-2 text-xs font-mono">
+                  <div className="flex items-center gap-2 text-xs font-mono select-none">
                     <button
                       type="button"
                       aria-label={`Decrease ${entry.name} ammunition`}
                       disabled={entry.current <= 0}
                       onMouseDown={e => e.preventDefault()}
                       onClick={() => onAdjust(entry.id, -1)}
-                      className="w-5 h-5 border border-steel/60 text-body/70 hover:border-alert hover:text-alert disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center"
+                      className="w-5 h-5 select-none border border-steel/60 text-body/70 hover:border-alert hover:text-alert disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center"
                     >
                       <Minus size={8} />
                     </button>
@@ -621,7 +623,7 @@ function ShipAmmoPanel({
                       disabled={max !== undefined && entry.current >= max}
                       onMouseDown={e => e.preventDefault()}
                       onClick={() => onAdjust(entry.id, 1)}
-                      className="w-5 h-5 border border-steel/60 text-body/70 hover:border-safe hover:text-safe disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center"
+                      className="w-5 h-5 select-none border border-steel/60 text-body/70 hover:border-safe hover:text-safe disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center"
                     >
                       <Plus size={8} />
                     </button>

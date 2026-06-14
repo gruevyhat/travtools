@@ -60,6 +60,7 @@ function StepControl({ label, title, disabled, className, onPress, children }: S
       aria-label={label}
       title={title}
       aria-disabled={disabled}
+      onMouseDown={e => e.preventDefault()}
       onClick={activate}
       onKeyDown={e => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -67,7 +68,7 @@ function StepControl({ label, title, disabled, className, onPress, children }: S
           activate();
         }
       }}
-      className={`${className} ${disabled ? 'opacity-35 cursor-not-allowed' : 'cursor-pointer'}`}
+      className={`${className} select-none ${disabled ? 'opacity-35 cursor-not-allowed' : 'cursor-pointer'}`}
     >
       {children}
     </span>
@@ -106,7 +107,7 @@ export default function NumberStepper({
   }
 
   return (
-    <div className={`grid grid-cols-[1.75rem_minmax(0,1fr)_1.75rem] ${className}`}>
+    <div className={`grid grid-cols-[1.75rem_minmax(0,1fr)_1.75rem] select-none ${className}`}>
       <StepControl
         label="Decrease value"
         title={`Decrease ${ariaLabel}`}

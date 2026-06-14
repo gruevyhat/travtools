@@ -413,8 +413,15 @@ async function checkRosterInteractions(browser, baseUrl) {
   if (!rosterAfterAmmo.includes('12/15 rnd · 2 clips')) {
     throw new Error(`Weapon use did not spend ammo:\n${rosterAfterAmmo}`);
   }
-  await replaceByTyping(desktopRoster.getByLabel('Autopistol rounds in current clip'), '9');
-  await replaceByTyping(desktopRoster.getByLabel('Autopistol clips'), '4');
+  await desktopRoster.getByLabel('Character actions').click();
+  await page.getByRole('button', { name: 'EDIT' }).click();
+  await desktopRoster.locator('summary').filter({ hasText: 'WEAPONS' }).click();
+  const weaponRoundsInput = desktopRoster.getByLabel('Weapon rounds', { exact: true }).first();
+  const weaponClipsInput = desktopRoster.getByLabel('Weapon clips', { exact: true }).first();
+  await weaponRoundsInput.fill('9');
+  await weaponClipsInput.fill('4');
+  await desktopRoster.getByRole('button', { name: 'UPDATE' }).click();
+  await desktopRoster.getByText('9/15 rnd · 4 clips', { exact: false }).waitFor({ state: 'visible', timeout: 5_000 });
   const rosterAfterManualAmmo = await desktopRoster.innerText({ timeout: 5_000 });
   if (!rosterAfterManualAmmo.includes('9/15 rnd · 4 clips')) {
     throw new Error(`Manual ammo controls did not update the weapon row:\n${rosterAfterManualAmmo}`);

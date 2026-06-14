@@ -655,7 +655,7 @@ export default function CombatTracker() {
             </div>
           </div>
           {hMax === null && <div className="text-xs text-body/70 font-mono">No hits tracked. Enter max hits to enable the wound bar.</div>}
-          <div className="grid grid-cols-[8.5rem_auto_auto_auto] gap-1.5 items-end">
+          <div className="grid grid-cols-[8.5rem_auto_auto_auto] gap-1.5 items-end select-none">
             <label htmlFor={fieldId} className="space-y-1 min-w-0">
               <span className="label text-[10px]">Dmg</span>
               <NumberStepper
@@ -670,8 +670,8 @@ export default function CombatTracker() {
               />
             </label>
             <button type="button" onClick={() => applyWound(c.id)} className="btn-danger text-[10px] h-8 px-2">DAMAGE</button>
-            <button type="button" onClick={() => adjustNpcHits(c.id, -1)} className="h-8 w-7 border border-alert/70 bg-alert/5 text-alert font-mono hover:bg-alert/15">-</button>
-            <button type="button" onClick={() => adjustNpcHits(c.id, 1)} className="h-8 w-7 border border-safe/70 bg-safe/5 text-safe font-mono hover:bg-safe/15">+</button>
+            <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => adjustNpcHits(c.id, -1)} className="h-8 w-7 select-none border border-alert/70 bg-alert/5 text-alert font-mono hover:bg-alert/15">-</button>
+            <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => adjustNpcHits(c.id, 1)} className="h-8 w-7 select-none border border-safe/70 bg-safe/5 text-safe font-mono hover:bg-safe/15">+</button>
           </div>
         </div>
       );
@@ -693,8 +693,8 @@ export default function CombatTracker() {
           {([['end', 'END', endCur, endMax], ['str', 'STR', strCur, strMax], ['dex', 'DEX', dexCur, dexMax]] as ['end' | 'str' | 'dex', string, number, number][]).map(([stat, label, cur, max]) => (
             <div key={stat} className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-2 items-center">
               <StatBar cur={cur} max={max} label={label} />
-              <button type="button" onClick={() => adjustStat(c.id, stat, -1)} className="w-7 h-7 border border-alert/70 bg-alert/5 text-alert font-mono hover:bg-alert/15">-</button>
-              <button type="button" onClick={() => adjustStat(c.id, stat, 1)} className="w-7 h-7 border border-safe/70 bg-safe/5 text-safe font-mono hover:bg-safe/15">+</button>
+              <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => adjustStat(c.id, stat, -1)} className="w-7 h-7 select-none border border-alert/70 bg-alert/5 text-alert font-mono hover:bg-alert/15">-</button>
+              <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => adjustStat(c.id, stat, 1)} className="w-7 h-7 select-none border border-safe/70 bg-safe/5 text-safe font-mono hover:bg-safe/15">+</button>
             </div>
           ))}
           <div className="text-[10px] text-body/65 font-mono">UPP {toHex(strMax)}{toHex(dexMax)}{toHex(endMax)} {'->'} current {toHex(strCur)}{toHex(dexCur)}{toHex(endCur)}</div>

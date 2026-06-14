@@ -1353,7 +1353,7 @@ function CharDetailContent({
               </button>
             )}
           </div>
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-1.5 select-none">
             {allDisplayStats.map(key => {
               const mod = tempMod(key);
               return (
@@ -1363,8 +1363,9 @@ function CharDetailContent({
                     type="button"
                     aria-label={`Decrease ${STAT_LABELS[key]} temporary modifier`}
                     disabled={curVal(key) === null}
+                    onMouseDown={e => e.preventDefault()}
                     onClick={() => adjustTempMod(key, -1)}
-                    className="w-6 h-6 border-l border-steel/30 flex items-center justify-center text-body/65 hover:text-amber hover:bg-steel/20 disabled:opacity-20 disabled:cursor-not-allowed"
+                    className="w-6 h-6 select-none border-l border-steel/30 flex items-center justify-center text-body/65 hover:text-amber hover:bg-steel/20 disabled:opacity-20 disabled:cursor-not-allowed"
                   >
                     <Minus size={8} />
                   </button>
@@ -1375,8 +1376,9 @@ function CharDetailContent({
                     type="button"
                     aria-label={`Increase ${STAT_LABELS[key]} temporary modifier`}
                     disabled={curVal(key) === null}
+                    onMouseDown={e => e.preventDefault()}
                     onClick={() => adjustTempMod(key, 1)}
-                    className="w-6 h-6 border-l border-steel/30 flex items-center justify-center text-body/65 hover:text-safe hover:bg-steel/20 disabled:opacity-20 disabled:cursor-not-allowed"
+                    className="w-6 h-6 select-none border-l border-steel/30 flex items-center justify-center text-body/65 hover:text-safe hover:bg-steel/20 disabled:opacity-20 disabled:cursor-not-allowed"
                   >
                     <Plus size={8} />
                   </button>
@@ -1418,20 +1420,20 @@ function CharDetailContent({
               <span className="text-body/55 text-[10px] font-mono ml-1">END first, then STR or DEX</span>
             </div>
           )}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 select-none">
             {PHYS_FIELDS.map(({ key: fk, cur: ck, label: fl }) => {
               const max = maxVal(fk) ?? 0;
               const cv2 = effectiveStatValue(rawCurVal(fk), tempMod(fk)) ?? 0;
               return (
                 <div key={fl} className="flex items-center gap-1 text-xs font-mono">
                   <span className="text-body/70 w-6">{fl}</span>
-                  <button onClick={() => adjustTrackedStat(ck, fk, -1)} disabled={cv2 <= 0}
-                    className="w-5 h-5 border border-steel/60 text-body/70 hover:border-alert hover:text-alert disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center">
+                  <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => adjustTrackedStat(ck, fk, -1)} disabled={cv2 <= 0}
+                    className="w-5 h-5 select-none border border-steel/60 text-body/70 hover:border-alert hover:text-alert disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center">
                     <Minus size={8} />
                   </button>
                   <span className="text-amber w-8 text-center">{cv2}/{max}</span>
-                  <button onClick={() => adjustTrackedStat(ck, fk, 1)}
-                    className="w-5 h-5 border border-steel/60 text-body/70 hover:border-safe hover:text-safe disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center">
+                  <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => adjustTrackedStat(ck, fk, 1)}
+                    className="w-5 h-5 select-none border border-steel/60 text-body/70 hover:border-safe hover:text-safe disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center">
                     <Plus size={8} />
                   </button>
                 </div>
@@ -1461,16 +1463,16 @@ function CharDetailContent({
             />
             <button onClick={applyPsiCost} className="btn-steel text-xs py-1">SPEND</button>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 select-none">
             <div className="flex items-center gap-1 text-xs font-mono">
               <span className="text-cyan-trav/70 w-6">PSI</span>
-              <button onClick={() => adjustTrackedStat('psi_cur', 'psi', -1)} disabled={psiCur <= 0}
-                className="w-5 h-5 border border-steel/60 text-body/70 hover:border-alert hover:text-alert disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center">
+              <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => adjustTrackedStat('psi_cur', 'psi', -1)} disabled={psiCur <= 0}
+                className="w-5 h-5 select-none border border-steel/60 text-body/70 hover:border-alert hover:text-alert disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center">
                 <Minus size={8} />
               </button>
               <span className="text-cyan-trav w-8 text-center">{psiCur}/{psiMax}</span>
-              <button onClick={() => adjustTrackedStat('psi_cur', 'psi', 1)}
-                className="w-5 h-5 border border-steel/60 text-body/70 hover:border-safe hover:text-safe disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center">
+              <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => adjustTrackedStat('psi_cur', 'psi', 1)}
+                className="w-5 h-5 select-none border border-steel/60 text-body/70 hover:border-safe hover:text-safe disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center">
                 <Plus size={8} />
               </button>
             </div>

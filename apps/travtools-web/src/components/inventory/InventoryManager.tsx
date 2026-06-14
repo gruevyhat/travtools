@@ -482,13 +482,14 @@ export default function InventoryManager() {
                   )}
                 </td>
                 <td className="table-cell">
-                  <div className="flex items-center justify-end gap-1">
+                  <div className="flex items-center justify-end gap-1 select-none">
                     <button
                       type="button"
                       aria-label={`Decrease ${item.name} quantity`}
                       disabled={item.quantity <= 0}
+                      onMouseDown={e => e.preventDefault()}
                       onClick={() => adjustQuantity(item, -1)}
-                      className="w-5 h-5 border border-steel/60 text-body/70 hover:border-amber hover:text-amber disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center"
+                      className="w-5 h-5 select-none border border-steel/60 text-body/70 hover:border-amber hover:text-amber disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center"
                     >
                       <Minus size={9} />
                     </button>
@@ -496,8 +497,9 @@ export default function InventoryManager() {
                     <button
                       type="button"
                       aria-label={`Increase ${item.name} quantity`}
+                      onMouseDown={e => e.preventDefault()}
                       onClick={() => adjustQuantity(item, 1)}
-                      className="w-5 h-5 border border-steel/60 text-body/70 hover:border-safe hover:text-safe flex items-center justify-center"
+                      className="w-5 h-5 select-none border border-steel/60 text-body/70 hover:border-safe hover:text-safe flex items-center justify-center"
                     >
                       <Plus size={9} />
                     </button>
