@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, Link } from 'react-router-dom';
-import { BookOpen, Dices, Ship, Swords, TrendingUp, Package, Users, ScrollText, UserPlus, Wifi, WifiOff, Settings, Wrench } from 'lucide-react';
+import { BookOpen, Dices, Ship, Swords, TrendingUp, Package, Users, ScrollText, UserPlus, Wifi, WifiOff, Settings } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
 import { COMBAT_MODULE_DISABLED } from '../../lib/moduleFlags';
 import GlobalToolsDrawer from '../tools/GlobalToolsDrawer';
@@ -17,9 +17,8 @@ function imperialDate() {
 
 const NAV_ITEMS = [
   { to: '/roster', label: 'ROSTER', Icon: Users },
-  { to: '/npc', label: 'NPC GEN', Icon: UserPlus },
+  { to: '/npc', label: 'NPCS', Icon: UserPlus },
   { to: '/ships', label: 'SHIPS', Icon: Ship },
-  { to: '/shipbuilder', label: 'SHIP BUILDER', Icon: Wrench },
   { to: '/trade', label: 'TRADE', Icon: TrendingUp },
   { to: '/inventory', label: 'INVENTORY', Icon: Package },
   { to: '/log', label: 'ROLL LOG', Icon: ScrollText },
