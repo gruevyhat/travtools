@@ -328,25 +328,28 @@ export default function NPCGenerator() {
           const skills = Array.isArray(npc.skills) ? npc.skills as { name: string; level: number }[] : [];
 
           return (
-            <div key={npc.id} className="border border-steel/40 bg-panel flex items-center gap-3 px-3 py-1.5 flex-wrap">
+            <div key={npc.id} className="border border-steel/40 bg-panel flex items-center gap-3 px-3 py-2.5 flex-wrap">
 
               {/* Name + meta */}
-              <div className="flex-shrink-0 min-w-[9rem]">
-                <div className="font-mono text-bright font-bold text-xs leading-tight">{npc.name}</div>
-                <div className="text-body/45 text-[9px] font-mono leading-tight">
-                  {npc.race}{npc.archetype ? ` · ${npc.archetype}` : ''}{npc.experience_level ? ` · ${npc.experience_level}` : ''}
+              <div className="flex-shrink-0 min-w-[11rem]">
+                <div className="font-mono text-bright font-bold text-sm leading-tight">{npc.name}</div>
+                <div className="text-body/70 text-xs font-mono leading-snug mt-0.5">
+                  {npc.race}{npc.archetype ? ` · ${npc.archetype}` : ''}
+                </div>
+                <div className="text-body/55 text-xs font-mono leading-snug">
+                  {npc.experience_level}{npc.quirk ? <span className="italic text-body/45"> · {npc.quirk}</span> : ''}
                 </div>
               </div>
 
               {/* Stats — clickable */}
-              <div className="flex gap-0.5 flex-shrink-0">
+              <div className="flex gap-1 flex-shrink-0">
                 {CORE_STAT_KEYS.map((key, i) => (
                   <button key={key} type="button"
                     title={`Roll ${CORE_STAT_LABELS[i]} check`}
                     onClick={() => openStatRoll(npc.name, sv, key, CORE_STAT_LABELS[i])}
-                    className="text-center border border-steel/30 px-1 py-0.5 hover:border-amber hover:bg-amber/5 transition-colors min-w-[2rem]">
-                    <div className="label text-[7px] leading-none">{CORE_STAT_LABELS[i]}</div>
-                    <div className="text-amber font-mono font-bold text-[11px] leading-none mt-0.5">
+                    className="text-center border border-steel/30 px-1.5 py-1 hover:border-amber hover:bg-amber/5 transition-colors min-w-[2.25rem]">
+                    <div className="label text-[8px] leading-none">{CORE_STAT_LABELS[i]}</div>
+                    <div className="text-amber font-mono font-bold text-xs leading-none mt-0.5">
                       {toHex(npcStats[i] ?? 7)}
                     </div>
                   </button>
@@ -359,17 +362,10 @@ export default function NPCGenerator() {
                   {skills.map(s => (
                     <button key={s.name} type="button"
                       onClick={() => openSkillRoll(npc.name, sv, s)}
-                      className="border border-steel/40 px-1.5 py-0.5 text-[10px] font-mono text-cyan-trav hover:border-amber hover:text-amber transition-colors">
+                      className="border border-steel/40 px-2 py-0.5 text-xs font-mono text-cyan-trav hover:border-amber hover:text-amber transition-colors">
                       {s.name} {s.level}
                     </button>
                   ))}
-                </div>
-              )}
-
-              {/* Quirk */}
-              {npc.quirk && (
-                <div className="text-[9px] font-mono text-body/40 italic flex-1 min-w-[5rem] truncate hidden xl:block">
-                  {npc.quirk}
                 </div>
               )}
 
@@ -377,7 +373,7 @@ export default function NPCGenerator() {
               <button type="button" aria-label={`Delete ${npc.name}`}
                 onClick={() => deleteNpc(npc.id)}
                 className="text-body/30 hover:text-alert transition-colors flex-shrink-0 ml-auto">
-                <Trash2 size={11} />
+                <Trash2 size={12} />
               </button>
             </div>
           );
