@@ -528,6 +528,14 @@ interface DamageResult {
 }
 
 const WEAPON_ROSTER_GRID = 'md:grid-cols-[minmax(5.5rem,8rem)_2.5rem_3.5rem_4.75rem_4.5rem_minmax(8rem,1fr)]';
+const AMMO_BAR_LIMIT = 120;
+
+function ammoRoundBars(rounds: number): string {
+  const count = Math.max(0, Math.trunc(rounds));
+  if (count <= 0) return '-';
+  const visible = '|'.repeat(Math.min(count, AMMO_BAR_LIMIT));
+  return count > AMMO_BAR_LIMIT ? `${visible}+${count - AMMO_BAR_LIMIT}` : visible;
+}
 
 function RollModal({
   char,
@@ -1746,27 +1754,95 @@ function CharDetailContent({
             </div>
             {(char.weapons ?? []).map((w, i) => {
               const weaponMass = massFor(w, ['Weapon']);
+              const ammoState = weaponAmmoState(w);
+              const showAmmo = w.range !== 'Melee' && ammoState.tracked;
+              const roundsLabel = ammoState.clipSize === null
+                ? `${ammoState.rounds} rounds`
+                : `${ammoState.rounds}/${ammoState.clipSize} rounds`;
+              const canReload = ammoState.clipSize !== null && ammoState.clips > 0 && ammoState.rounds < ammoState.clipSize;
               return (
-                <button
-                  key={i}
-                  type="button"
-                  onClick={() => openWeaponRoll(w, i)}
-                  className={`w-full grid grid-cols-[minmax(6rem,1fr)_4rem_5rem] ${WEAPON_ROSTER_GRID} gap-2 border border-steel/40 hover:border-amber/60 px-3 py-2 text-xs font-mono text-left transition-colors group items-center`}
-                  aria-label={`Roll ${w.name} attack`}
-                  title={`Roll ${w.name} attack`}
-                >
-                  <span className="min-w-0 text-bright group-hover:text-amber transition-colors truncate">
-                    {w.name}
-                  </span>
-                  <span className="text-body/65 hidden md:block">{quantityFor(w) !== 1 ? `x${quantityFor(w)}` : ''}</span>
-                  <span className="text-body/65 truncate">{w.range}</span>
-                  <span className="text-amber/80 font-bold">{w.damage}</span>
-                  <span className="text-cyan-trav/60 text-[10px] hidden md:block">{weaponMass !== null ? kg(weaponMass * quantityFor(w)) : ''}</span>
-                  <span className="text-body/55 text-[10px] hidden md:block truncate">
-                    {w.skill}
-                    {w.traits ? ` · ${w.traits}` : ''}
-                  </span>
-                </button>
+                <div key={i} className="space-y-0.5">
+                  <button
+                    type="button"
+                    onClick={() => openWeaponRoll(w, i)}
+                    className={`w-full grid grid-cols-[minmax(6rem,1fr)_4rem_5rem] ${WEAPON_ROSTER_GRID} gap-2 border border-steel/40 hover:border-amber/60 px-3 py-2 text-xs font-mono text-left transition-colors group items-center`}
+                    aria-label={`Roll ${w.name} attack`}
+                    title={`Roll ${w.name} attack`}
+                  >
+                    <span className="min-w-0 text-bright group-hover:text-amber transition-colors truncate">
+                      {w.name}
+                    </span>
+                    <span className="text-body/65 hidden md:block">{quantityFor(w) !== 1 ? `x${quantityFor(w)}` : ''}</span>
+                    <span className="text-body/65 truncate">{w.range}</span>
+                    <span className="text-amber/80 font-bold">{w.damage}</span>
+                    <span className="text-cyan-trav/60 text-[10px] hidden md:block">{weaponMass !== null ? kg(weaponMass * quantityFor(w)) : ''}</span>
+                    <span className="text-body/55 text-[10px] hidden md:block truncate">
+                      {w.skill}
+                      {w.traits ? ` · ${w.traits}` : ''}
+                    </span>
+                  </button>
+                  {showAmmo && (
+                    <div className="flex items-center gap-x-3 gap-y-0.5 border-x border-b border-steel/30 px-3 py-0.5 text-[9px] leading-none font-mono text-body/55">
+                      <div className="flex items-center gap-1">
+                        <span>Clips:</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const weapons = (char.weapons ?? []).map((item, index) =>
+                              index === i ? { ...item, ammo_clips: ammoState.clips + 1 } : item
+                            );
+                            onStatAdjust(char.id, { weapons });
+                          }}
+                          className="h-4 w-4 border border-steel/40 text-cyan-trav hover:border-cyan-dim hover:text-cyan-bright leading-none"
+                          aria-label={`Increase ${w.name} clips`}
+                          title={`Increase ${w.name} clips`}
+                        >
+                          +
+                        </button>
+                        <span className="min-w-4 text-center text-amber">{ammoState.clips}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const weapons = (char.weapons ?? []).map((item, index) =>
+                              index === i ? { ...item, ammo_clips: Math.max(0, ammoState.clips - 1) } : item
+                            );
+                            onStatAdjust(char.id, { weapons });
+                          }}
+                          disabled={ammoState.clips <= 0}
+                          className="h-4 w-4 border border-steel/40 text-cyan-trav hover:border-cyan-dim hover:text-cyan-bright disabled:opacity-30 disabled:cursor-not-allowed leading-none"
+                          aria-label={`Decrease ${w.name} clips`}
+                          title={`Decrease ${w.name} clips`}
+                        >
+                          -
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!canReload || ammoState.clipSize === null) return;
+                            const weapons = (char.weapons ?? []).map((item, index) =>
+                              index === i
+                                ? { ...item, ammo_rounds: ammoState.clipSize, ammo_clips: Math.max(0, ammoState.clips - 1) }
+                                : item
+                            );
+                            onStatAdjust(char.id, { weapons });
+                          }}
+                          disabled={!canReload}
+                          className="h-4 border border-steel/40 px-1 text-[8px] text-amber hover:border-amber hover:bg-steel/20 disabled:opacity-30 disabled:cursor-not-allowed leading-none"
+                          aria-label={`Reload ${w.name}`}
+                          title={`Reload ${w.name}`}
+                        >
+                          RLD
+                        </button>
+                      </div>
+                      <div className="min-w-0 flex flex-1 items-center gap-1">
+                        <span className="shrink-0">Rounds:</span>
+                        <span className="min-w-0 truncate text-amber" title={roundsLabel}>
+                          {ammoRoundBars(ammoState.rounds)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
               );
             })}
           </div>
