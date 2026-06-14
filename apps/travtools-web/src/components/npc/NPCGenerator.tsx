@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { RefreshCw, Trash2 } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
-import { rollD66, rollTravellerCheck } from '../../lib/dice';
+import { rollD66 } from '../../lib/dice';
 import {
   applyExperienceBonuses,
   generateCharacteristics,
@@ -15,13 +15,11 @@ import {
   lookupD66,
 } from '../../data/quickCharacters';
 import { RACES, randomRace, randomName } from '../../data/npcNames';
-import { toHex, statDM, skillChar } from '../../lib/traveller';
+import { toHex, statDM, skillChar, CharStat } from '../../lib/traveller';
+import NpcRollModal, { NpcRollTarget } from '../shared/NpcRollModal';
 
-const STAT_KEYS = ['str', 'dex', 'end_stat', 'int_stat', 'edu', 'soc'] as const;
-const STAT_LABELS = ['STR', 'DEX', 'END', 'INT', 'EDU', 'SOC'];
-const STAT_IDX: Record<string, number> = {
-  str: 0, dex: 1, end_stat: 2, int_stat: 3, edu: 4, soc: 5,
-};
+const CORE_STAT_KEYS: CharStat[] = ['str', 'dex', 'end_stat', 'int_stat', 'edu', 'soc'];
+const CORE_STAT_LABELS = ['STR', 'DEX', 'END', 'INT', 'EDU', 'SOC'];
 
 interface SavedNPC {
   id: string;
@@ -37,12 +35,11 @@ interface SavedNPC {
   created_at: string;
 }
 
-interface RollResult {
-  label: string;
-  d1: number; d2: number;
-  modifier: number;
-  total: number;
-  success: boolean;
+function npcStatValues(npc: SavedNPC): Partial<Record<CharStat, number | null>> {
+  return {
+    str: npc.str, dex: npc.dex, end_stat: npc.end_stat,
+    int_stat: npc.int_stat, edu: npc.edu, soc: npc.soc,
+  };
 }
 
 function rollArchetype() {
@@ -58,70 +55,6 @@ function rollLevel(): ExperienceLevel {
 }
 function rollStats(level: ExperienceLevel): number[] {
   return applyExperienceBonuses(generateCharacteristics(), level.charBonuses);
-}
-
-async function execRoll(
-  client: ReturnType<typeof useSupabase>['client'],
-  charName: string,
-  label: string,
-  modifier: number,
-  charDM: number,
-  skillLevel: number,
-): Promise<RollResult> {
-  const result = rollTravellerCheck({ label, difficulty: 8, modifier, mode: 'normal' });
-  if (client) {
-    await client.from('roll_log').insert({
-      character_name: charName,
-      check_label: label,
-      d1: result.rolls[0], d2: result.rolls[1],
-      char_dm: charDM, skill_level: skillLevel, bonus_dm: 0,
-      total: result.total, difficulty: 8,
-      success: result.success, effect: result.effect,
-    });
-  }
-  return {
-    label,
-    d1: result.rolls[0], d2: result.rolls[1],
-    modifier,
-    total: result.total,
-    success: result.success,
-  };
-}
-
-function RollBanner({ roll }: { roll: RollResult }) {
-  const dm = roll.modifier;
-  return (
-    <div className={`flex items-center gap-2 px-2 py-0.5 text-[10px] font-mono border ${
-      roll.success
-        ? 'border-safe/40 bg-safe/10 text-safe'
-        : 'border-alert/40 bg-alert/10 text-alert'
-    }`}>
-      <span className="text-body/50">{roll.label}</span>
-      <span>[{roll.d1}+{roll.d2}]</span>
-      {dm !== 0 && <span className="text-body/50">{dm > 0 ? '+' : ''}{dm}</span>}
-      <span className="font-bold">= {roll.total}</span>
-      <span className="ml-auto tracking-widest">{roll.success ? 'SUCCESS' : 'FAILURE'}</span>
-    </div>
-  );
-}
-
-// Compact stat cell — clickable to roll characteristic check
-function StatCell({
-  label, value, onClick,
-}: { label: string; value: number; onClick: () => void }) {
-  const dm = statDM(value);
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={`Roll ${label} check`}
-      className="text-center border border-steel/40 px-1.5 py-1 hover:border-amber hover:bg-amber/5 transition-colors min-w-[2.5rem]"
-    >
-      <div className="label text-[8px]">{label}</div>
-      <div className="text-amber font-mono font-bold text-sm leading-none mt-0.5">{toHex(value)}</div>
-      <div className="text-body/50 text-[8px] font-mono mt-0.5">{dm >= 0 ? '+' : ''}{dm}</div>
-    </button>
-  );
 }
 
 export default function NPCGenerator() {
@@ -141,11 +74,16 @@ export default function NPCGenerator() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
-  const [genRoll, setGenRoll] = useState<RollResult | null>(null);
+
+  // ── Roll modal ────────────────────────────────────────────────────────────
+  const [rollModal, setRollModal] = useState<{
+    npcName: string;
+    statValues: Partial<Record<CharStat, number | null>>;
+    target: NpcRollTarget;
+  } | null>(null);
 
   // ── Saved NPCs ────────────────────────────────────────────────────────────
   const [npcs, setNpcs] = useState<SavedNPC[]>([]);
-  const [npcRolls, setNpcRolls] = useState<Record<string, RollResult>>({});
 
   const loadNpcs = useCallback(async () => {
     if (!client) return;
@@ -161,10 +99,9 @@ export default function NPCGenerator() {
     const sub = client
       .channel('npcs-realtime')
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'npcs' },
-        (payload) => setNpcs(prev => prev.filter(n => n.id !== payload.old.id)))
+        (p) => setNpcs(prev => prev.filter(n => n.id !== p.old.id)))
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'npcs' },
-        (payload) => setNpcs(prev =>
-          prev.some(n => n.id === payload.new.id) ? prev : [payload.new as SavedNPC, ...prev]))
+        (p) => setNpcs(prev => prev.some(n => n.id === p.new.id) ? prev : [p.new as SavedNPC, ...prev]))
       .subscribe();
     return () => { client.removeChannel(sub); };
   }, [client]);
@@ -175,7 +112,7 @@ export default function NPCGenerator() {
     setNpcName(npc.name); setRace(npc.race); setArchetype(npc.archetype);
     setQuirk(npc.quirk); setLevel(npc.experienceLevel);
     setStats([npc.str, npc.dex, npc.end_stat, npc.int_stat, npc.edu, npc.soc]);
-    setNameError(false); setSaveError(null); setSavedMsg(null); setGenRoll(null);
+    setNameError(false); setSaveError(null); setSavedMsg(null);
   }
   function rerollName() { setNpcName(randomName(race)); setSavedMsg(null); }
   function rerollRace() {
@@ -184,26 +121,29 @@ export default function NPCGenerator() {
   function rerollArchetype() { setArchetype(rollArchetype().archetype); setSavedMsg(null); }
   function rerollQuirk() { setQuirk(rollQuirk().quirk); setSavedMsg(null); }
   function rerollLevel() {
-    const l = rollLevel(); setLevel(l); setStats(rollStats(l)); setSavedMsg(null); setGenRoll(null);
+    const l = rollLevel(); setLevel(l); setStats(rollStats(l)); setSavedMsg(null);
   }
-  function rerollStats() { setStats(rollStats(level)); setSavedMsg(null); setGenRoll(null); }
+  function rerollStats() { setStats(rollStats(level)); setSavedMsg(null); }
   function handleLevelChange(id: string) {
     const l = EXPERIENCE_LEVELS.find(e => e.id === id) ?? level;
-    setLevel(l); setStats(rollStats(l)); setSavedMsg(null); setGenRoll(null);
+    setLevel(l); setStats(rollStats(l)); setSavedMsg(null);
   }
 
-  async function rollGenStat(i: number) {
-    const dm = statDM(stats[i] ?? 7);
-    const roll = await execRoll(client, npcName || 'NPC', `${STAT_LABELS[i]} Check`, dm, dm, 0);
-    setGenRoll(roll);
+  // ── Roll helpers ──────────────────────────────────────────────────────────
+  function openStatRoll(npcNameArg: string, statValues: Partial<Record<CharStat, number | null>>, statKey: CharStat, statLabel: string) {
+    setRollModal({ npcName: npcNameArg, statValues, target: { label: statLabel, skillLevel: 0, charKey: statKey } });
   }
 
-  async function rollGenSkill(s: { name: string; level: number }) {
-    const charKey = skillChar(s.name) ?? 'int_stat';
-    const dm = statDM(stats[STAT_IDX[charKey]] ?? 7);
-    const roll = await execRoll(client, npcName || 'NPC', s.name, dm + s.level, dm, s.level);
-    setGenRoll(roll);
+  function openSkillRoll(npcNameArg: string, statValues: Partial<Record<CharStat, number | null>>, skill: { name: string; level: number }) {
+    const charKey = skillChar(skill.name) ?? 'int_stat';
+    setRollModal({ npcName: npcNameArg, statValues, target: { label: skill.name, skillLevel: skill.level, charKey } });
   }
+
+  // Generator stat values
+  const genStatValues: Partial<Record<CharStat, number | null>> = {
+    str: stats[0], dex: stats[1], end_stat: stats[2],
+    int_stat: stats[3], edu: stats[4], soc: stats[5],
+  };
 
   // ── Save / Delete ─────────────────────────────────────────────────────────
   async function handleSave() {
@@ -231,228 +171,228 @@ export default function NPCGenerator() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="h-full overflow-auto p-4 md:p-6">
-      <div className="max-w-5xl mx-auto space-y-5">
+    <div className="h-full flex flex-col lg:flex-row overflow-hidden">
 
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-steel pb-3">
-          <span className="label text-amber tracking-widest">QUICK CHARACTER GENERATOR</span>
-          <button type="button" onClick={rerollAll}
-            className="btn-steel flex items-center gap-1 text-xs">
-            <RefreshCw size={12} /> REROLL ALL
-          </button>
-        </div>
+      {/* ── Left sidebar: generation controls ───────────────────────────── */}
+      <div className="w-full lg:w-64 flex-shrink-0 border-b lg:border-b-0 lg:border-r border-steel flex flex-col overflow-y-auto">
+        <div className="p-3 space-y-3 flex-1">
 
-        {/* Profile + Characteristics side by side */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <span className="label text-amber tracking-widest text-[10px]">NPC GENERATOR</span>
+            <button type="button" onClick={rerollAll}
+              className="btn-steel flex items-center gap-1 text-[10px] px-2 py-1">
+              <RefreshCw size={10} /> ALL
+            </button>
+          </div>
 
-          {/* Profile */}
-          <div className="panel p-4 space-y-2.5">
-            <div className="label mb-1">NPC PROFILE</div>
-
-            <div className="flex items-center gap-2">
-              <div className="label w-24 flex-shrink-0">NAME</div>
+          {/* Profile fields */}
+          <div className="space-y-1.5">
+            {/* Name */}
+            <div className="flex items-center gap-1.5">
+              <div className="label w-20 flex-shrink-0 text-[9px]">NAME</div>
               <input
-                className={`input flex-1 text-xs ${nameError ? 'border-alert' : ''}`}
+                className={`input flex-1 text-[10px] py-0.5 ${nameError ? 'border-alert' : ''}`}
                 value={npcName}
                 onChange={e => { setNpcName(e.target.value); setNameError(false); setSavedMsg(null); }}
                 placeholder="NPC name"
               />
-              <button type="button" onClick={rerollName} className="btn-steel text-xs flex-shrink-0 px-2">
-                <RefreshCw size={11} />
+              <button type="button" onClick={rerollName} className="btn-steel px-1.5 py-0.5 flex-shrink-0">
+                <RefreshCw size={9} />
               </button>
             </div>
-            {nameError && <div className="text-xs text-alert font-mono">Name is required</div>}
+            {nameError && <div className="text-[10px] text-alert font-mono">Name required</div>}
 
-            <div className="flex items-center gap-2">
-              <div className="label w-24 flex-shrink-0">RACE</div>
-              <select aria-label="Race" className="select flex-1 text-xs" value={race}
+            {/* Race */}
+            <div className="flex items-center gap-1.5">
+              <div className="label w-20 flex-shrink-0 text-[9px]">RACE</div>
+              <select className="select flex-1 text-[10px] py-0.5" value={race}
                 onChange={e => { setRace(e.target.value); setNpcName(randomName(e.target.value)); setSavedMsg(null); }}>
                 {RACES.map(r => <option key={r.label} value={r.label}>{r.label}</option>)}
               </select>
-              <button type="button" onClick={rerollRace} className="btn-steel text-xs flex-shrink-0 px-2">
-                <RefreshCw size={11} />
+              <button type="button" onClick={rerollRace} className="btn-steel px-1.5 py-0.5 flex-shrink-0">
+                <RefreshCw size={9} />
               </button>
             </div>
 
-            <div className="flex items-center gap-2">
-              <div className="label w-24 flex-shrink-0">ARCHETYPE</div>
-              <div className="flex-1 text-xs font-mono text-bright truncate">{archetype}</div>
-              <button type="button" onClick={rerollArchetype} className="btn-steel text-xs flex-shrink-0 px-2">
-                <RefreshCw size={11} />
+            {/* Archetype */}
+            <div className="flex items-center gap-1.5">
+              <div className="label w-20 flex-shrink-0 text-[9px]">ARCHETYPE</div>
+              <div className="flex-1 text-[10px] font-mono text-bright truncate">{archetype}</div>
+              <button type="button" onClick={rerollArchetype} className="btn-steel px-1.5 py-0.5 flex-shrink-0">
+                <RefreshCw size={9} />
               </button>
             </div>
 
-            <div className="flex items-center gap-2">
-              <div className="label w-24 flex-shrink-0">QUIRK</div>
-              <div className="flex-1 text-xs font-mono text-bright truncate">{quirk}</div>
-              <button type="button" onClick={rerollQuirk} className="btn-steel text-xs flex-shrink-0 px-2">
-                <RefreshCw size={11} />
+            {/* Quirk */}
+            <div className="flex items-center gap-1.5">
+              <div className="label w-20 flex-shrink-0 text-[9px]">QUIRK</div>
+              <div className="flex-1 text-[10px] font-mono text-bright truncate">{quirk}</div>
+              <button type="button" onClick={rerollQuirk} className="btn-steel px-1.5 py-0.5 flex-shrink-0">
+                <RefreshCw size={9} />
               </button>
             </div>
 
-            <div className="flex items-center gap-2">
-              <div className="label w-24 flex-shrink-0">EXPERIENCE</div>
-              <select aria-label="Experience level" className="select flex-1 text-xs" value={level.id}
+            {/* Experience */}
+            <div className="flex items-center gap-1.5">
+              <div className="label w-20 flex-shrink-0 text-[9px]">EXPERIENCE</div>
+              <select className="select flex-1 text-[10px] py-0.5" value={level.id}
                 onChange={e => handleLevelChange(e.target.value)}>
                 {EXPERIENCE_LEVELS.map(l => <option key={l.id} value={l.id}>{l.label}</option>)}
               </select>
-              <button type="button" onClick={rerollLevel} className="btn-steel text-xs flex-shrink-0 px-2">
-                <RefreshCw size={11} />
-              </button>
-            </div>
-
-            <div className="pt-2 space-y-2">
-              {saveError && (
-                <div role="alert" className="text-xs text-alert border border-alert/40 bg-alert/10 px-3 py-2 font-mono">
-                  {saveError}
-                </div>
-              )}
-              {savedMsg && (
-                <div className="text-xs text-safe border border-safe/40 bg-safe/10 px-3 py-2 font-mono">
-                  {savedMsg}
-                </div>
-              )}
-              <button type="button" onClick={handleSave} disabled={saving}
-                className="btn-amber w-full disabled:opacity-50 text-xs">
-                {saving ? 'SAVING…' : 'SAVE NPC'}
+              <button type="button" onClick={rerollLevel} className="btn-steel px-1.5 py-0.5 flex-shrink-0">
+                <RefreshCw size={9} />
               </button>
             </div>
           </div>
 
-          {/* Characteristics + Skills */}
-          <div className="panel p-4 space-y-3">
+          {/* Characteristics */}
+          <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <div className="label">CHARACTERISTICS <span className="text-body/40 font-normal normal-case tracking-normal">— click to roll</span></div>
-              <button type="button" onClick={rerollStats} className="btn-steel flex items-center gap-1 text-xs">
-                <RefreshCw size={11} /> REROLL
+              <div className="label text-[9px]">CHARACTERISTICS</div>
+              <button type="button" onClick={rerollStats}
+                className="btn-steel flex items-center gap-1 text-[9px] px-1.5 py-0.5">
+                <RefreshCw size={9} /> REROLL
               </button>
             </div>
-
-            <div className="flex gap-1.5">
-              {STAT_KEYS.map((key, i) => (
-                <StatCell
-                  key={key}
-                  label={STAT_LABELS[i]}
-                  value={stats[i] ?? 7}
-                  onClick={() => rollGenStat(i)}
-                />
+            <div className="grid grid-cols-3 gap-1">
+              {CORE_STAT_KEYS.map((key, i) => (
+                <button key={key} type="button"
+                  title={`Roll ${CORE_STAT_LABELS[i]} check`}
+                  onClick={() => openStatRoll(npcName || 'NPC', genStatValues, key, CORE_STAT_LABELS[i])}
+                  className="text-center border border-steel/40 py-1 hover:border-amber hover:bg-amber/5 transition-colors">
+                  <div className="label text-[8px]">{CORE_STAT_LABELS[i]}</div>
+                  <div className="text-amber font-mono font-bold text-sm leading-none">{toHex(stats[i] ?? 7)}</div>
+                  <div className="text-body/50 text-[8px] font-mono">
+                    {statDM(stats[i] ?? 7) >= 0 ? '+' : ''}{statDM(stats[i] ?? 7)}
+                  </div>
+                </button>
               ))}
             </div>
+          </div>
 
-            <div>
-              <div className="label mb-1.5 text-[10px]">
-                SKILLS <span className="text-body/40 font-normal normal-case tracking-normal">— click to roll</span>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
+          {/* Skills */}
+          {level.skills.length > 0 && (
+            <div className="space-y-1.5">
+              <div className="label text-[9px]">SKILLS</div>
+              <div className="flex flex-wrap gap-1">
                 {level.skills.map(s => (
-                  <button key={s.name} type="button" onClick={() => rollGenSkill(s)}
-                    className="border border-steel/50 px-2 py-0.5 text-xs font-mono text-cyan-trav hover:border-amber hover:text-amber transition-colors">
+                  <button key={s.name} type="button"
+                    onClick={() => openSkillRoll(npcName || 'NPC', genStatValues, s)}
+                    className="border border-steel/50 px-1.5 py-0.5 text-[10px] font-mono text-cyan-trav hover:border-amber hover:text-amber transition-colors">
                     {s.name} {s.level}
                   </button>
                 ))}
               </div>
             </div>
-
-            {genRoll && <RollBanner roll={genRoll} />}
-          </div>
-        </div>
-
-        {/* Saved NPCs */}
-        <div className="space-y-2">
-          <div className="label border-b border-steel pb-2">
-            SAVED NPCS
-            <span className="text-body/40 font-normal normal-case tracking-normal ml-2">
-              {npcs.length} record{npcs.length !== 1 ? 's' : ''}
-            </span>
-          </div>
-
-          {npcs.length === 0 && (
-            <div className="text-xs text-body/45 font-mono py-6 text-center">No NPCs saved yet.</div>
           )}
-
-          {npcs.map(npc => {
-            const npcStats = [npc.str, npc.dex, npc.end_stat, npc.int_stat, npc.edu, npc.soc];
-            const skills = Array.isArray(npc.skills) ? npc.skills as { name: string; level: number }[] : [];
-            const roll = npcRolls[npc.id];
-
-            return (
-              <div key={npc.id} className="border border-steel/40 bg-panel">
-                {/* Single ribbon row */}
-                <div className="flex items-center gap-3 px-3 py-1.5 flex-wrap">
-
-                  {/* Name + meta */}
-                  <div className="flex-shrink-0 min-w-[10rem]">
-                    <div className="font-mono text-bright font-bold text-xs leading-tight">{npc.name}</div>
-                    <div className="text-body/45 text-[9px] font-mono leading-tight">
-                      {npc.race}{npc.archetype ? ` · ${npc.archetype}` : ''}{npc.experience_level ? ` · ${npc.experience_level}` : ''}
-                    </div>
-                  </div>
-
-                  {/* Stats — clickable */}
-                  <div className="flex gap-1 flex-shrink-0">
-                    {STAT_KEYS.map((key, i) => (
-                      <button
-                        key={key} type="button"
-                        title={`Roll ${STAT_LABELS[i]} check`}
-                        onClick={async () => {
-                          const dm = statDM(npcStats[i] ?? 7);
-                          const r = await execRoll(client, npc.name, `${STAT_LABELS[i]} Check`, dm, dm, 0);
-                          setNpcRolls(prev => ({ ...prev, [npc.id]: r }));
-                        }}
-                        className="text-center border border-steel/30 px-1 py-0.5 hover:border-amber hover:bg-amber/5 transition-colors min-w-[1.75rem]"
-                      >
-                        <div className="label text-[7px] leading-none">{STAT_LABELS[i]}</div>
-                        <div className="text-amber font-mono font-bold text-[11px] leading-none mt-0.5">{toHex(npcStats[i] ?? 7)}</div>
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Skills */}
-                  {skills.length > 0 && (
-                    <div className="flex flex-wrap gap-1 flex-1">
-                      {skills.map(s => (
-                        <button key={s.name} type="button"
-                          onClick={async () => {
-                            const charKey = skillChar(s.name) ?? 'int_stat';
-                            const dm = statDM(npcStats[STAT_IDX[charKey]] ?? 7);
-                            const r = await execRoll(client, npc.name, s.name, dm + s.level, dm, s.level);
-                            setNpcRolls(prev => ({ ...prev, [npc.id]: r }));
-                          }}
-                          className="border border-steel/40 px-1.5 py-0.5 text-[10px] font-mono text-cyan-trav hover:border-amber hover:text-amber transition-colors">
-                          {s.name} {s.level}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Quirk */}
-                  {npc.quirk && (
-                    <div className="text-[9px] font-mono text-body/40 italic flex-1 min-w-[6rem] truncate hidden md:block">
-                      {npc.quirk}
-                    </div>
-                  )}
-
-                  {/* Delete */}
-                  <button type="button" aria-label={`Delete ${npc.name}`}
-                    onClick={() => deleteNpc(npc.id)}
-                    className="text-body/30 hover:text-alert transition-colors flex-shrink-0 ml-auto">
-                    <Trash2 size={11} />
-                  </button>
-                </div>
-
-                {/* Roll result — thin strip below ribbon */}
-                {roll && (
-                  <div className="border-t border-steel/30 px-3 py-0.5">
-                    <RollBanner roll={roll} />
-                  </div>
-                )}
-              </div>
-            );
-          })}
         </div>
 
+        {/* Save */}
+        <div className="p-3 border-t border-steel space-y-2 flex-shrink-0">
+          {saveError && (
+            <div role="alert" className="text-[10px] text-alert border border-alert/40 bg-alert/10 px-2 py-1 font-mono">
+              {saveError}
+            </div>
+          )}
+          {savedMsg && (
+            <div className="text-[10px] text-safe border border-safe/40 bg-safe/10 px-2 py-1 font-mono">
+              {savedMsg}
+            </div>
+          )}
+          <button type="button" onClick={handleSave} disabled={saving}
+            className="btn-amber w-full disabled:opacity-50 text-xs">
+            {saving ? 'SAVING…' : 'SAVE NPC'}
+          </button>
+        </div>
       </div>
+
+      {/* ── Main panel: saved NPCs ───────────────────────────────────────── */}
+      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+        <div className="label border-b border-steel pb-2 flex items-center justify-between">
+          <span>SAVED NPCS</span>
+          <span className="text-body/40 font-normal normal-case tracking-normal text-[10px]">
+            {npcs.length} record{npcs.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+
+        {npcs.length === 0 && (
+          <div className="text-xs text-body/45 font-mono py-10 text-center">
+            No NPCs saved yet.
+          </div>
+        )}
+
+        {npcs.map(npc => {
+          const sv = npcStatValues(npc);
+          const npcStats = CORE_STAT_KEYS.map(k => sv[k] ?? null);
+          const skills = Array.isArray(npc.skills) ? npc.skills as { name: string; level: number }[] : [];
+
+          return (
+            <div key={npc.id} className="border border-steel/40 bg-panel flex items-center gap-3 px-3 py-1.5 flex-wrap">
+
+              {/* Name + meta */}
+              <div className="flex-shrink-0 min-w-[9rem]">
+                <div className="font-mono text-bright font-bold text-xs leading-tight">{npc.name}</div>
+                <div className="text-body/45 text-[9px] font-mono leading-tight">
+                  {npc.race}{npc.archetype ? ` · ${npc.archetype}` : ''}{npc.experience_level ? ` · ${npc.experience_level}` : ''}
+                </div>
+              </div>
+
+              {/* Stats — clickable */}
+              <div className="flex gap-0.5 flex-shrink-0">
+                {CORE_STAT_KEYS.map((key, i) => (
+                  <button key={key} type="button"
+                    title={`Roll ${CORE_STAT_LABELS[i]} check`}
+                    onClick={() => openStatRoll(npc.name, sv, key, CORE_STAT_LABELS[i])}
+                    className="text-center border border-steel/30 px-1 py-0.5 hover:border-amber hover:bg-amber/5 transition-colors min-w-[2rem]">
+                    <div className="label text-[7px] leading-none">{CORE_STAT_LABELS[i]}</div>
+                    <div className="text-amber font-mono font-bold text-[11px] leading-none mt-0.5">
+                      {toHex(npcStats[i] ?? 7)}
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              {/* Skills */}
+              {skills.length > 0 && (
+                <div className="flex flex-wrap gap-1 flex-1">
+                  {skills.map(s => (
+                    <button key={s.name} type="button"
+                      onClick={() => openSkillRoll(npc.name, sv, s)}
+                      className="border border-steel/40 px-1.5 py-0.5 text-[10px] font-mono text-cyan-trav hover:border-amber hover:text-amber transition-colors">
+                      {s.name} {s.level}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Quirk */}
+              {npc.quirk && (
+                <div className="text-[9px] font-mono text-body/40 italic flex-1 min-w-[5rem] truncate hidden xl:block">
+                  {npc.quirk}
+                </div>
+              )}
+
+              {/* Delete */}
+              <button type="button" aria-label={`Delete ${npc.name}`}
+                onClick={() => deleteNpc(npc.id)}
+                className="text-body/30 hover:text-alert transition-colors flex-shrink-0 ml-auto">
+                <Trash2 size={11} />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Roll modal */}
+      {rollModal && (
+        <NpcRollModal
+          npcName={rollModal.npcName}
+          statValues={rollModal.statValues}
+          target={rollModal.target}
+          onClose={() => setRollModal(null)}
+        />
+      )}
     </div>
   );
 }
