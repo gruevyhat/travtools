@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { ArrowLeftRight, ChevronDown, ChevronUp, Crosshair, GripVertical, HeartPulse, Plus, RefreshCw, Trash2, X } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
 import { fmtDM } from '../../lib/dice';
-import { parseDamageExpr, statDM, toHex } from '../../lib/traveller';
+import { effectiveStatValue, parseDamageExpr, statDM, toHex } from '../../lib/traveller';
 import { Character, CombatCombatant, RangeBand, Weapon, ArmourItem } from '../../types';
 import { CORE_NPC_ARCHETYPES, CoreNpcArchetype } from '../../data/npcArchetypes';
 import NumberStepper from '../shared/NumberStepper';
@@ -46,6 +46,45 @@ function routeDamage(dmg: number, endCur: number, strCur: number, dexCur: number
   const sHit = Math.min(rem, s); s -= sHit; rem -= sHit;
   const dHit = Math.min(rem, d); d -= dHit;
   return { endCur: e, strCur: s, dexCur: d };
+}
+
+type PhysicalStatKey = 'str' | 'dex' | 'end_stat';
+type PhysicalCurrentKey = 'str_cur' | 'dex_cur' | 'end_cur';
+
+const PHYSICAL_CURRENT_KEYS: Record<PhysicalStatKey, PhysicalCurrentKey> = {
+  str: 'str_cur',
+  dex: 'dex_cur',
+  end_stat: 'end_cur',
+};
+
+function statTempMod(char: Character, key: PhysicalStatKey) {
+  const value = char.temp_mods?.[key];
+  return typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : 0;
+}
+
+function physicalBase(char: Character, key: PhysicalStatKey) {
+  return char[key] as number | null;
+}
+
+function physicalCurrentRaw(char: Character, key: PhysicalStatKey) {
+  const currentKey = PHYSICAL_CURRENT_KEYS[key];
+  return (char[currentKey] as number | null) ?? physicalBase(char, key);
+}
+
+function physicalEffectiveMax(char: Character, key: PhysicalStatKey) {
+  return effectiveStatValue(physicalBase(char, key), statTempMod(char, key));
+}
+
+function physicalEffectiveCurrent(char: Character, key: PhysicalStatKey) {
+  return effectiveStatValue(physicalCurrentRaw(char, key), statTempMod(char, key));
+}
+
+function physicalRawFromEffective(char: Character, key: PhysicalStatKey, value: number) {
+  return Math.trunc(value) - statTempMod(char, key);
+}
+
+function physicalRawFloor(char: Character, key: PhysicalStatKey) {
+  return -statTempMod(char, key);
 }
 
 function loadFromStorage(): { combatants: CombatCombatant[]; round: number; activeIndex: number } | null {
@@ -148,11 +187,7 @@ function armourLabel(items: ArmourItem[]) {
 }
 
 function effectiveStr(char: Character | null) {
-  if (!char) return null;
-  const base = char.str_cur ?? char.str;
-  if (base === null) return null;
-  const mod = char.temp_mods?.str ?? 0;
-  return Math.max(0, base + mod);
+  return char ? physicalEffectiveCurrent(char, 'str') : null;
 }
 
 function needsStrDM(weapon: Weapon) {
@@ -167,9 +202,9 @@ function statSummary(char: Character | null) {
   const intVal = char.int_stat ?? 0;
   const edu = char.edu ?? 0;
   const soc = char.soc ?? 0;
-  const endCur = char.end_cur ?? end;
-  const strCur = char.str_cur ?? str;
-  const dexCur = char.dex_cur ?? dex;
+  const endCur = physicalEffectiveCurrent(char, 'end_stat') ?? 0;
+  const strCur = physicalEffectiveCurrent(char, 'str') ?? 0;
+  const dexCur = physicalEffectiveCurrent(char, 'dex') ?? 0;
   return {
     upp: `${toHex(str)}${toHex(dex)}${toHex(end)}${toHex(intVal)}${toHex(edu)}${toHex(soc)}`,
     current: `E${endCur}/S${strCur}/D${dexCur}`,
@@ -309,11 +344,17 @@ export default function CombatTracker() {
 
     const char = chars.find(x => x.id === combatantId);
     if (!char || !client) return false;
-    const endMax = char.end_stat ?? 7, strMax = char.str ?? 7, dexMax = char.dex ?? 7;
-    const endCur = char.end_cur ?? endMax, strCur = char.str_cur ?? strMax, dexCur = char.dex_cur ?? dexMax;
+    const endCur = physicalEffectiveCurrent(char, 'end_stat') ?? 0;
+    const strCur = physicalEffectiveCurrent(char, 'str') ?? 0;
+    const dexCur = physicalEffectiveCurrent(char, 'dex') ?? 0;
     const next = routeDamage(pts, endCur, strCur, dexCur);
-    patchCharHealth(combatantId, { end_cur: next.endCur, str_cur: next.strCur, dex_cur: next.dexCur });
-    const { error } = await client.from('characters').update({ end_cur: next.endCur, str_cur: next.strCur, dex_cur: next.dexCur }).eq('id', combatantId);
+    const patch = {
+      end_cur: physicalRawFromEffective(char, 'end_stat', next.endCur),
+      str_cur: physicalRawFromEffective(char, 'str', next.strCur),
+      dex_cur: physicalRawFromEffective(char, 'dex', next.dexCur),
+    };
+    patchCharHealth(combatantId, patch);
+    const { error } = await client.from('characters').update(patch).eq('id', combatantId);
     if (error) { setErrorMessage(`Could not save wound: ${error.message}`); loadChars(); return false; }
     return true;
   }
@@ -328,11 +369,10 @@ export default function CombatTracker() {
   async function adjustStat(charId: string, stat: 'str' | 'dex' | 'end', delta: number) {
     const char = chars.find(x => x.id === charId);
     if (!char || !client) return;
-    const maxKey = stat === 'end' ? 'end_stat' : stat as 'str' | 'dex';
+    const maxKey: PhysicalStatKey = stat === 'end' ? 'end_stat' : stat;
     const curKey = stat === 'end' ? 'end_cur' : `${stat}_cur` as 'str_cur' | 'dex_cur';
-    const max = char[maxKey as keyof Character] as number ?? 7;
-    const cur = char[curKey as keyof Character] as number | null ?? max;
-    const val = Math.max(0, Math.min(max, cur + delta));
+    const cur = physicalCurrentRaw(char, maxKey) ?? physicalBase(char, maxKey) ?? 0;
+    const val = Math.max(physicalRawFloor(char, maxKey), cur + delta);
     patchCharHealth(charId, { [curKey]: val } as Partial<Pick<Character, 'str_cur' | 'dex_cur' | 'end_cur'>>);
     const { error } = await client.from('characters').update({ [curKey]: val }).eq('id', charId);
     if (error) { setErrorMessage(`Could not update stat: ${error.message}`); loadChars(); }
@@ -637,10 +677,12 @@ export default function CombatTracker() {
       );
     }
 
-    const strMax = char?.str ?? null, dexMax = char?.dex ?? null, endMax = char?.end_stat ?? null;
-    const strCur = char ? (char.str_cur ?? strMax ?? 0) : null;
-    const dexCur = char ? (char.dex_cur ?? dexMax ?? 0) : null;
-    const endCur = char ? (char.end_cur ?? endMax ?? 0) : null;
+    const strMax = char ? physicalEffectiveMax(char, 'str') : null;
+    const dexMax = char ? physicalEffectiveMax(char, 'dex') : null;
+    const endMax = char ? physicalEffectiveMax(char, 'end_stat') : null;
+    const strCur = char ? physicalEffectiveCurrent(char, 'str') : null;
+    const dexCur = char ? physicalEffectiveCurrent(char, 'dex') : null;
+    const endCur = char ? physicalEffectiveCurrent(char, 'end_stat') : null;
     if (!char || strMax === null || dexMax === null || endMax === null || strCur === null || dexCur === null || endCur === null) {
       return <div className="text-xs text-body/70 font-mono">Character health unavailable.</div>;
     }
@@ -684,9 +726,9 @@ export default function CombatTracker() {
     const isDropTarget = c.id === dropId && dragId !== null && dragId !== c.id;
     const isInvalidDropTarget = c.id === invalidDropId;
     const char = !c.isNPC ? chars.find(x => x.id === c.id) ?? null : null;
-    const strCur = char ? (char.str_cur ?? char.str ?? 0) : null;
-    const dexCur = char ? (char.dex_cur ?? char.dex ?? 0) : null;
-    const endCur = char ? (char.end_cur ?? char.end_stat ?? 0) : null;
+    const strCur = char ? physicalEffectiveCurrent(char, 'str') ?? 0 : null;
+    const dexCur = char ? physicalEffectiveCurrent(char, 'dex') ?? 0 : null;
+    const endCur = char ? physicalEffectiveCurrent(char, 'end_stat') ?? 0 : null;
     const isDead = char ? strCur === 0 && dexCur === 0 && endCur === 0 : false;
     const isDown = char ? endCur === 0 || (strCur === 0 && dexCur === 0) : c.npcHitsMax !== null && (c.npcHitsCur ?? c.npcHitsMax) <= 0;
     const targetName = c.targetId ? combatants.find(x => x.id === c.targetId)?.name : null;

@@ -62,9 +62,21 @@ const smokeCharacter = {
   career: 'Scout',
   rank: 'Detached Duty',
   homeworld: 'Regina',
-  skills: [{ name: 'Pilot', level: 1 }],
+  skills: [{ name: 'Pilot', level: 1 }, { name: 'Gun Combat (Slug)', level: 1 }],
   psionic_talents: [{ name: 'Awareness', level: 1 }],
-  weapons: [{ name: 'Unarmed', skill: 'Melee (Unarmed)', range: 'Melee', damage: '1D+STR DM', traits: '' }],
+  weapons: [
+    {
+      name: 'Autopistol',
+      skill: 'Gun Combat (Slug)',
+      range: '10m',
+      damage: '3D-3',
+      traits: '',
+      ammo_clips: 2,
+      ammo_rounds: 15,
+      ammo_clip_size: 15,
+    },
+    { name: 'Unarmed', skill: 'Melee (Unarmed)', range: 'Melee', damage: '1D+STR DM', traits: '' },
+  ],
   notes: null,
   created_at: new Date(0).toISOString(),
 };
@@ -381,6 +393,31 @@ async function checkRosterInteractions(browser, baseUrl) {
   const rosterAfterPsi = await desktopRoster.innerText({ timeout: 5_000 });
   if (!rosterAfterPsi.includes('9/12')) {
     throw new Error(`Psionic talent use did not spend PSI:\n${rosterAfterPsi}`);
+  }
+
+  await desktopRoster.getByRole('button', { name: /Autopistol/i }).click();
+  const weaponRollPanel = page.locator('.fixed .panel');
+  await replaceByTyping(weaponRollPanel.getByLabel('Ammo Used'), '3');
+  await replaceByTyping(weaponRollPanel.getByRole('textbox', { name: /roll modifier/i }), '+10');
+  const ammoPreviewText = await weaponRollPanel.innerText({ timeout: 5_000 });
+  if (!ammoPreviewText.includes('after 12/15 rnd · 2 clips')) {
+    throw new Error(`Ammo use preview did not show expected spend:\n${ammoPreviewText}`);
+  }
+  await weaponRollPanel.getByRole('button', { name: 'ROLL ATTACK 2D6' }).click();
+  await weaponRollPanel.getByText('Ammo used 3', { exact: false }).waitFor({ state: 'visible', timeout: 5_000 });
+  await replaceByTyping(weaponRollPanel.getByLabel('Damage Modifier'), '+4');
+  await weaponRollPanel.getByRole('button', { name: 'ROLL DAMAGE' }).click();
+  await weaponRollPanel.getByText('Damage Mod +4', { exact: false }).waitFor({ state: 'visible', timeout: 5_000 });
+  await page.keyboard.press('Escape');
+  const rosterAfterAmmo = await desktopRoster.innerText({ timeout: 5_000 });
+  if (!rosterAfterAmmo.includes('12/15 rnd · 2 clips')) {
+    throw new Error(`Weapon use did not spend ammo:\n${rosterAfterAmmo}`);
+  }
+  await replaceByTyping(desktopRoster.getByLabel('Autopistol rounds in current clip'), '9');
+  await replaceByTyping(desktopRoster.getByLabel('Autopistol clips'), '4');
+  const rosterAfterManualAmmo = await desktopRoster.innerText({ timeout: 5_000 });
+  if (!rosterAfterManualAmmo.includes('9/15 rnd · 4 clips')) {
+    throw new Error(`Manual ammo controls did not update the weapon row:\n${rosterAfterManualAmmo}`);
   }
 
   await page.screenshot({ path: new URL('roster.png', outputDir).pathname, fullPage: false });

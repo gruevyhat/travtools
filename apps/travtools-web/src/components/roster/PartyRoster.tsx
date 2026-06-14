@@ -19,6 +19,7 @@ import { parseXLSXCharacter } from '../../lib/parseXLSX';
 import { csvRow, downloadCsv } from '../../lib/csv';
 import { CORE_EQUIPMENT } from '../../data/equipment';
 import { fmtDM, DIFFICULTIES, RollMode } from '../../lib/dice';
+import { spendWeaponAmmo, weaponAmmoState, weaponAmmoStateLabel, weaponClipSize, type WeaponAmmoSpendResult } from '../../lib/ammo';
 import NumberStepper from '../shared/NumberStepper';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -50,8 +51,6 @@ const CORE_STATS: CharStat[] = ['str', 'dex', 'end_stat', 'int_stat', 'edu', 'so
 const EXTRA_STATS: CharStat[] = ['chr', 'mor', 'lck'];
 const ALL_STATS: CharStat[] = [...CORE_STATS, 'psi', ...EXTRA_STATS];
 const CORE_STAT_FIELDS: Array<keyof CharForm> = ['str', 'dex', 'end_stat', 'int_stat', 'edu', 'soc'];
-const TEMP_MOD_MIN = -15;
-const TEMP_MOD_MAX = 15;
 const PORTRAIT_WIDTH = 360;
 const PORTRAIT_HEIGHT = 480;
 
@@ -62,10 +61,6 @@ function parseIntegerInput(raw: string): number {
   if (trimmed === '' || trimmed === '+' || trimmed === '-') return 0;
   const value = parseInt(trimmed, 10);
   return Number.isNaN(value) ? 0 : value;
-}
-
-function clamp(n: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, n));
 }
 
 function successChance(difficulty: number, modifier: number): number {
@@ -89,7 +84,7 @@ function normalizeTempMods(raw: AttributeMods | null | undefined): Partial<Recor
   return ALL_STATS.reduce<Partial<Record<CharStat, number>>>((mods, key) => {
     const value = raw[key];
     if (typeof value === 'number' && Number.isFinite(value) && value !== 0) {
-      mods[key] = clamp(Math.trunc(value), TEMP_MOD_MIN, TEMP_MOD_MAX);
+      mods[key] = Math.trunc(value);
     }
     return mods;
   }, {});
@@ -100,6 +95,11 @@ function parseNullableNumber(raw: string): number | null {
   if (trimmed === '') return null;
   const value = Number(trimmed);
   return Number.isFinite(value) ? value : null;
+}
+
+function parseNullableNonNegativeInteger(raw: string): number | null {
+  const value = parseNullableNumber(raw);
+  return value === null ? null : Math.max(0, Math.trunc(value));
 }
 
 function normaliseLookupName(name: string | null | undefined): string {
@@ -278,15 +278,16 @@ function sortCharacters(characters: Character[]): Character[] {
 }
 
 function physicalStatus(char: Character): { label: string; color: string } {
-  const end = char.end_cur ?? char.end_stat ?? 0;
-  const str = char.str_cur ?? char.str ?? 0;
-  const dex = char.dex_cur ?? char.dex ?? 0;
+  const tempMods = normalizeTempMods(char.temp_mods);
+  const maxEnd = effectiveStatValue(char.end_stat, tempMods.end_stat ?? 0) ?? 0;
+  const maxStr = effectiveStatValue(char.str, tempMods.str ?? 0) ?? 0;
+  const maxDex = effectiveStatValue(char.dex, tempMods.dex ?? 0) ?? 0;
+  const end = effectiveStatValue(char.end_cur ?? char.end_stat, tempMods.end_stat ?? 0) ?? 0;
+  const str = effectiveStatValue(char.str_cur ?? char.str, tempMods.str ?? 0) ?? 0;
+  const dex = effectiveStatValue(char.dex_cur ?? char.dex, tempMods.dex ?? 0) ?? 0;
   if (end <= 0 && str <= 0 && dex <= 0) return { label: 'DEAD', color: 'text-alert' };
   if (end <= 0 && (str <= 0 || dex <= 0)) return { label: 'INCAPACITATED', color: 'text-alert' };
   if (end <= 0) return { label: 'SERIOUS WOUND', color: 'text-alert' };
-  const maxEnd = char.end_stat ?? 0;
-  const maxStr = char.str ?? 0;
-  const maxDex = char.dex ?? 0;
   if (end < maxEnd || str < maxStr || dex < maxDex) return { label: 'DAMAGED', color: 'text-amber' };
   return { label: 'HEALTHY', color: 'text-safe' };
 }
@@ -506,6 +507,7 @@ interface RollTarget {
   kind?: 'check' | 'initiative';
   applyJackOfAllTrades?: boolean;
   weapon?: Weapon;
+  weaponIndex?: number;
 }
 
 interface AttackResult {
@@ -521,8 +523,11 @@ interface DamageResult {
   constant: number;
   strDM: number;
   effect: number;
+  damageModifier: number;
   total: number;
 }
+
+const WEAPON_ROSTER_GRID = 'md:grid-cols-[minmax(5.5rem,8rem)_2.5rem_3.5rem_4.75rem_4.5rem_minmax(8rem,1fr)]';
 
 function RollModal({
   char,
@@ -534,6 +539,7 @@ function RollModal({
   onSave,
   onSaveDamage,
   onSpendPsi,
+  onSpendAmmo,
 }: {
   char: Character;
   target: RollTarget;
@@ -544,9 +550,15 @@ function RollModal({
   onSave: (result: { d1: number; d2: number; charDM: number; skillLevel: number; bonusDM: number; total: number }, difficulty: number, label: string) => void;
   onSaveDamage?: (weaponName: string, rolls: number[], constant: number, strDM: number, effect: number, total: number) => void;
   onSpendPsi?: (cost: number) => void;
+  onSpendAmmo?: (amount: number) => WeaponAmmoSpendResult | null;
 }) {
   const isWeapon = !!initialTarget.weapon;
-  const isMelee = isWeapon && initialTarget.weapon!.range === 'Melee';
+  const currentWeapon = isWeapon
+    ? initialTarget.weaponIndex !== undefined
+      ? char.weapons?.[initialTarget.weaponIndex] ?? initialTarget.weapon!
+      : initialTarget.weapon!
+    : null;
+  const isMelee = currentWeapon?.range === 'Melee';
   const isInitiative = initialTarget.kind === 'initiative';
   const isPsionic = initialTarget.isPsionic;
 
@@ -558,10 +570,13 @@ function RollModal({
   const [skillLevelInput] = useState(initialTarget.skillLevel === null ? 'None' : String(initialTarget.skillLevel));
   const [bonusDMInput, setBonusDMInput] = useState('');
   const [psiCostInput, setPsiCostInput] = useState('');
+  const [ammoUseInput, setAmmoUseInput] = useState(isWeapon ? '1' : '');
+  const [damageModifierInput, setDamageModifierInput] = useState('');
   const [rollMode, setRollMode] = useState<RollMode>('normal');
   const [attackResult, setAttackResult] = useState<AttackResult | null>(null);
   const [damageResult, setDamageResult] = useState<DamageResult | null>(null);
   const [lastPsiCostSpent, setLastPsiCostSpent] = useState<number | null>(null);
+  const [lastAmmoSpend, setLastAmmoSpend] = useState<WeaponAmmoSpendResult | null>(null);
   const [saved, setSaved] = useState(false);
   const isCustom = initialTarget.isCustom === true;
 
@@ -576,8 +591,13 @@ function RollModal({
   const skillLevel = isInitiative ? 0 : skillLevelIsNone ? -3 + joatLevel : parseIntegerInput(skillLevelInput);
   const bonusDM = parseIntegerInput(bonusDMInput);
   const psiCost = Math.max(0, parseIntegerInput(psiCostInput));
+  const ammoUse = Math.max(0, parseIntegerInput(ammoUseInput));
+  const damageModifier = parseIntegerInput(damageModifierInput);
   const hasPsiPool = psiMax > 0;
   const psiAfterCost = hasPsiPool ? Math.max(0, psiCurrent - psiCost) : 0;
+  const ammoState = currentWeapon ? weaponAmmoState(currentWeapon) : null;
+  const tracksAmmo = ammoState?.tracked === true;
+  const ammoPreview = currentWeapon && tracksAmmo && ammoUse > 0 ? spendWeaponAmmo(currentWeapon, ammoUse) : null;
   const availableStats = ALL_STATS.filter(k => statValue(k) !== null);
   const attackHit = attackResult !== null && attackResult.total >= difficulty;
   const skillSummary = skillLevelIsNone
@@ -612,25 +632,30 @@ function RollModal({
     } else {
       setLastPsiCostSpent(null);
     }
+    if (isWeapon && tracksAmmo && ammoUse > 0 && onSpendAmmo) {
+      setLastAmmoSpend(onSpendAmmo(ammoUse));
+    } else {
+      setLastAmmoSpend(null);
+    }
     setSaved(true);
   }
 
   function rollDamage() {
-    if (!attackResult || !attackHit || !initialTarget.weapon) return;
-    const { dice, constant } = parseDamageExpr(initialTarget.weapon.damage);
+    if (!attackResult || !attackHit || !currentWeapon) return;
+    const { dice, constant } = parseDamageExpr(currentWeapon.damage);
     const strDMVal = isMelee ? statDM(statValue('str')) : 0;
     const effect = attackResult.effect;
     const rolls = Array.from({ length: Math.max(1, dice) }, () => Math.ceil(Math.random() * 6));
     const base = rolls.reduce((s, r) => s + r, 0);
-    const total = Math.max(0, base + constant + strDMVal + effect);
-    setDamageResult({ rolls, constant, strDM: strDMVal, effect, total });
-    onSaveDamage?.(initialTarget.weapon.name, rolls, constant, strDMVal, effect, total);
+    const total = Math.max(0, base + constant + strDMVal + effect + damageModifier);
+    setDamageResult({ rolls, constant, strDM: strDMVal, effect, damageModifier, total });
+    onSaveDamage?.(currentWeapon.name, rolls, constant + damageModifier, strDMVal, effect, total);
   }
 
   const success = attackResult !== null && attackResult.total >= difficulty;
   const effect = attackResult !== null ? attackResult.total - difficulty : 0;
   const modalTitle = isWeapon
-    ? `${initialTarget.weapon!.name} ATTACK — ${charDisplayName(char)}`
+    ? `${currentWeapon?.name ?? initialTarget.label} ATTACK — ${charDisplayName(char)}`
     : isInitiative ? `INITIATIVE — ${charDisplayName(char)}`
     : isCustom ? `UNKNOWN CHECK — ${charDisplayName(char)}`
     : `${label} CHECK — ${charDisplayName(char)}`;
@@ -645,12 +670,37 @@ function RollModal({
         </div>
 
         <div className="p-4 space-y-3">
-          {isWeapon && (
+          {isWeapon && currentWeapon && (
             <div className="flex items-center gap-4 text-xs font-mono border border-steel/40 px-3 py-2">
-              <span className="text-body/70">{initialTarget.weapon!.range}</span>
-              <span className="text-amber">{initialTarget.weapon!.damage}</span>
-              <span className="text-body/65 text-[10px]">{initialTarget.weapon!.skill}</span>
-              {initialTarget.weapon!.traits && <span className="text-body/55 text-[10px] ml-auto">{initialTarget.weapon!.traits}</span>}
+              <span className="text-body/70">{currentWeapon.range}</span>
+              <span className="text-amber">{currentWeapon.damage}</span>
+              <span className="text-body/65 text-[10px]">{currentWeapon.skill}</span>
+              {currentWeapon.traits && <span className="text-body/55 text-[10px] ml-auto">{currentWeapon.traits}</span>}
+            </div>
+          )}
+
+          {isWeapon && currentWeapon && tracksAmmo && ammoState && (
+            <div className="flex items-center gap-2 flex-wrap border border-amber/35 px-2 py-1 text-xs font-mono">
+              <label className="text-[10px] uppercase tracking-wider text-amber" htmlFor="roll-ammo-used">Ammo Used</label>
+              <NumberStepper
+                id="roll-ammo-used"
+                ariaLabel="Ammo Used"
+                className="w-20"
+                inputClassName="input text-xs h-7 py-0 px-2"
+                min={0}
+                step={1}
+                value={ammoUseInput}
+                onChange={setAmmoUseInput}
+              />
+              <span className={ammoState.totalRounds === 0 ? 'text-alert' : 'text-cyan-trav'}>
+                {weaponAmmoStateLabel(ammoState)}
+              </span>
+              {ammoPreview && (
+                <span className={ammoPreview.insufficient ? 'text-alert' : 'text-body/55'}>
+                  after {weaponAmmoStateLabel(ammoPreview.after)}
+                  {ammoPreview.insufficient ? ` · only ${ammoPreview.spent} available` : ''}
+                </span>
+              )}
             </div>
           )}
 
@@ -813,10 +863,23 @@ function RollModal({
 
               {isWeapon && attackHit && (
                 <div className="border-t border-steel/40 pt-2 space-y-2">
-                  <div className="text-xs text-body/60 font-mono">
-                    Damage: <span className="text-amber">{initialTarget.weapon!.damage}</span>
-                    {' + Effect'} {fmtDM(effect)}
-                    {isMelee && <span className="text-body/70"> + STR DM {fmtDM(statDM(statValue('str')))}</span>}
+                  <div className="grid grid-cols-[minmax(0,1fr)_8rem] gap-2 items-end">
+                    <div className="text-xs text-body/60 font-mono">
+                      Damage: <span className="text-amber">{currentWeapon?.damage}</span>
+                      {' + Effect'} {fmtDM(effect)}
+                      {isMelee && <span className="text-body/70"> + STR DM {fmtDM(statDM(statValue('str')))}</span>}
+                    </div>
+                    <div className="space-y-1">
+                      <label className="label" htmlFor="roll-damage-modifier">Damage Modifier</label>
+                      <NumberStepper
+                        id="roll-damage-modifier"
+                        ariaLabel="Damage Modifier"
+                        value={damageModifierInput}
+                        onChange={setDamageModifierInput}
+                        placeholder="0"
+                        inputClassName="input text-xs"
+                      />
+                    </div>
                   </div>
                   <button onClick={rollDamage} className="btn-steel w-full text-center text-xs">
                     ROLL DAMAGE
@@ -843,6 +906,10 @@ function RollModal({
                           <><span className="text-body">+</span>
                           <span className="text-body/60 text-xs">STR {fmtDM(damageResult.strDM)}</span></>
                         )}
+                        {damageResult.damageModifier !== 0 && (
+                          <><span className="text-body">+</span>
+                          <span className="text-body/60 text-xs">Damage Mod {fmtDM(damageResult.damageModifier)}</span></>
+                        )}
                         <span className="text-body">=</span>
                         <span className="text-alert font-bold text-2xl">{damageResult.total}</span>
                         <span className="text-body/70 text-xs">damage</span>
@@ -852,6 +919,16 @@ function RollModal({
                       </div>
                     </div>
                   )}
+                </div>
+              )}
+
+              {saved && isWeapon && lastAmmoSpend && (
+                <div className="text-xs text-body/65">
+                  Ammo used {lastAmmoSpend.spent}
+                  {lastAmmoSpend.insufficient && (
+                    <span className="text-alert ml-2">requested {lastAmmoSpend.requested}; ammo empty</span>
+                  )}
+                  <span className="text-cyan-trav ml-2">{weaponAmmoStateLabel(lastAmmoSpend.after)}</span>
                 </div>
               )}
             </div>
@@ -884,20 +961,48 @@ function CharDetailContent({
   const [psiInput, setPsiInput] = useState('');
   const [pendingOverflow, setPendingOverflow] = useState<number | null>(null);
 
-  const endMax = char.end_stat ?? 0;
-  const strMax = char.str ?? 0;
-  const dexMax = char.dex ?? 0;
-  const psiMax = char.psi ?? 0;
-  const endCur = char.end_cur ?? endMax;
-  const strCur = char.str_cur ?? strMax;
-  const dexCur = char.dex_cur ?? dexMax;
-  const psiCur = char.psi_cur ?? psiMax;
-
-  const isDamaged = endCur < endMax || strCur < strMax || dexCur < dexMax;
-  const isPsiSpent = char.psi !== null && char.psi > 0 && psiCur < psiMax;
-
   const tempMods = normalizeTempMods(char.temp_mods);
   const hasTempMods = Object.keys(tempMods).length > 0;
+
+  function tempMod(key: CharStat): number {
+    return tempMods[key] ?? 0;
+  }
+
+  function maxVal(key: CharStat): number | null {
+    return effectiveStatValue(char[key] as number | null, tempMod(key));
+  }
+
+  function rawCurVal(key: CharStat): number | null {
+    if (key === 'end_stat') return char.end_cur ?? char.end_stat;
+    if (key === 'str') return char.str_cur ?? char.str;
+    if (key === 'dex') return char.dex_cur ?? char.dex;
+    if (key === 'psi') return char.psi_cur ?? char.psi;
+    return char[key] as number | null;
+  }
+
+  function rawCurFloor(key: CharStat): number {
+    return -tempMod(key);
+  }
+
+  function rawCurFromEffective(key: CharStat, value: number): number {
+    return Math.trunc(value) - tempMod(key);
+  }
+
+  const endMax = maxVal('end_stat') ?? 0;
+  const strMax = maxVal('str') ?? 0;
+  const dexMax = maxVal('dex') ?? 0;
+  const psiMax = maxVal('psi') ?? 0;
+  const endCurRaw = rawCurVal('end_stat') ?? 0;
+  const strCurRaw = rawCurVal('str') ?? 0;
+  const dexCurRaw = rawCurVal('dex') ?? 0;
+  const psiCurRaw = rawCurVal('psi') ?? 0;
+  const endCur = effectiveStatValue(endCurRaw, tempMod('end_stat')) ?? 0;
+  const strCur = effectiveStatValue(strCurRaw, tempMod('str')) ?? 0;
+  const dexCur = effectiveStatValue(dexCurRaw, tempMod('dex')) ?? 0;
+  const psiCur = effectiveStatValue(psiCurRaw, tempMod('psi')) ?? 0;
+
+  const isDamaged = endCur < endMax || strCur < strMax || dexCur < dexMax;
+  const isPsiSpent = char.psi !== null && psiMax > 0 && psiCur < psiMax;
 
   const [trackingHealth, setTrackingHealth] = useState(() => isDamaged);
   const [trackingPsi, setTrackingPsi] = useState(() => isPsiSpent);
@@ -910,8 +1015,8 @@ function CharDetailContent({
   const trainedSkills = char.skills
     .filter(s => s.level > 0 || (s.level === 0 && !s.name.includes('(')))
     .sort((a, b) => a.name.localeCompare(b.name));
-  const hasPsionics = char.psionic_talents.length > 0 || (char.psi !== null && char.psi > 0);
-  const hasPsiAttribute = char.psi !== null && char.psi > 0;
+  const hasPsionics = char.psionic_talents.length > 0 || (char.psi !== null && psiMax > 0);
+  const hasPsiAttribute = char.psi !== null && psiMax > 0;
   const extraStats = EXTRA_STATS.filter(k => char[k] !== null);
   const allDisplayStats: CharStat[] = [...CORE_STATS, ...(hasPsiAttribute ? ['psi' as CharStat] : []), ...extraStats];
   const status = physicalStatus(char);
@@ -959,16 +1064,12 @@ function CharDetailContent({
 
   function curVal(key: CharStat): number | null {
     if (trackingHealth) {
-      if (key === 'end_stat') return endCur;
-      if (key === 'str') return strCur;
-      if (key === 'dex') return dexCur;
+      if (key === 'end_stat') return endCurRaw;
+      if (key === 'str') return strCurRaw;
+      if (key === 'dex') return dexCurRaw;
     }
-    if (trackingPsi && key === 'psi') return psiCur;
+    if (trackingPsi && key === 'psi') return psiCurRaw;
     return char[key] as number | null;
-  }
-
-  function tempMod(key: CharStat): number {
-    return tempMods[key] ?? 0;
   }
 
   function effectiveVal(key: CharStat): number | null {
@@ -1004,12 +1105,12 @@ function CharDetailContent({
   function openStatRoll(stat: CharStat) {
     setRollTarget({ label: STAT_LABELS[stat], skillLevel: 0, charKey: stat, isPsionic: false });
   }
-  function openWeaponRoll(weapon: Weapon) {
+  function openWeaponRoll(weapon: Weapon, weaponIndex: number) {
     const isMelee = weapon.range === 'Melee';
     const wSkillChar = skillChar(weapon.skill);
     const defaultChar = wSkillChar ?? (isMelee ? 'str' : 'dex');
     const skillLvl = char.skills.find(s => s.name === weapon.skill)?.level ?? 0;
-    setRollTarget({ label: weapon.name, skillLevel: skillLvl, charKey: defaultChar, isPsionic: false, weapon });
+    setRollTarget({ label: weapon.name, skillLevel: skillLvl, charKey: defaultChar, isPsionic: false, weapon, weaponIndex });
   }
   function openInitiativeRoll() {
     const dexDM = statDM(effectiveVal('dex'));
@@ -1046,16 +1147,16 @@ function CharDetailContent({
     }, `${weaponName} Damage`, 0);
   }
 
-  function adjustStat(field: keyof Character, max: number, delta: number) {
-    const cur = (char[field] as number | null) ?? max;
-    const next = Math.max(0, Math.min(max, cur + delta));
+  function adjustTrackedStat(field: keyof Character, key: CharStat, delta: number) {
+    const cur = rawCurVal(key) ?? 0;
+    const next = Math.max(rawCurFloor(key), cur + delta);
     onStatAdjust(char.id, { [field]: next });
   }
 
   function adjustTempMod(key: CharStat, delta: number) {
     if (curVal(key) === null) return;
     const nextMods = { ...tempMods };
-    const next = clamp((nextMods[key] ?? 0) + delta, TEMP_MOD_MIN, TEMP_MOD_MAX);
+    const next = (nextMods[key] ?? 0) + delta;
     if (next === 0) delete nextMods[key];
     else nextMods[key] = next;
     onStatAdjust(char.id, { temp_mods: nextMods });
@@ -1067,7 +1168,7 @@ function CharDetailContent({
 
   function toggleHealth() {
     if (trackingHealth) {
-      onStatAdjust(char.id, { end_cur: endMax, str_cur: strMax, dex_cur: dexMax });
+      onStatAdjust(char.id, { end_cur: char.end_stat ?? 0, str_cur: char.str ?? 0, dex_cur: char.dex ?? 0 });
       setPendingOverflow(null);
       setTrackingHealth(false);
     } else {
@@ -1077,7 +1178,7 @@ function CharDetailContent({
 
   function togglePsi() {
     if (trackingPsi) {
-      onStatAdjust(char.id, { psi_cur: psiMax });
+      onStatAdjust(char.id, { psi_cur: char.psi ?? 0 });
       setTrackingPsi(false);
     } else {
       setTrackingPsi(true);
@@ -1088,10 +1189,10 @@ function CharDetailContent({
     const dmg = parseInt(damageInput);
     if (!dmg || dmg <= 0) { setDamageInput(''); return; }
     if (dmg <= endCur) {
-      onStatAdjust(char.id, { end_cur: endCur - dmg });
+      onStatAdjust(char.id, { end_cur: rawCurFromEffective('end_stat', endCur - dmg) });
     } else {
       const overflow = dmg - endCur;
-      onStatAdjust(char.id, { end_cur: 0 });
+      onStatAdjust(char.id, { end_cur: rawCurFromEffective('end_stat', 0) });
       if (overflow > 0) setPendingOverflow(overflow);
     }
     setDamageInput('');
@@ -1099,16 +1200,16 @@ function CharDetailContent({
 
   function applyOverflow(to: 'str_cur' | 'dex_cur') {
     if (!pendingOverflow) return;
-    const max = to === 'str_cur' ? strMax : dexMax;
-    const cur = (char[to] as number | null) ?? max;
-    onStatAdjust(char.id, { [to]: Math.max(0, cur - pendingOverflow) });
+    const key = to === 'str_cur' ? 'str' : 'dex';
+    const cur = key === 'str' ? strCur : dexCur;
+    onStatAdjust(char.id, { [to]: rawCurFromEffective(key, Math.max(0, cur - pendingOverflow)) });
     setPendingOverflow(null);
   }
 
   function applyPsiCost() {
     const cost = parseInt(psiInput);
     if (!cost || cost <= 0) { setPsiInput(''); return; }
-    onStatAdjust(char.id, { psi_cur: Math.max(0, psiCur - cost) });
+    onStatAdjust(char.id, { psi_cur: rawCurFromEffective('psi', Math.max(0, psiCur - cost)) });
     setPsiInput('');
   }
 
@@ -1116,7 +1217,18 @@ function CharDetailContent({
     const normalizedCost = Math.max(0, Math.trunc(cost));
     if (normalizedCost <= 0 || psiMax <= 0) return;
     setTrackingPsi(true);
-    onStatAdjust(char.id, { psi_cur: Math.max(0, psiCur - normalizedCost) });
+    onStatAdjust(char.id, { psi_cur: rawCurFromEffective('psi', Math.max(0, psiCur - normalizedCost)) });
+  }
+
+  function spendCharacterWeaponAmmo(weaponIndex: number | undefined, amount: number): WeaponAmmoSpendResult | null {
+    if (weaponIndex === undefined) return null;
+    const weapon = char.weapons?.[weaponIndex];
+    if (!weapon) return null;
+    const result = spendWeaponAmmo(weapon, amount);
+    if (!result) return null;
+    const weapons = (char.weapons ?? []).map((item, i) => i === weaponIndex ? result.weapon : item);
+    onStatAdjust(char.id, { weapons });
+    return result;
   }
 
   const profileSection = profileRows.length > 0 ? (
@@ -1168,15 +1280,14 @@ function CharDetailContent({
 
       <div className="flex flex-wrap gap-1.5">
         {allDisplayStats.map(key => {
-          const baseVal = char[key] as number | null;
-          const cv = curVal(key);
           const ev = effectiveVal(key);
+          const mv = maxVal(key);
           const mod = tempMod(key);
           const isPhys = key === 'str' || key === 'dex' || key === 'end_stat';
           const isPsiStat = key === 'psi';
           const isExtra = EXTRA_STATS.includes(key);
           const isTracked = (isPhys && trackingHealth) || (isPsiStat && trackingPsi);
-          const isReduced = (isTracked && cv !== null && baseVal !== null && cv < baseVal) || mod < 0;
+          const isReduced = (isTracked && ev !== null && mv !== null && ev < mv) || mod < 0;
           const isBoosted = mod > 0 && !isReduced;
           const isZero = ev === 0;
           const dm = statDM(ev);
@@ -1213,7 +1324,7 @@ function CharDetailContent({
               </div>
               {isTracked && (
                 <div className="text-[10px] text-body/60 font-mono leading-tight">
-                  {toHex(cv)}/{toHex(baseVal)}
+                  {toHex(ev)}/{toHex(mv)}
                 </div>
               )}
               <div className="text-xs text-body/65">{fmtDM(dm)}</div>
@@ -1243,7 +1354,7 @@ function CharDetailContent({
                   <button
                     type="button"
                     aria-label={`Decrease ${STAT_LABELS[key]} temporary modifier`}
-                    disabled={curVal(key) === null || mod <= TEMP_MOD_MIN}
+                    disabled={curVal(key) === null}
                     onClick={() => adjustTempMod(key, -1)}
                     className="w-6 h-6 border-l border-steel/30 flex items-center justify-center text-body/65 hover:text-amber hover:bg-steel/20 disabled:opacity-20 disabled:cursor-not-allowed"
                   >
@@ -1255,7 +1366,7 @@ function CharDetailContent({
                   <button
                     type="button"
                     aria-label={`Increase ${STAT_LABELS[key]} temporary modifier`}
-                    disabled={curVal(key) === null || mod >= TEMP_MOD_MAX}
+                    disabled={curVal(key) === null}
                     onClick={() => adjustTempMod(key, 1)}
                     className="w-6 h-6 border-l border-steel/30 flex items-center justify-center text-body/65 hover:text-safe hover:bg-steel/20 disabled:opacity-20 disabled:cursor-not-allowed"
                   >
@@ -1301,17 +1412,17 @@ function CharDetailContent({
           )}
           <div className="flex items-center gap-4">
             {PHYS_FIELDS.map(({ key: fk, cur: ck, label: fl }) => {
-              const max = char[fk] as number ?? 0;
-              const cv2 = (char[ck] as number | null) ?? max;
+              const max = maxVal(fk) ?? 0;
+              const cv2 = effectiveStatValue(rawCurVal(fk), tempMod(fk)) ?? 0;
               return (
                 <div key={fl} className="flex items-center gap-1 text-xs font-mono">
                   <span className="text-body/70 w-6">{fl}</span>
-                  <button onClick={() => adjustStat(ck, max, -1)} disabled={cv2 <= 0}
+                  <button onClick={() => adjustTrackedStat(ck, fk, -1)} disabled={cv2 <= 0}
                     className="w-5 h-5 border border-steel/60 text-body/70 hover:border-alert hover:text-alert disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center">
                     <Minus size={8} />
                   </button>
                   <span className="text-amber w-8 text-center">{cv2}/{max}</span>
-                  <button onClick={() => adjustStat(ck, max, 1)} disabled={cv2 >= max}
+                  <button onClick={() => adjustTrackedStat(ck, fk, 1)}
                     className="w-5 h-5 border border-steel/60 text-body/70 hover:border-safe hover:text-safe disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center">
                     <Plus size={8} />
                   </button>
@@ -1345,12 +1456,12 @@ function CharDetailContent({
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-1 text-xs font-mono">
               <span className="text-cyan-trav/70 w-6">PSI</span>
-              <button onClick={() => adjustStat('psi_cur', psiMax, -1)} disabled={psiCur <= 0}
+              <button onClick={() => adjustTrackedStat('psi_cur', 'psi', -1)} disabled={psiCur <= 0}
                 className="w-5 h-5 border border-steel/60 text-body/70 hover:border-alert hover:text-alert disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center">
                 <Minus size={8} />
               </button>
               <span className="text-cyan-trav w-8 text-center">{psiCur}/{psiMax}</span>
-              <button onClick={() => adjustStat('psi_cur', psiMax, 1)} disabled={psiCur >= psiMax}
+              <button onClick={() => adjustTrackedStat('psi_cur', 'psi', 1)}
                 className="w-5 h-5 border border-steel/60 text-body/70 hover:border-safe hover:text-safe disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center">
                 <Plus size={8} />
               </button>
@@ -1376,6 +1487,7 @@ function CharDetailContent({
           onSave={handleRollSave}
           onSaveDamage={handleDamageSave}
           onSpendPsi={spendPsiCost}
+          onSpendAmmo={amount => spendCharacterWeaponAmmo(rollTarget.weaponIndex, amount)}
         />
       )}
 
@@ -1624,7 +1736,7 @@ function CharDetailContent({
             </button>
           </div>
           <div className="space-y-1">
-            <div className="hidden md:grid grid-cols-[minmax(8rem,1.2fr)_3rem_4rem_5rem_5rem_minmax(10rem,1fr)] gap-3 px-3 text-[10px] font-mono text-body/60">
+            <div className={`hidden md:grid ${WEAPON_ROSTER_GRID} gap-2 px-3 text-[10px] font-mono text-body/60`}>
               <span>WEAPON</span>
               <span>QTY</span>
               <span>RANGE</span>
@@ -1635,9 +1747,17 @@ function CharDetailContent({
             {(char.weapons ?? []).map((w, i) => {
               const weaponMass = massFor(w, ['Weapon']);
               return (
-                <button key={i} onClick={() => openWeaponRoll(w)}
-                  className="w-full grid grid-cols-[minmax(7rem,1.2fr)_4rem_5rem] md:grid-cols-[minmax(8rem,1.2fr)_3rem_4rem_5rem_5rem_minmax(10rem,1fr)] gap-3 border border-steel/40 hover:border-amber/60 px-3 py-2 text-xs font-mono transition-colors text-left group items-center">
-                  <span className="text-bright group-hover:text-amber truncate">{w.name}</span>
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => openWeaponRoll(w, i)}
+                  className={`w-full grid grid-cols-[minmax(6rem,1fr)_4rem_5rem] ${WEAPON_ROSTER_GRID} gap-2 border border-steel/40 hover:border-amber/60 px-3 py-2 text-xs font-mono text-left transition-colors group items-center`}
+                  aria-label={`Roll ${w.name} attack`}
+                  title={`Roll ${w.name} attack`}
+                >
+                  <span className="min-w-0 text-bright group-hover:text-amber transition-colors truncate">
+                    {w.name}
+                  </span>
                   <span className="text-body/65 hidden md:block">{quantityFor(w) !== 1 ? `x${quantityFor(w)}` : ''}</span>
                   <span className="text-body/65 truncate">{w.range}</span>
                   <span className="text-amber/80 font-bold">{w.damage}</span>
@@ -2048,7 +2168,6 @@ export default function PartyRoster() {
           id={inputId}
           ariaLabel={label}
           min={0}
-          max={15}
           value={val ?? ''}
           onChange={value => setForm({ ...form, [key]: value ? parseInt(value, 10) : null })}
         />
@@ -2078,7 +2197,19 @@ export default function PartyRoster() {
   function addWeapon() {
     setForm(prev => ({
       ...prev,
-      weapons: [...prev.weapons, { name: '', skill: '', range: '', damage: '', traits: '', quantity: 1, mass: null, cost: null }],
+      weapons: [...prev.weapons, {
+        name: '',
+        skill: '',
+        range: '',
+        damage: '',
+        traits: '',
+        quantity: 1,
+        mass: null,
+        cost: null,
+        ammo_clips: null,
+        ammo_rounds: null,
+        ammo_clip_size: null,
+      }],
     }));
   }
 
@@ -2180,7 +2311,7 @@ export default function PartyRoster() {
     setForm(prev => {
       const next = normalizeTempMods(prev.temp_mods);
       if (value === null || value === 0) delete next[key];
-      else next[key] = clamp(Math.trunc(value), TEMP_MOD_MIN, TEMP_MOD_MAX);
+      else next[key] = Math.trunc(value);
       return { ...prev, temp_mods: next };
     });
   }
@@ -2272,8 +2403,6 @@ export default function PartyRoster() {
                 <Field key={key} name={STAT_LABELS[key]}>
                   <NumberStepper
                     ariaLabel={`${STAT_LABELS[key]} temporary modifier`}
-                    min={TEMP_MOD_MIN}
-                    max={TEMP_MOD_MAX}
                     value={normalizeTempMods(form.temp_mods)[key] ?? ''}
                     onChange={value => updateTempMod(key, parseNullableNumber(value))}
                   />
@@ -2452,7 +2581,7 @@ export default function PartyRoster() {
                   />
                 </Field>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-[1fr_8rem_auto] gap-2 items-end">
+              <div className="grid grid-cols-2 md:grid-cols-[minmax(0,1fr)_7rem_7rem_7rem_7rem_auto] gap-2 items-end">
                 <Field name="Traits">
                   <input className="input" value={weapon.traits}
                     onChange={e => updateWeapon(i, { traits: e.target.value })} />
@@ -2464,6 +2593,35 @@ export default function PartyRoster() {
                     step={1}
                     value={weapon.cost ?? ''}
                     onChange={value => updateWeapon(i, { cost: parseNullableNumber(value) })}
+                  />
+                </Field>
+                <Field name="Clips">
+                  <NumberStepper
+                    ariaLabel="Weapon clips"
+                    min={0}
+                    step={1}
+                    value={weapon.ammo_clips ?? ''}
+                    onChange={value => updateWeapon(i, { ammo_clips: parseNullableNonNegativeInteger(value) })}
+                  />
+                </Field>
+                <Field name="Rounds">
+                  <NumberStepper
+                    ariaLabel="Weapon rounds"
+                    min={0}
+                    step={1}
+                    value={weapon.ammo_rounds ?? ''}
+                    placeholder={String(weaponClipSize(weapon) ?? '')}
+                    onChange={value => updateWeapon(i, { ammo_rounds: parseNullableNonNegativeInteger(value) })}
+                  />
+                </Field>
+                <Field name="Rounds/clip">
+                  <NumberStepper
+                    ariaLabel="Weapon rounds per clip"
+                    min={0}
+                    step={1}
+                    value={weapon.ammo_clip_size ?? ''}
+                    placeholder={String(weaponClipSize(weapon) ?? '')}
+                    onChange={value => updateWeapon(i, { ammo_clip_size: parseNullableNonNegativeInteger(value) })}
                   />
                 </Field>
                 <button type="button" onClick={() => removeWeapon(i)} className="btn-steel text-alert hover:border-alert">

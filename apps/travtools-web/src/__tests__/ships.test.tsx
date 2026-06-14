@@ -25,9 +25,13 @@ const scoutShip: Ship = {
 function makeShipClient(ships: Ship[] = [scoutShip]) {
   const order = vi.fn(async () => ({ data: ships, error: null }));
   const select = vi.fn(() => ({ order }));
+  const updateEq = vi.fn(async () => ({ error: null }));
+  const update = vi.fn(() => ({ eq: updateEq }));
 
   return {
-    from: vi.fn(() => ({ select })),
+    update,
+    updateEq,
+    from: vi.fn(() => ({ select, update })),
     channel: vi.fn(() => ({
       on: vi.fn().mockReturnThis(),
       subscribe: vi.fn(),
@@ -119,6 +123,37 @@ describe('ShipViewer', () => {
     expect((await screen.findAllByText('Scout/Courier')).length).toBeGreaterThan(0);
     expect(screen.getByLabelText('Type-S Scout/Courier deck plan')).toBeTruthy();
   });
+
+  it('shows ammo before damage and persists ammo edits', async () => {
+    const client = makeShipClient();
+    vi.spyOn(SupabaseContext, 'useSupabase').mockReturnValue({
+      client: client as never,
+      isConfigured: true,
+      configure: vi.fn(),
+      reset: vi.fn(),
+    });
+
+    const { container } = render(<ShipViewer />);
+
+    await screen.findByLabelText('Type-S Scout/Courier deck plan');
+    const text = container.textContent ?? '';
+    expect(text.indexOf('AMMUNITION')).toBeGreaterThanOrEqual(0);
+    expect(text.indexOf('DAMAGE TRACKERS')).toBeGreaterThanOrEqual(0);
+    expect(text.indexOf('AMMUNITION')).toBeLessThan(text.indexOf('DAMAGE TRACKERS'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'ADD AMMO' }));
+
+    await waitFor(() => expect(client.update).toHaveBeenLastCalledWith({
+      ammo: [expect.objectContaining({ name: 'Missiles', current: 12, max: 12 })],
+    }));
+
+    fireEvent.change(await screen.findByLabelText('Ammo current 1'), { target: { value: '9' } });
+
+    await waitFor(() => expect(client.update).toHaveBeenLastCalledWith({
+      ammo: [expect.objectContaining({ name: 'Missiles', current: 9, max: 12 })],
+    }));
+  });
+
 });
 
 describe('ShipBuilder', () => {

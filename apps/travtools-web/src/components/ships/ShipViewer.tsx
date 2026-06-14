@@ -87,7 +87,6 @@ interface ShipAmmoPanelProps {
   onRemove: (id: string) => void;
   onAdjust: (id: string, delta: number) => void;
   onFieldChange: (id: string, patch: Partial<ShipAmmoTracker>) => void;
-  onFieldBlur: () => void;
 }
 
 interface ShipManifestPanelProps {
@@ -171,11 +170,13 @@ function normalizeShipAmmo(ammo: ShipAmmoTracker[] | null | undefined): ShipAmmo
   return ammo
     .filter(entry => entry && typeof entry === 'object')
     .map((entry, index) => {
-      const max = entry.max == null ? null : Math.max(0, Number(entry.max));
-      const current = Math.max(0, Number(entry.current ?? max ?? 0));
+      const rawMax = entry.max == null ? null : Number(entry.max);
+      const max = rawMax == null || !Number.isFinite(rawMax) ? null : Math.max(0, rawMax);
+      const rawCurrent = Number(entry.current ?? max ?? 0);
+      const current = Math.max(0, Number.isFinite(rawCurrent) ? rawCurrent : max ?? 0);
       return {
         id: entry.id || `ammo-${index}`,
-        name: entry.name || 'Ammunition',
+        name: entry.name?.trim() || 'Ammunition',
         current: max == null ? current : Math.min(current, max),
         max,
         notes: entry.notes ?? null,
@@ -533,7 +534,7 @@ function ShipDamagePanel({
 }
 
 function ShipAmmoPanel({
-  ammo, onReset, onAdd, onRemove, onAdjust, onFieldChange, onFieldBlur,
+  ammo, onReset, onAdd, onRemove, onAdjust, onFieldChange,
 }: ShipAmmoPanelProps) {
   const totalCurrent = ammo.reduce((sum, entry) => sum + entry.current, 0);
   const totalMax = ammo.reduce((sum, entry) => sum + Number(entry.max ?? 0), 0);
@@ -572,7 +573,6 @@ function ShipAmmoPanel({
                       className="input py-1 text-xs"
                       value={entry.name}
                       onChange={e => onFieldChange(entry.id, { name: e.target.value })}
-                      onBlur={onFieldBlur}
                     />
                     <NumberStepper
                       ariaLabel={`Ammo current ${index + 1}`}
@@ -584,7 +584,6 @@ function ShipAmmoPanel({
                         if (value === '') return;
                         onFieldChange(entry.id, { current: Math.max(0, parseInt(value, 10)) });
                       }}
-                      onBlur={onFieldBlur}
                     />
                     <NumberStepper
                       ariaLabel={`Ammo maximum ${index + 1}`}
@@ -592,7 +591,6 @@ function ShipAmmoPanel({
                       min={0}
                       value={entry.max ?? ''}
                       onChange={value => onFieldChange(entry.id, { max: value === '' ? null : Math.max(0, parseInt(value, 10)) })}
-                      onBlur={onFieldBlur}
                     />
                     <button
                       type="button"
@@ -633,7 +631,6 @@ function ShipAmmoPanel({
                       placeholder="Magazine, rack, bay..."
                       value={entry.notes ?? ''}
                       onChange={e => onFieldChange(entry.id, { notes: e.target.value || null })}
-                      onBlur={onFieldBlur}
                     />
                   </div>
                 </div>
@@ -1126,7 +1123,7 @@ export default function ShipViewer() {
 
   async function persistAmmo(nextAmmo: ShipAmmoTracker[]) {
     if (!client || !selected) return;
-    const ammo = normalizeShipAmmo(nextAmmo).filter(entry => entry.name.trim());
+    const ammo = normalizeShipAmmo(nextAmmo);
     ammoFormRef.current = ammo;
     setAmmoForm(ammo);
     updateShipInState({ ...selected, ammo });
@@ -1153,16 +1150,17 @@ export default function ShipViewer() {
     const nextAmmo = normalizeShipAmmo(ammoFormRef.current.map(entry => {
       if (entry.id !== id) return entry;
       const next = { ...entry, ...patch };
-      const max = next.max == null ? null : Math.max(0, Number(next.max));
-      const currentValue = Math.max(0, Number(next.current ?? 0));
+      const rawMax = next.max == null ? null : Number(next.max);
+      const max = rawMax == null || !Number.isFinite(rawMax) ? null : Math.max(0, rawMax);
+      const rawCurrent = Number(next.current ?? 0);
+      const currentValue = Math.max(0, Number.isFinite(rawCurrent) ? rawCurrent : 0);
       return {
         ...next,
         max,
         current: max == null ? currentValue : Math.min(currentValue, max),
       };
     }));
-    ammoFormRef.current = nextAmmo;
-    setAmmoForm(nextAmmo);
+    persistAmmo(nextAmmo);
   }
 
   function adjustAmmoTracker(id: string, delta: number) {
@@ -1533,6 +1531,14 @@ export default function ShipViewer() {
                       setSpecsForm(effectiveShipSpecs(selected));
                     }}
                   />
+                  <ShipAmmoPanel
+                    ammo={ammoForm}
+                    onReset={resetAmmoTracker}
+                    onAdd={addAmmoTracker}
+                    onRemove={removeAmmoTracker}
+                    onAdjust={adjustAmmoTracker}
+                    onFieldChange={updateAmmoField}
+                  />
                   <ShipDamagePanel
                     specs={selectedSpecs}
                     damage={damageForm}
@@ -1543,15 +1549,6 @@ export default function ShipViewer() {
                     onReset={resetDamageTracker}
                     onNotesChange={updateDamageNotes}
                     onNotesBlur={saveDamageNotes}
-                  />
-                  <ShipAmmoPanel
-                    ammo={ammoForm}
-                    onReset={resetAmmoTracker}
-                    onAdd={addAmmoTracker}
-                    onRemove={removeAmmoTracker}
-                    onAdjust={adjustAmmoTracker}
-                    onFieldChange={updateAmmoField}
-                    onFieldBlur={() => persistAmmo(ammoFormRef.current)}
                   />
                 </aside>
               </div>

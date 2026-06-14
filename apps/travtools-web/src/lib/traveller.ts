@@ -6,8 +6,6 @@ export const DEFAULT_CHARACTER_TITLE = 'Traveller';
 export const CORE_STATS: CharStat[] = ['str', 'dex', 'end_stat', 'int_stat', 'edu', 'soc'];
 export const EXTRA_STATS: CharStat[] = ['chr', 'mor', 'lck'];
 export const ALL_STATS: CharStat[] = [...CORE_STATS, 'psi', ...EXTRA_STATS];
-const TEMP_MOD_MIN = -15;
-const TEMP_MOD_MAX = 15;
 
 export const STAT_LABELS: Record<CharStat, string> = {
   str: 'STR', dex: 'DEX', end_stat: 'END',
@@ -18,12 +16,7 @@ export const STAT_LABELS: Record<CharStat, string> = {
 // Traveller 2022 characteristic DM table (p.7)
 export function statDM(n: number | null): number {
   if (n === null || n <= 0) return -3;
-  if (n <= 2) return -2;
-  if (n <= 5) return -1;
-  if (n <= 8) return 0;
-  if (n <= 11) return 1;
-  if (n <= 14) return 2;
-  return 3;
+  return Math.floor((n - 6) / 3);
 }
 
 export function toHex(n: number | null | undefined): string {
@@ -99,10 +92,6 @@ export function skillChar(name: string): CharStat | null {
   return SKILL_CHAR[parent] ?? null;
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
-
 export function effectiveStatValue(base: number | null, tempMod: number): number | null {
   if (base === null) return null;
   return Math.max(0, base + tempMod);
@@ -132,7 +121,7 @@ export function knownSkillLevel(char: Character, names: string[]): number | null
 function normalizedTempMod(char: Character, key: CharStat): number {
   const value = char.temp_mods?.[key];
   if (typeof value !== 'number' || !Number.isFinite(value) || value === 0) return 0;
-  return clamp(Math.trunc(value), TEMP_MOD_MIN, TEMP_MOD_MAX);
+  return Math.trunc(value);
 }
 
 export function currentCharacterStat(char: Character, key: CharStat): number | null {

@@ -322,82 +322,88 @@ export default function NPCGenerator() {
           </div>
         )}
 
-        {npcs.map(npc => {
-          const sv = npcStatValues(npc);
-          const npcStats = CORE_STAT_KEYS.map(k => sv[k] ?? null);
-          const skills = Array.isArray(npc.skills) ? npc.skills as { name: string; level: number }[] : [];
+        {npcs.length > 0 && (
+          <div className="panel overflow-x-auto">
+            <table className="w-full min-w-[58rem]">
+              <thead>
+                <tr className="border-b border-steel/70 bg-void/30">
+                  <th className="table-header w-40">Name</th>
+                  <th className="table-header w-28">Race</th>
+                  <th className="table-header w-40">Archetype</th>
+                  <th className="table-header w-36">Experience</th>
+                  <th className="table-header w-48">Quirk</th>
+                  <th className="table-header w-48">Characteristics</th>
+                  <th className="table-header min-w-56">Skills</th>
+                  <th className="table-header w-12 text-right"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {npcs.map(npc => {
+                  const sv = npcStatValues(npc);
+                  const npcStats = CORE_STAT_KEYS.map(k => sv[k] ?? null);
+                  const skills = Array.isArray(npc.skills) ? npc.skills as { name: string; level: number }[] : [];
 
-          return (
-            <div key={npc.id} className="border border-steel/40 bg-panel flex items-center gap-4 px-3 py-2.5 flex-wrap">
-
-              {/* Name */}
-              <div className="flex-shrink-0 min-w-[8rem]">
-                <div className="font-mono text-bright font-bold text-sm">{npc.name}</div>
-              </div>
-
-              {/* Race */}
-              <div className="flex-shrink-0 min-w-[5rem]">
-                <div className="label text-[8px]">RACE</div>
-                <div className="text-body/70 text-xs font-mono">{npc.race}</div>
-              </div>
-
-              {/* Archetype */}
-              <div className="flex-shrink-0 min-w-[7rem]">
-                <div className="label text-[8px]">ARCHETYPE</div>
-                <div className="text-body/70 text-xs font-mono">{npc.archetype}</div>
-              </div>
-
-              {/* Experience */}
-              <div className="flex-shrink-0 min-w-[8rem]">
-                <div className="label text-[8px]">EXPERIENCE</div>
-                <div className="text-body/70 text-xs font-mono">{npc.experience_level}</div>
-              </div>
-
-              {/* Quirk */}
-              {npc.quirk && (
-                <div className="flex-shrink-0 min-w-[7rem] max-w-[12rem]">
-                  <div className="label text-[8px]">QUIRK</div>
-                  <div className="text-body/55 text-xs font-mono italic truncate">{npc.quirk}</div>
-                </div>
-              )}
-
-              {/* Stats — clickable */}
-              <div className="flex gap-1 flex-shrink-0">
-                {CORE_STAT_KEYS.map((key, i) => (
-                  <button key={key} type="button"
-                    title={`Roll ${CORE_STAT_LABELS[i]} check`}
-                    onClick={() => openStatRoll(npc.name, sv, key, CORE_STAT_LABELS[i])}
-                    className="text-center border border-steel/30 px-1.5 py-1 hover:border-amber hover:bg-amber/5 transition-colors min-w-[2.25rem]">
-                    <div className="label text-[8px] leading-none">{CORE_STAT_LABELS[i]}</div>
-                    <div className="text-amber font-mono font-bold text-xs leading-none mt-0.5">
-                      {toHex(npcStats[i] ?? 7)}
-                    </div>
-                  </button>
-                ))}
-              </div>
-
-              {/* Skills */}
-              {skills.length > 0 && (
-                <div className="flex flex-wrap gap-1 flex-1">
-                  {skills.map(s => (
-                    <button key={s.name} type="button"
-                      onClick={() => openSkillRoll(npc.name, sv, s)}
-                      className="border border-steel/40 px-2 py-0.5 text-xs font-mono text-cyan-trav hover:border-amber hover:text-amber transition-colors">
-                      {s.name} {s.level}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* Delete */}
-              <button type="button" aria-label={`Delete ${npc.name}`}
-                onClick={() => deleteNpc(npc.id)}
-                className="text-body/30 hover:text-alert transition-colors flex-shrink-0 ml-auto">
-                <Trash2 size={12} />
-              </button>
-            </div>
-          );
-        })}
+                  return (
+                    <tr key={npc.id} className="table-row align-top">
+                      <td className="px-3 py-2 text-xs font-mono font-bold text-bright">
+                        <div className="max-w-36 truncate" title={npc.name}>{npc.name}</div>
+                      </td>
+                      <td className="px-3 py-2 text-xs font-mono text-body/75">
+                        <div className="max-w-24 whitespace-normal break-words leading-5" title={npc.race}>{npc.race}</div>
+                      </td>
+                      <td className="px-3 py-2 text-xs font-mono text-body/75">
+                        <div className="max-w-36 whitespace-normal break-words leading-5" title={npc.archetype ?? undefined}>{npc.archetype ?? '—'}</div>
+                      </td>
+                      <td className="px-3 py-2 text-xs font-mono text-body/75">
+                        <div className="max-w-32 whitespace-normal break-words leading-5" title={npc.experience_level ?? undefined}>{npc.experience_level ?? '—'}</div>
+                      </td>
+                      <td className="px-3 py-2 text-xs font-mono italic text-body/60">
+                        <div className="max-w-44 whitespace-normal break-words leading-5" title={npc.quirk ?? undefined}>{npc.quirk ?? '—'}</div>
+                      </td>
+                      <td className="px-3 py-2 text-xs font-mono text-bright">
+                        <div className="grid w-max grid-cols-3 gap-1">
+                          {CORE_STAT_KEYS.map((key, i) => (
+                            <button key={key} type="button"
+                              title={`Roll ${CORE_STAT_LABELS[i]} check`}
+                              onClick={() => openStatRoll(npc.name, sv, key, CORE_STAT_LABELS[i])}
+                              className="min-w-[2.25rem] border border-steel/40 px-1.5 py-1 text-center transition-colors hover:border-amber hover:bg-amber/5">
+                              <div className="label text-[8px] leading-none">{CORE_STAT_LABELS[i]}</div>
+                              <div className="mt-0.5 text-xs font-mono font-bold leading-none text-amber">
+                                {toHex(npcStats[i] ?? 7)}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-xs font-mono text-bright">
+                        {skills.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {skills.map(s => (
+                              <button key={s.name} type="button"
+                                onClick={() => openSkillRoll(npc.name, sv, s)}
+                                className="border border-steel/40 px-2 py-0.5 text-xs font-mono text-cyan-trav transition-colors hover:border-amber hover:text-amber">
+                                {s.name} {s.level}
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-body/35">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right text-xs font-mono text-bright">
+                        <button type="button" aria-label={`Delete ${npc.name}`}
+                          onClick={() => deleteNpc(npc.id)}
+                          className="inline-flex h-7 w-7 items-center justify-center text-body/35 transition-colors hover:text-alert">
+                          <Trash2 size={12} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Roll modal */}

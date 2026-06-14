@@ -129,6 +129,9 @@ export interface Weapon {
   quantity?: number | null;
   mass?: number | null;
   cost?: number | null;
+  ammo_clips?: number | null;
+  ammo_rounds?: number | null;
+  ammo_clip_size?: number | null;
 }
 
 export interface AttributeMods {

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as XLSX from 'xlsx';
 import {
-  toHex, upp, statDM, skillChar, parseSkillsCSV, parseTalentsCSV, parseCSV,
+  toHex, upp, statDM, skillChar, parseSkillsCSV, parseTalentsCSV, parseCSV, effectiveCharacterStat,
 } from '../lib/traveller';
 import { parseXLSXCharacter } from '../lib/parseXLSX';
 import type { Character } from '../types';
@@ -78,6 +78,25 @@ describe('statDM', () => {
   it('12 → +2', () => expect(statDM(12)).toBe(2));
   it('14 → +2', () => expect(statDM(14)).toBe(2));
   it('15 → +3', () => expect(statDM(15)).toBe(3));
+  it('continues above 15 instead of capping at +3', () => {
+    expect(statDM(17)).toBe(3);
+    expect(statDM(18)).toBe(4);
+    expect(statDM(21)).toBe(5);
+  });
+});
+
+describe('effectiveCharacterStat', () => {
+  it('applies uncapped temporary modifiers', () => {
+    const c: Character = { ...baseChar, str: 9, temp_mods: { str: 20 } };
+    expect(effectiveCharacterStat(c, 'str')).toBe(29);
+    expect(statDM(effectiveCharacterStat(c, 'str'))).toBe(7);
+  });
+
+  it('applies temporary modifiers to tracked current attributes', () => {
+    const c: Character = { ...baseChar, end_stat: 14, end_cur: 14, temp_mods: { end_stat: 4 } };
+    expect(effectiveCharacterStat(c, 'end_stat')).toBe(18);
+    expect(statDM(effectiveCharacterStat(c, 'end_stat'))).toBe(4);
+  });
 });
 
 describe('skillChar', () => {

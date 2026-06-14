@@ -227,6 +227,47 @@ describe('CombatTracker', () => {
     expect(within(aceCard).getByText(/Accelerator Rifle 3D/)).toBeTruthy();
   });
 
+  it('applies attribute modifiers to PC health pools and damage routing', async () => {
+    const mock = makeCombatClient([{
+      id: 'char-1',
+      name: 'Boosted',
+      str: 9,
+      dex: 8,
+      end_stat: 10,
+      int_stat: 7,
+      edu: 7,
+      soc: 7,
+      str_cur: null,
+      dex_cur: null,
+      end_cur: null,
+      temp_mods: { end_stat: 2 },
+      skills: [],
+      weapons: [],
+      armour: [],
+    }]);
+    vi.spyOn(SupabaseContext, 'useSupabase').mockReturnValue({
+      client: mock.client as never,
+      isConfigured: true,
+      configure: vi.fn(),
+      reset: vi.fn(),
+    });
+
+    render(<CombatTracker />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '+ Boosted' }));
+
+    const boostedCard = screen.getByLabelText('Boosted combatant card');
+    expect(within(boostedCard).getByText(/E12\/S9\/D8/)).toBeTruthy();
+
+    fireEvent.click(within(boostedCard).getByRole('button', { name: /DETAILS/i }));
+    expect(within(boostedCard).getByText('12/12')).toBeTruthy();
+
+    fireEvent.change(within(boostedCard).getByPlaceholderText('damage'), { target: { value: '11' } });
+    fireEvent.click(within(boostedCard).getByRole('button', { name: 'DAMAGE' }));
+
+    await waitFor(() => expect(within(boostedCard).getByText('1/12')).toBeTruthy());
+  });
+
   it('rolls clicked weapon damage against the selected target and subtracts worn armor', async () => {
     vi.spyOn(Math, 'random').mockReturnValue(0.5);
     const mock = makeCombatClient([
