@@ -38,7 +38,7 @@ Travtools is an unofficial fan tool for a private campaign. It is not affiliated
 | 9 | Ship Builder | Guided spacecraft construction and Fleet integration | In Progress |
 | 10 | Party Treasury & Loot Shares | Shared credits ledger and split-loot workflow | Backlog |
 | 11 | Full Trade Mini-Game | Complete passenger, freight, and speculative-trade workflow | Implemented |
-| 12 | Ammunition Tracking | Persistent weapon ammo and magazine tracking | Backlog |
+| 12 | Ammunition Tracking | Persistent weapon ammo and magazine tracking | Complete |
 | 13 | Quick Character Generator | Fast NPC generation from Core Rules quick-character tables | Shipped as NPC route |
 
 ---
@@ -423,10 +423,10 @@ Questions to answer:
 ### Tasks
 
 **PDF extraction**
-- [x] Read Trade Goods table (p.244–245): D66 table with 18 entries. Columns: D66, Type, Availability, Tons, Base Price, Purchase DM, Sale DM, Examples. Transcribed into `src/data/tradeGoods.ts` as a typed array.
+- [x] Read Trade Goods table (p.244–245): D66 table with 36 entries. Columns: D66, Type, Availability, Tons, Base Price, Purchase DM, Sale DM, Examples. Transcribed into `src/data/tradeGoods.ts` as a typed array.
 - [x] Read Core Rules equipment tables and transcribe reference items into `src/data/equipment.ts`
-- [ ] Note trade goods structure: `{ d66: number, type: string, availability: string, tons: string, basePrice: number, purchaseDM: string, saleDM: string, examples: string }[]`
-- [ ] Read Modified Price table (p.243): roll result → purchase % and sale % — useful for a future price calculator feature; record in a comment in `tradeGoods.ts` for now
+- [x] Note trade goods structure: `{ d66: number, type: string, availability: string, tons: string, basePrice: number, purchaseDM: string, saleDM: string, examples: string }[]`
+- [x] Read Modified Price table (p.243): roll result → purchase % and sale %; encoded in `src/data/modifiedPrice.ts`
 
 **Implementation**
 - [x] Scaffold standalone `DiceRoller` component or global drawer without duplicating roster roll logic
@@ -839,13 +839,13 @@ The Modified Price table and Trade Goods table are encoded in `src/data/modified
 
 ### New UI structure
 
-Replace the current single-tab `TradeLedger.tsx` with a three-tab layout:
+The `TradeLedger.tsx` route is organised as a three-tab layout:
 
 ```
 [ DEALS LEDGER ] [ TRADE SESSION ] [ PASSENGERS & FREIGHT ]
 ```
 
-The existing Deals Ledger content moves into tab 1 unchanged.
+The existing Deals Ledger content lives in tab 1.
 
 ### Tab 2 — Trade Session (Speculative Trade workflow)
 
@@ -963,8 +963,6 @@ ALTER TABLE trade_deals ADD COLUMN IF NOT EXISTS trade_code text;
 - [x] Component: Trade Session tab renders; world profile inputs flow into DM display; dice roller shows breakdown
 - [x] Component: Deals Ledger tab unaffected by tab 2 and 3 additions
 - [x] E2E smoke: open Trade, switch to Trade Session tab, enter world profile, roll supplier check, see goods table
-- **Ship mortgage tracker** — monthly payment schedule, running balance, jump fuel costs
-- **Portrait storage migration** — character portraits are currently stored as JPEG data URLs inside the `characters` table, growing row size significantly; migrating to the existing `ship-schematics` Storage bucket pattern would reduce DB payload
 
 ---
 
@@ -990,109 +988,62 @@ ALTER TABLE trade_deals ADD COLUMN IF NOT EXISTS trade_code text;
 
 ## Milestone 12 — Ammunition Tracking
 
-**Goal:** Each character's ranged weapons track their current ammunition count during and between sessions. The combat tracker decrements ammo automatically on weapon use, flags empty weapons, and the party can manage spare magazines through the Inventory Manager.
+**Goal:** Each character's ranged weapons track their current ammunition count during and between sessions. Weapon rolls spend ammunition, the roster exposes compact clip/round controls, and reload is available directly from the weapon row.
+
+### Status: Complete
 
 ### Background
 
-Traveller weapons have a **Magazine** capacity (rounds per reload) and **Magazine Cost** (cost of a spare, p.76–77). Reload is a Minor Action. The **Auto** trait (p.79) changes round consumption:
-
-| Fire Mode | Rounds consumed per attack |
-|-----------|---------------------------|
-| Single | 1 |
-| Burst | Auto score (e.g. Auto 3 = 3 rounds) |
-| Full Auto | 3 × Auto score (e.g. Auto 3 = 9 rounds) |
-
-Weapons with no Magazine entry (melee, grenades used one at a time, sandcasters) are tracked differently: melee has infinite ammo, grenades and missiles are tracked as consumable inventory items (see Inventory integration below).
-
-Ammo state is per-character, per-weapon, and needs to persist between sessions — the party may end a session mid-combat or with partially loaded magazines. It is stored in Supabase on the `characters` table in a new `ammo_state` jsonb column so all clients see the same counts via realtime.
+Traveller weapons have a **Magazine** capacity (rounds per reload) and **Magazine Cost** (cost of a spare, p.76–77). Reload is a Minor Action. The shipped implementation stores ammunition directly on each `Weapon` entry rather than in a separate `ammo_state` object, which keeps imported/custom weapon data and ammo state together inside the existing `characters.weapons` JSON payload.
 
 ### Data model
 
-```sql
-ALTER TABLE characters ADD COLUMN IF NOT EXISTS ammo_state jsonb NOT NULL DEFAULT '{}'::jsonb;
--- Shape: { [weaponName: string]: { current: number, magazineSize: number, spareMags: number } }
--- weaponName matches the name field of each weapon in the character's weapons array.
--- spareMags is advisory only (synced from inventory if the item exists there).
-```
-
 ```typescript
-interface WeaponAmmoState {
-  current: number;       // rounds remaining in current magazine
-  magazineSize: number;  // full magazine capacity (from weapon data)
-  spareMags: number;     // spare loaded magazines available
+interface Weapon {
+  // existing weapon fields...
+  ammo_clips?: number | null;      // spare loaded clips/magazines
+  ammo_rounds?: number | null;     // rounds in the current clip/magazine
+  ammo_clip_size?: number | null;  // optional override for magazine size
 }
-type AmmoState = Record<string, WeaponAmmoState>;
 ```
 
-### Ammo initialisation
-
-When a character is first given an ammo state (or a new weapon is added), `current` is set to `magazineSize` and `spareMags` defaults to 0. The party can edit both values manually at any time. Weapons with no Magazine value in the rulebook (melee, blade, dagger, etc.) are excluded from ammo tracking; the UI omits them silently.
+`src/lib/ammo.ts` derives clip size from `ammo_clip_size` or the Core Rules weapon magazine data, computes current state, formats labels, and spends rounds through `spendWeaponAmmo()`.
 
 ### Integration points
 
 **Party Roster — character detail panel**
-- [ ] Add an **AMMO** sub-section to the Weapons block, below each weapon's existing damage chip
-- [ ] Each ranged weapon shows: `[current] / [magazineSize] ■■■■□□□ [spare mags: N]`
-- [ ] Bar fills amber when ≥ 50% loaded, turns red when ≤ 25% (2 or fewer rounds), goes dark/empty when 0
-- [ ] Inline `−` and `+` buttons to manually adjust current count (free-form edits between sessions)
-- [ ] **RELOAD** button: sets `current = magazineSize`, decrements `spareMags` by 1 (blocked if `spareMags = 0` and shows a warning; player can override)
-- [ ] Clicking RELOAD is a Minor Action reminder — shows a tooltip "Reload costs 1 Minor Action in combat"
-- [ ] Edit pencil on spare mag count for freeform entry
-- [ ] Changes write to `ammo_state` in Supabase and broadcast via realtime
-
-**Combat Tracker — weapon damage path**
-- [ ] When a character fires a weapon in the combat tracker (existing clickable weapon chip), decrement `current` by the correct amount:
-  - Default (single): −1
-  - If weapon has Auto trait and fire mode is Burst: −Auto score
-  - If weapon has Auto trait and fire mode is Full Auto: −(3 × Auto score)
-- [ ] Add a **fire mode selector** (Single / Burst / Full Auto) that appears on the weapon chip only if the weapon has the Auto trait; defaults to Single
-- [ ] If `current` reaches 0 after firing, the weapon chip turns red and shows `EMPTY — RELOAD`; subsequent clicks are blocked until reloaded
-- [ ] **RELOAD** button appears inline on the empty chip; same logic as roster panel (spends a spare mag, warns if none left)
-- [ ] Ammo state changes during combat broadcast via Supabase realtime to all connected clients (other players see the ammo bar update live)
-
-**Inventory Manager — spare magazine tracking**
-- [ ] Ammo items in the inventory (e.g. "Rifle Magazine ×4", "Autopistol Magazine ×2") can be designated as **ammo** with a new `ammo_for` field linking to a weapon name
-- [ ] When an ammo item quantity is edited in the Inventory Manager, the linked character's `spareMags` count updates automatically (quantity of ammo items = spareMags available)
-- [ ] Conversely, when RELOAD is pressed in the roster or combat tracker, the linked inventory ammo item decrements by 1 (if the item exists; otherwise only `spareMags` decrements in `ammo_state`)
-- [ ] Grenades and missiles are tracked as inventory items with `ammo_for` set to the weapon name; firing them in the combat tracker decrements the inventory quantity by 1
-
-### Fire mode rules summary (shown in UI reference tooltip)
-
-| Mode | Rounds used | DM | Notes |
-|------|-------------|-----|-------|
-| Single | 1 | normal | |
-| Burst | Auto score | +Auto to damage | Cannot aim or use Scope in same action |
-| Full Auto | 3 × Auto | Auto attacks | All targets within 6m; cannot aim |
+- [x] Firearm rows show a compact ammo sub-row below the weapon row
+- [x] Clip controls use a small `Clips: + N -` counter
+- [x] Round count is displayed as a compact vertical-bar shot counter (`Rounds: ||||||`)
+- [x] Reload button (`RLD`) fills the current clip to clip size and decrements spare clips by one
+- [x] Weapon attack rolls spend ammunition through `spendWeaponAmmo()`
+- [x] Ammo edits persist through the existing character weapon update path and realtime character sync
+- [x] Melee/untracked weapons omit the ammo sub-row
 
 ### Tasks
 
-- [ ] Add `ammo_state` column to `characters` table in Supabase
-- [ ] Add `ammo_for` field to inventory item schema (nullable text, links weapon name)
-- [ ] Update `Character` TypeScript interface with `ammo_state: AmmoState`
-- [ ] Update `InventoryItem` TypeScript interface with `ammo_for?: string`
-- [ ] Write `initAmmoState(weapons: Weapon[]): AmmoState` — builds initial state from weapon list, skipping melee weapons
-- [ ] Write `decrementAmmo(state: AmmoState, weaponName: string, fireMode: 'single' | 'burst' | 'fullAuto', autoScore: number): AmmoState`
-- [ ] Write `reloadWeapon(state: AmmoState, weaponName: string): { state: AmmoState; usedMag: boolean }`
-- [ ] Ammo sub-section component in character weapon panel (roster)
-- [ ] Fire mode selector on Auto-trait weapon chips in combat tracker
-- [ ] Auto-decrement on weapon fire in combat tracker
-- [ ] Empty-weapon block + inline reload button in combat tracker
-- [ ] Realtime broadcast of `ammo_state` changes (reuse existing `characters` realtime subscription)
-- [ ] Inventory `ammo_for` field: add to new/edit item form; show linked character name as a read-only badge
-- [ ] Inventory ↔ `ammo_state` sync on quantity change (debounced write, 500ms)
+- [x] Add per-weapon ammo fields to the `Weapon` TypeScript interface
+- [x] Implement `weaponAmmoState()` and Core Rules magazine-size lookup
+- [x] Implement `spendWeaponAmmo()` with clip rollover and insufficient-ammo reporting
+- [x] Add compact roster ammo controls under firearm rows
+- [x] Add reload from the roster weapon row
+- [x] Spend ammo from the roster weapon roll modal
+- [x] Keep the full weapon row clickable for firing while ammo controls remain independently clickable
+- [x] Cover ammo state and spend behavior with focused Vitest coverage
 
 ### Tests
 
-- [ ] Unit: `initAmmoState()` — melee weapons excluded; rifle starts at `{ current: 20, magazineSize: 20, spareMags: 0 }`
-- [ ] Unit: `decrementAmmo()` — single (−1), burst Auto3 (−3), fullAuto Auto3 (−9); clamps to 0, never negative
-- [ ] Unit: `decrementAmmo()` — throws/returns error state if `current` is already 0
-- [ ] Unit: `reloadWeapon()` — resets `current` to `magazineSize`; decrements `spareMags`; `usedMag: true`
-- [ ] Unit: `reloadWeapon()` with `spareMags: 0` — still reloads (manual override allowed), `usedMag: false`
-- [ ] Component: ammo bar renders correct fill % and colour thresholds (≥50% amber, ≤25% red, 0 dark)
-- [ ] Component: RELOAD button disabled state shows warning text when `spareMags === 0`
-- [ ] Component: fire mode selector only renders on Auto-trait weapons
-- [ ] Component: weapon chip turns red on empty; click on empty chip does not trigger damage roll
-- [ ] E2E smoke: fire a rifle in combat tracker → ammo decrements; RELOAD → ammo resets; second player's roster panel updates within ~1s
+- [x] Unit: magazine size is inferred from Core Rules weapon data when not explicitly set
+- [x] Unit: tracked ammo state reports clips, rounds, clip size, and total rounds
+- [x] Unit: `spendWeaponAmmo()` decrements rounds within a clip
+- [x] Unit: `spendWeaponAmmo()` rolls over into spare clips when needed
+- [x] Unit: melee/untracked weapons return no ammo spend result
+
+### Deferred candidates
+
+- Inventory-linked ammunition items (`ammo_for`) and automatic inventory decrement on reload
+- Fire-mode selector for Auto-trait weapons (Single / Burst / Full Auto)
+- Combat tracker ammo display if the combat module is re-enabled
 
 ---
 
