@@ -739,7 +739,7 @@ Note: the historical 13-step checklist above is retained as source context. The 
 - [x] Export design as JSON
 - [x] Add completed design to Fleet with computed technical specs
 - [x] Fleet detail supports inline ship name, specs, notes, annotations, and custom image replacement
-- [ ] Manual two-browser realtime sync check for Shipyard design save/update/delete
+- [x] Manual two-browser realtime sync check for Shipyard design save/update/delete
 - [ ] Optional: compare to canonical side panel for Type-S / Type-A / Type-A2 / Seeker stats
 - [ ] Optional: export design as a human-readable text summary or copy-to-clipboard stat block
 

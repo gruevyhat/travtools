@@ -176,6 +176,22 @@ create table if not exists ship_designs (
 alter table ship_designs enable row level security;
 create policy "anon_all_ship_designs" on ship_designs for all to anon using (true) with check (true);
 alter table ship_designs add column if not exists diagram_url text;
+alter table ship_designs replica identity full;
+
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
+    and not exists (
+      select 1
+      from pg_publication_tables
+      where pubname = 'supabase_realtime'
+        and schemaname = 'public'
+        and tablename = 'ship_designs'
+    )
+  then
+    alter publication supabase_realtime add table public.ship_designs;
+  end if;
+end $$;
 
 -- NPCs (quick-generated non-player characters, separate from party roster)
 create table if not exists npcs (
