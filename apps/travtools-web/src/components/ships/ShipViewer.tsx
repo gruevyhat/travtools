@@ -1,9 +1,11 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Minus, Plus, Trash2, Upload, Tag, X, Settings } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
-import { Ship, ShipSpecs, Annotation, ShipDamageTrackers } from '../../types';
+import { Ship, ShipSpecs, Annotation, ShipDamageTrackers, ShipAmmoTracker, ShipSoftwareEntry, ShipSystemEntry } from '../../types';
 import { CANONICAL_SHIPS } from './canonicalShips';
 import { annotationPosition, removeAnnotationById, sortShips } from '../../lib/ships';
+import { OPTIONAL_SYSTEMS, SOFTWARE } from '../../data/shipComponents';
+import NumberStepper from '../shared/NumberStepper';
 
 function uuid() {
   return crypto.randomUUID();
@@ -69,18 +71,37 @@ interface ShipRecordPanelProps {
 interface ShipDamagePanelProps {
   specs: ShipSpecs;
   damage: ShipDamageTrackers;
-  tracking: boolean;
   damageInput: string;
   onDamageInputChange: (value: string) => void;
-  onToggleTracking: () => void;
   onApplyDamage: () => void;
   onAdjust: (key: ShipDamageNumberKey, delta: number) => void;
+  onReset: () => void;
   onNotesChange: (notes: string) => void;
   onNotesBlur: (notes: string) => void;
 }
 
+interface ShipAmmoPanelProps {
+  ammo: ShipAmmoTracker[];
+  onReset: () => void;
+  onAdd: () => void;
+  onRemove: (id: string) => void;
+  onAdjust: (id: string, delta: number) => void;
+  onFieldChange: (id: string, patch: Partial<ShipAmmoTracker>) => void;
+  onFieldBlur: () => void;
+}
+
+interface ShipManifestPanelProps {
+  specs: ShipSpecs;
+  editable: boolean;
+  specsForm: ShipSpecs;
+  onSpecsChange: (specs: ShipSpecs) => void;
+}
+
 function hasSpecValues(specs: ShipSpecs | null) {
-  return Boolean(specs && Object.values(specs).some(v => v != null && v !== ''));
+  return Boolean(specs && Object.values(specs).some(v => {
+    if (Array.isArray(v)) return v.length > 0;
+    return v != null && v !== '';
+  }));
 }
 
 function hasDamageValues(damage: ShipDamageTrackers | null | undefined) {
@@ -93,7 +114,40 @@ function effectiveShipSpecs(ship: Ship | null): ShipSpecs {
   const canonicalDef = ship.canonical_id
     ? CANONICAL_SHIPS.find(c => c.id === ship.canonical_id)
     : undefined;
-  return { ...(canonicalDef?.defaultSpecs ?? {}), ...(ship.specs ?? {}) };
+  return normalizeShipSpecs({ ...(canonicalDef?.defaultSpecs ?? {}), ...(ship.specs ?? {}) });
+}
+
+function normalizeShipSystemEntries(entries: ShipSystemEntry[] | null | undefined): ShipSystemEntry[] {
+  if (!Array.isArray(entries)) return [];
+  return entries
+    .filter(entry => entry && typeof entry === 'object')
+    .map((entry, index) => ({
+      id: entry.id || `system-${index}`,
+      name: entry.name ?? '',
+      quantity: Math.max(1, Number(entry.quantity ?? 1)),
+      notes: entry.notes ?? null,
+    }));
+}
+
+function normalizeShipSoftwareEntries(entries: ShipSoftwareEntry[] | null | undefined): ShipSoftwareEntry[] {
+  if (!Array.isArray(entries)) return [];
+  return entries
+    .filter(entry => entry && typeof entry === 'object')
+    .map((entry, index) => ({
+      id: entry.id || `software-${index}`,
+      name: entry.name ?? '',
+      rating: entry.rating == null ? null : Math.max(0, Number(entry.rating)),
+      notes: entry.notes ?? null,
+    }));
+}
+
+function normalizeShipSpecs(specs: ShipSpecs | null | undefined): ShipSpecs {
+  if (!specs) return {};
+  return {
+    ...specs,
+    systems: normalizeShipSystemEntries(specs.systems),
+    software: normalizeShipSoftwareEntries(specs.software),
+  };
 }
 
 function normalizeShipDamage(damage: ShipDamageTrackers | null | undefined): ShipDamageTrackers {
@@ -110,6 +164,23 @@ function normalizeShipDamage(damage: ShipDamageTrackers | null | undefined): Shi
     cargo: damage?.cargo ?? 0,
     notes: damage?.notes ?? null,
   };
+}
+
+function normalizeShipAmmo(ammo: ShipAmmoTracker[] | null | undefined): ShipAmmoTracker[] {
+  if (!Array.isArray(ammo)) return [];
+  return ammo
+    .filter(entry => entry && typeof entry === 'object')
+    .map((entry, index) => {
+      const max = entry.max == null ? null : Math.max(0, Number(entry.max));
+      const current = Math.max(0, Number(entry.current ?? max ?? 0));
+      return {
+        id: entry.id || `ammo-${index}`,
+        name: entry.name || 'Ammunition',
+        current: max == null ? current : Math.min(current, max),
+        max,
+        notes: entry.notes ?? null,
+      };
+    });
 }
 
 function identityFormFromShip(ship: Ship | null): ShipIdentityForm {
@@ -185,16 +256,15 @@ function clampDamageValue(value: number, max?: number) {
   return Math.max(0, Math.min(upper, safeValue));
 }
 
-function fleetManifestRows(ship: Ship, specs: ShipSpecs) {
+function fleetManifestRows(specs: ShipSpecs) {
   return [
-    { section: 'Hull', detail: `${ship.tonnage ?? specs.hull_rating ?? '?'}t ${specs.hull_config ?? ship.ship_class ?? 'Unclassified'}`, metric: specs.hull_rating ? `${specs.hull_rating} HP` : '-' },
-    { section: 'Protection', detail: specs.armour_rating ? `Armour rating ${specs.armour_rating}` : 'Unarmoured or unknown', metric: specs.armour_rating ?? '-' },
     { section: 'Drives', detail: `Jump-${specs.j_drive ?? '-'} / Thrust-${specs.m_drive ?? '-'}`, metric: specs.fuel_tons ? `${specs.fuel_tons}t fuel` : '-' },
-    { section: 'Power', detail: specs.power_plant ? `Power plant ${specs.power_plant}` : 'Power plant not recorded', metric: specs.power_plant ?? '-' },
-    { section: 'Bridge', detail: specs.bridge_tons ? `${specs.bridge_tons}t bridge` : 'Bridge not recorded', metric: specs.tech_level ? `TL${specs.tech_level}` : '-' },
-    { section: 'Weapons', detail: specs.turrets ? `${specs.turrets} turret${specs.turrets === 1 ? '' : 's'}` : 'No turrets recorded', metric: specs.turrets ?? '-' },
-    { section: 'Quarters', detail: `${specs.staterooms ?? 0} staterooms / ${specs.low_berths ?? 0} low berths`, metric: specs.crew_notes ?? '-' },
-    { section: 'Cargo', detail: 'Cargo displacement recorded on fleet record', metric: specs.cargo_tons ? `${specs.cargo_tons}t` : '-' },
+    { section: 'Power', detail: specs.power_plant ? `Plant output ${specs.power_plant}` : 'Power plant not recorded', metric: specs.tech_level ? `TL${specs.tech_level}` : '-' },
+    { section: 'Bridge', detail: specs.bridge_tons ? `${specs.bridge_tons}t bridge and ship controls` : 'Bridge not recorded', metric: specs.hull_config ?? '-' },
+    { section: 'Protection', detail: specs.armour_rating ? `Armour rating ${specs.armour_rating}` : 'Unarmoured or unknown', metric: specs.hull_rating ? `${specs.hull_rating} HP` : '-' },
+    { section: 'Weapons', detail: specs.turrets ? `${specs.turrets} turret${specs.turrets === 1 ? '' : 's'} or mount entries` : 'No mounts recorded', metric: specs.turrets ?? '-' },
+    { section: 'Crew', detail: specs.crew_notes || 'Crew requirements not recorded', metric: specs.staterooms ? `${specs.staterooms} rooms` : '-' },
+    { section: 'Berths', detail: `${specs.low_berths ?? 0} low berths`, metric: specs.cargo_tons ? `${specs.cargo_tons}t cargo` : '-' },
   ];
 }
 
@@ -210,6 +280,10 @@ function ShipRecordPanel({
     ['Schematic', ship.schematic_type === 'canonical'
       ? CANONICAL_SHIPS.find(c => c.id === ship.canonical_id)?.name ?? ship.canonical_id ?? 'Canonical'
       : ship.image_url ? 'Custom image' : 'Custom record'],
+  ];
+  const adminRows = [
+    ['Maintenance', formatCr(specs.monthly_maintenance_cr)],
+    ['Purchase', formatMCr(specs.purchase_price_mcr)],
   ];
 
   return (
@@ -250,13 +324,12 @@ function ShipRecordPanel({
           </label>
           <label className="space-y-0.5 block">
             <span className="text-body/60 font-mono text-[10px] tracking-wider">TONNAGE</span>
-            <input
-              aria-label="Ship tonnage"
-              className="input py-1 text-xs"
-              type="number"
+            <NumberStepper
+              ariaLabel="Ship tonnage"
+              inputClassName="input py-1 text-xs"
               min={0}
               value={identityForm.tonnage}
-              onChange={e => onIdentityChange({ ...identityForm, tonnage: e.target.value })}
+              onChange={value => onIdentityChange({ ...identityForm, tonnage: value })}
             />
           </label>
           <label className="space-y-0.5 block">
@@ -306,17 +379,25 @@ function ShipRecordPanel({
           {SPECS_FIELDS.map(({ key, label, type }) => (
             <label key={key} className="space-y-0.5 block">
               <span className="text-body/60 font-mono text-[10px] tracking-wider">{label.toUpperCase()}</span>
-              <input
-                className="input py-1 text-xs"
-                type={type}
-                step={key === 'purchase_price_mcr' ? '0.001' : '1'}
-                value={(specsForm[key] as string | number | null | undefined) ?? ''}
-                onChange={e => {
-                  const raw = e.target.value;
-                  const val = raw === '' ? null : type === 'number' ? parseFloat(raw) : raw;
-                  onSpecsChange({ ...specsForm, [key]: val });
-                }}
-              />
+              {type === 'number' ? (
+                <NumberStepper
+                  ariaLabel={label}
+                  inputClassName="input py-1 text-xs"
+                  step={key === 'purchase_price_mcr' ? '0.001' : '1'}
+                  value={(specsForm[key] as string | number | null | undefined) ?? ''}
+                  onChange={raw => {
+                    const val = raw === '' ? null : parseFloat(raw);
+                    onSpecsChange({ ...specsForm, [key]: val });
+                  }}
+                />
+              ) : (
+                <input
+                  className="input py-1 text-xs"
+                  type={type}
+                  value={(specsForm[key] as string | number | null | undefined) ?? ''}
+                  onChange={e => onSpecsChange({ ...specsForm, [key]: e.target.value })}
+                />
+              )}
             </label>
           ))}
           <label className="space-y-0.5 block col-span-2">
@@ -329,27 +410,19 @@ function ShipRecordPanel({
         </div>
       ) : hasSpecs ? (
         <div className="p-3 text-xs">
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 mb-3">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1">
             {identityRows.map(([label, value]) => (
               <div key={label} className="border-b border-steel/20 pb-1">
                 <div className="text-body/45 font-mono text-[10px] tracking-wider">{label.toUpperCase()}</div>
                 <div className="text-amber font-mono truncate">{value}</div>
               </div>
             ))}
-          </div>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-          {SPECS_FIELDS.filter(({ key }) => specs?.[key] != null && specs[key] !== '').map(({ key, label }) => (
-            <div key={key} className="border-b border-steel/20 pb-1">
-              <div className="text-body/45 font-mono text-[10px] tracking-wider">{label.toUpperCase()}</div>
-              <div className="text-amber font-mono truncate">{String(specs?.[key])}</div>
-            </div>
-          ))}
-          {specs?.crew_notes && (
-            <div className="col-span-2 border-b border-steel/20 pb-1">
-              <div className="text-body/45 font-mono text-[10px] tracking-wider">CREW NOTES</div>
-              <div className="text-amber font-mono">{specs.crew_notes}</div>
-            </div>
-          )}
+            {adminRows.map(([label, value]) => (
+              <div key={label} className="border-b border-steel/20 pb-1">
+                <div className="text-body/45 font-mono text-[10px] tracking-wider">{label.toUpperCase()}</div>
+                <div className="text-amber font-mono truncate">{value}</div>
+              </div>
+            ))}
           </div>
         </div>
       ) : (
@@ -360,8 +433,8 @@ function ShipRecordPanel({
 }
 
 function ShipDamagePanel({
-  specs, damage, tracking, damageInput, onDamageInputChange, onToggleTracking,
-  onApplyDamage, onAdjust, onNotesChange, onNotesBlur,
+  specs, damage, damageInput, onDamageInputChange, onApplyDamage, onAdjust, onReset,
+  onNotesChange, onNotesBlur,
 }: ShipDamagePanelProps) {
   const normalized = normalizeShipDamage(damage);
   const totalDamage = DAMAGE_FIELDS.reduce((sum, { key }) => sum + Number(normalized[key] ?? 0), 0);
@@ -377,94 +450,396 @@ function ShipDamagePanel({
         </div>
         <button
           type="button"
-          onClick={onToggleTracking}
-          className={`text-[10px] font-mono px-2 py-0.5 border transition-colors flex-shrink-0 ${
-            tracking
-              ? 'border-alert/60 text-alert hover:border-steel hover:text-body/60'
-              : 'border-steel/40 text-body/65 hover:border-amber/50 hover:text-amber/70'
-          }`}
+          onClick={onReset}
+          className="text-[10px] font-mono px-2 py-0.5 border border-alert/60 text-alert hover:border-steel hover:text-body/60 transition-colors flex-shrink-0"
         >
-          {tracking ? 'RESET DAMAGE' : 'TRACK DAMAGE'}
+          RESET DAMAGE
         </button>
       </div>
-      {tracking ? (
-        <div className="p-3 space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              aria-label="Hull Damage Input"
-              type="number"
-              min={1}
-              placeholder="Hull damage..."
-              value={damageInput}
-              onChange={e => onDamageInputChange(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') onApplyDamage(); }}
-              className="input text-xs w-32 py-1"
-            />
-            <button type="button" onClick={onApplyDamage} className="btn-danger text-xs py-1">APPLY</button>
-            <span className="text-body/55 text-[10px] font-mono min-w-40 flex-1">Apply to hull, or adjust systems below</span>
-          </div>
+      <div className="p-3 space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <NumberStepper
+            ariaLabel="Hull Damage Input"
+            min={1}
+            placeholder="Hull damage..."
+            value={damageInput}
+            onChange={onDamageInputChange}
+            onKeyDown={e => { if (e.key === 'Enter') onApplyDamage(); }}
+            className="w-36"
+            inputClassName="input text-xs py-1"
+          />
+          <button type="button" onClick={onApplyDamage} className="btn-danger text-xs py-1">APPLY</button>
+          <span className="text-body/55 text-[10px] font-mono min-w-40 flex-1">Apply to hull, or adjust systems below</span>
+        </div>
 
+        <div className="space-y-2">
+          {DAMAGE_FIELDS.map(field => {
+            const max = maxForDamageField(field, specs);
+            const value = Number(normalized[field.key] ?? 0);
+            const tone = damageTone(value, max);
+            return (
+              <div key={field.key} className="space-y-1">
+                <div className="flex items-center gap-2 text-xs font-mono">
+                  <span className="text-body/70 flex-1 min-w-0 truncate">{field.label.replace(' Damage', '').toUpperCase()}</span>
+                  <button
+                    type="button"
+                    aria-label={`Decrease ${field.label}`}
+                    disabled={value <= 0}
+                    onClick={() => onAdjust(field.key, -1)}
+                    className="w-5 h-5 border border-steel/60 text-body/70 hover:border-alert hover:text-alert disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center"
+                  >
+                    <Minus size={8} />
+                  </button>
+                  <span className={`w-14 text-center ${tone === 'alert' ? 'text-alert' : tone === 'amber' ? 'text-amber' : 'text-safe'}`}>
+                    {value}{max ? `/${max}` : ''}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`Increase ${field.label}`}
+                    disabled={max !== undefined && value >= max}
+                    onClick={() => onAdjust(field.key, 1)}
+                    className="w-5 h-5 border border-steel/60 text-body/70 hover:border-safe hover:text-safe disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center"
+                  >
+                    <Plus size={8} />
+                  </button>
+                </div>
+                <div className="h-1.5 bg-steel/30 overflow-hidden">
+                  <div
+                    className={`h-full ${tone === 'alert' ? 'bg-alert' : tone === 'amber' ? 'bg-amber' : 'bg-safe/70'}`}
+                    style={{ width: `${damagePercent(value, max)}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <label className="space-y-1 block pt-2">
+          <span className="text-body/60 font-mono text-[10px] tracking-wider">DAMAGE NOTES</span>
+          <textarea
+            aria-label="Damage Notes"
+            className="input min-h-20 resize-y text-xs"
+            value={normalized.notes ?? ''}
+            onChange={e => onNotesChange(e.target.value)}
+            onBlur={e => onNotesBlur(e.target.value)}
+          />
+        </label>
+        <div className="text-[10px] text-body/55 font-mono">
+          Reset clears all tracked ship damage and damage notes.
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ShipAmmoPanel({
+  ammo, onReset, onAdd, onRemove, onAdjust, onFieldChange, onFieldBlur,
+}: ShipAmmoPanelProps) {
+  const totalCurrent = ammo.reduce((sum, entry) => sum + entry.current, 0);
+  const totalMax = ammo.reduce((sum, entry) => sum + Number(entry.max ?? 0), 0);
+
+  return (
+    <section className="border border-steel/50 bg-panel/45">
+      <div className="border-b border-steel/40 px-3 py-2 flex items-center justify-between gap-2">
+        <div>
+          <div className="label">AMMUNITION</div>
+          <div className="text-[10px] text-body/45 font-mono">
+            {ammo.length > 0 ? `${totalCurrent}${totalMax > 0 ? `/${totalMax}` : ''} rounds across ${ammo.length} tracker${ammo.length === 1 ? '' : 's'}` : 'No ammunition tracked'}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onReset}
+          className="text-[10px] font-mono px-2 py-0.5 border border-cyan-dim text-cyan-trav hover:border-steel hover:text-body/60 transition-colors flex-shrink-0"
+        >
+          RESET AMMO
+        </button>
+      </div>
+      <div className="p-3 space-y-3">
+        <button type="button" onClick={onAdd} className="btn-steel text-xs py-1 px-2 inline-flex items-center gap-1">
+          <Plus size={10} /> ADD AMMO
+        </button>
+        {ammo.length > 0 ? (
           <div className="space-y-2">
-            {DAMAGE_FIELDS.map(field => {
-              const max = maxForDamageField(field, specs);
-              const value = Number(normalized[field.key] ?? 0);
-              const tone = damageTone(value, max);
+            {ammo.map((entry, index) => {
+              const max = entry.max == null ? undefined : entry.max;
+              const spent = max == null ? false : entry.current <= Math.max(0, Math.floor(max / 4));
               return (
-                <div key={field.key} className="space-y-1">
-                  <div className="flex items-center gap-2 text-xs font-mono">
-                    <span className="text-body/70 flex-1 min-w-0 truncate">{field.label.replace(' Damage', '').toUpperCase()}</span>
+                <div key={entry.id} className="border border-steel/40 bg-void/50 p-2 space-y-2">
+                  <div className="grid grid-cols-[minmax(0,1fr)_7.5rem_7.5rem_1.5rem] gap-2">
+                    <input
+                      aria-label={`Ammo name ${index + 1}`}
+                      className="input py-1 text-xs"
+                      value={entry.name}
+                      onChange={e => onFieldChange(entry.id, { name: e.target.value })}
+                      onBlur={onFieldBlur}
+                    />
+                    <NumberStepper
+                      ariaLabel={`Ammo current ${index + 1}`}
+                      inputClassName="input py-1 text-xs"
+                      min={0}
+                      max={max}
+                      value={entry.current}
+                      onChange={value => {
+                        if (value === '') return;
+                        onFieldChange(entry.id, { current: Math.max(0, parseInt(value, 10)) });
+                      }}
+                      onBlur={onFieldBlur}
+                    />
+                    <NumberStepper
+                      ariaLabel={`Ammo maximum ${index + 1}`}
+                      inputClassName="input py-1 text-xs"
+                      min={0}
+                      value={entry.max ?? ''}
+                      onChange={value => onFieldChange(entry.id, { max: value === '' ? null : Math.max(0, parseInt(value, 10)) })}
+                      onBlur={onFieldBlur}
+                    />
                     <button
                       type="button"
-                      aria-label={`Decrease ${field.label}`}
-                      disabled={value <= 0}
-                      onClick={() => onAdjust(field.key, -1)}
+                      aria-label={`Remove ammo ${entry.name || index + 1}`}
+                      onClick={() => onRemove(entry.id)}
+                      className="border border-steel/50 text-body/60 hover:border-alert hover:text-alert flex items-center justify-center"
+                    >
+                      <Trash2 size={10} />
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs font-mono">
+                    <button
+                      type="button"
+                      aria-label={`Decrease ${entry.name} ammunition`}
+                      disabled={entry.current <= 0}
+                      onMouseDown={e => e.preventDefault()}
+                      onClick={() => onAdjust(entry.id, -1)}
                       className="w-5 h-5 border border-steel/60 text-body/70 hover:border-alert hover:text-alert disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center"
                     >
                       <Minus size={8} />
                     </button>
-                    <span className={`w-14 text-center ${tone === 'alert' ? 'text-alert' : tone === 'amber' ? 'text-amber' : 'text-safe'}`}>
-                      {value}{max ? `/${max}` : ''}
+                    <span className={`w-16 text-center ${spent ? 'text-amber' : 'text-cyan-trav'}`}>
+                      {entry.current}{max == null ? '' : `/${max}`}
                     </span>
                     <button
                       type="button"
-                      aria-label={`Increase ${field.label}`}
-                      disabled={max !== undefined && value >= max}
-                      onClick={() => onAdjust(field.key, 1)}
+                      aria-label={`Increase ${entry.name} ammunition`}
+                      disabled={max !== undefined && entry.current >= max}
+                      onMouseDown={e => e.preventDefault()}
+                      onClick={() => onAdjust(entry.id, 1)}
                       className="w-5 h-5 border border-steel/60 text-body/70 hover:border-safe hover:text-safe disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center"
                     >
                       <Plus size={8} />
                     </button>
-                  </div>
-                  <div className="h-1.5 bg-steel/30 overflow-hidden">
-                    <div
-                      className={`h-full ${tone === 'alert' ? 'bg-alert' : tone === 'amber' ? 'bg-amber' : 'bg-safe/70'}`}
-                      style={{ width: `${damagePercent(value, max)}%` }}
+                    <input
+                      aria-label={`Ammo notes ${index + 1}`}
+                      className="input py-1 text-xs flex-1"
+                      placeholder="Magazine, rack, bay..."
+                      value={entry.notes ?? ''}
+                      onChange={e => onFieldChange(entry.id, { notes: e.target.value || null })}
+                      onBlur={onFieldBlur}
                     />
                   </div>
                 </div>
               );
             })}
           </div>
+        ) : (
+          <div className="text-xs text-body/55 font-mono border border-dashed border-steel/30 p-3">
+            Add a magazine, missile rack, sandcaster bin, or other expendable store.
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
 
-          <label className="space-y-1 block pt-2">
-            <span className="text-body/60 font-mono text-[10px] tracking-wider">DAMAGE NOTES</span>
-            <textarea
-              aria-label="Damage Notes"
-              className="input min-h-20 resize-y text-xs"
-              value={normalized.notes ?? ''}
-              onChange={e => onNotesChange(e.target.value)}
-              onBlur={e => onNotesBlur(e.target.value)}
-            />
-          </label>
-          <div className="text-[10px] text-body/55 font-mono">
-            Reset clears all tracked ship damage and damage notes.
+function ShipManifestPanel({ specs, editable, specsForm, onSpecsChange }: ShipManifestPanelProps) {
+  const activeSpecs = editable ? normalizeShipSpecs(specsForm) : normalizeShipSpecs(specs);
+  const systems = normalizeShipSystemEntries(activeSpecs.systems);
+  const software = normalizeShipSoftwareEntries(activeSpecs.software);
+  const manifestRows = fleetManifestRows(activeSpecs);
+
+  function updateSystems(nextSystems: ShipSystemEntry[]) {
+    onSpecsChange({ ...activeSpecs, systems: nextSystems });
+  }
+
+  function updateSoftware(nextSoftware: ShipSoftwareEntry[]) {
+    onSpecsChange({ ...activeSpecs, software: nextSoftware });
+  }
+
+  function addSystem() {
+    const preset = OPTIONAL_SYSTEMS.find(system => !systems.some(entry => entry.name === system.name)) ?? OPTIONAL_SYSTEMS[0];
+    updateSystems([...systems, {
+      id: uuid(),
+      name: preset?.name ?? 'New System',
+      quantity: 1,
+      notes: preset?.notes ?? null,
+    }]);
+  }
+
+  function addSoftware() {
+    const preset = SOFTWARE.find(program => !software.some(entry => entry.name === program.name.replace('/N', ''))) ?? SOFTWARE[0];
+    updateSoftware([...software, {
+      id: uuid(),
+      name: preset?.name.replace('/N', '') ?? 'New Software',
+      rating: preset?.name.includes('/N') ? 1 : null,
+      notes: preset?.notes ?? null,
+    }]);
+  }
+
+  return (
+    <section className="border border-steel/50 bg-panel/35">
+      <div className="border-b border-steel/40 px-3 py-2 flex items-center justify-between gap-3">
+        <div>
+          <div className="label">SYSTEMS MANIFEST</div>
+          <div className="text-[10px] text-body/45 font-mono">
+            Core capabilities, installed systems, and software loadout
           </div>
         </div>
-      ) : (
-        <div className="p-3 text-xs text-body/55 font-mono">
-          Click TRACK DAMAGE to open hull and system damage controls.
+        {editable && (
+          <div className="flex gap-2">
+            <button type="button" onClick={addSystem} className="btn-steel text-xs py-1 px-2 inline-flex items-center gap-1">
+              <Plus size={10} /> ADD SYSTEM
+            </button>
+            <button type="button" onClick={addSoftware} className="btn-steel text-xs py-1 px-2 inline-flex items-center gap-1">
+              <Plus size={10} /> ADD SOFTWARE
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="p-3 space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          {manifestRows.map(row => (
+            <div key={row.section} className="border border-steel/30 bg-void/45 px-3 py-2 text-xs min-w-0">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-amber font-mono tracking-wider">{row.section}</div>
+                <div className="text-cyan-trav font-mono text-right">{row.metric}</div>
+              </div>
+              <div className="text-body/70 min-w-0 break-words mt-1 leading-5">{row.detail}</div>
+            </div>
+          ))}
         </div>
-      )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <div className="border border-steel/30 bg-void/35">
+            <div className="border-b border-steel/25 px-3 py-2 label text-cyan-trav/80">ADDITIONAL SYSTEMS</div>
+            {editable ? (
+              <div className="p-3 space-y-2">
+                <datalist id="ship-system-presets">
+                  {OPTIONAL_SYSTEMS.map(system => <option key={system.id} value={system.name} />)}
+                </datalist>
+                {systems.length > 0 ? systems.map((entry, index) => (
+                  <div key={entry.id} className="grid grid-cols-[minmax(0,1fr)_7.5rem_1.5rem] gap-2">
+                    <input
+                      aria-label={`System name ${index + 1}`}
+                      className="input py-1 text-xs"
+                      list="ship-system-presets"
+                      value={entry.name}
+                      onChange={e => updateSystems(systems.map(system => system.id === entry.id ? { ...system, name: e.target.value } : system))}
+                    />
+                    <NumberStepper
+                      ariaLabel={`System quantity ${index + 1}`}
+                      inputClassName="input py-1 text-xs"
+                      min={1}
+                      value={entry.quantity ?? 1}
+                      onChange={value => updateSystems(systems.map(system => system.id === entry.id ? { ...system, quantity: Math.max(1, parseInt(value || '1', 10)) } : system))}
+                    />
+                    <button
+                      type="button"
+                      aria-label={`Remove system ${entry.name || index + 1}`}
+                      onClick={() => updateSystems(systems.filter(system => system.id !== entry.id))}
+                      className="border border-steel/50 text-body/60 hover:border-alert hover:text-alert flex items-center justify-center"
+                    >
+                      <Trash2 size={10} />
+                    </button>
+                    <input
+                      aria-label={`System notes ${index + 1}`}
+                      className="input py-1 text-xs col-span-3"
+                      placeholder="Notes..."
+                      value={entry.notes ?? ''}
+                      onChange={e => updateSystems(systems.map(system => system.id === entry.id ? { ...system, notes: e.target.value || null } : system))}
+                    />
+                  </div>
+                )) : (
+                  <div className="text-xs text-body/55 font-mono border border-dashed border-steel/30 p-3">No additional systems recorded.</div>
+                )}
+              </div>
+            ) : (
+              <div className="divide-y divide-steel/20">
+                {systems.length > 0 ? systems.map(entry => (
+                  <div key={entry.id} className="px-3 py-2 text-xs">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-amber font-mono">{entry.name}</span>
+                      <span className="text-cyan-trav font-mono">x{entry.quantity ?? 1}</span>
+                    </div>
+                    {entry.notes && <div className="text-body/60 mt-1 leading-5">{entry.notes}</div>}
+                  </div>
+                )) : (
+                  <div className="p-3 text-xs text-body/55 font-mono">No additional systems recorded.</div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="border border-steel/30 bg-void/35">
+            <div className="border-b border-steel/25 px-3 py-2 label text-cyan-trav/80">SOFTWARE</div>
+            {editable ? (
+              <div className="p-3 space-y-2">
+                <datalist id="ship-software-presets">
+                  {SOFTWARE.map(program => <option key={program.id} value={program.name.replace('/N', '')} />)}
+                </datalist>
+                {software.length > 0 ? software.map((entry, index) => (
+                  <div key={entry.id} className="grid grid-cols-[minmax(0,1fr)_7.5rem_1.5rem] gap-2">
+                    <input
+                      aria-label={`Software name ${index + 1}`}
+                      className="input py-1 text-xs"
+                      list="ship-software-presets"
+                      value={entry.name}
+                      onChange={e => updateSoftware(software.map(program => program.id === entry.id ? { ...program, name: e.target.value } : program))}
+                    />
+                    <NumberStepper
+                      ariaLabel={`Software rating ${index + 1}`}
+                      inputClassName="input py-1 text-xs"
+                      min={0}
+                      value={entry.rating ?? ''}
+                      onChange={value => updateSoftware(software.map(program => program.id === entry.id ? { ...program, rating: value === '' ? null : Math.max(0, parseInt(value, 10)) } : program))}
+                    />
+                    <button
+                      type="button"
+                      aria-label={`Remove software ${entry.name || index + 1}`}
+                      onClick={() => updateSoftware(software.filter(program => program.id !== entry.id))}
+                      className="border border-steel/50 text-body/60 hover:border-alert hover:text-alert flex items-center justify-center"
+                    >
+                      <Trash2 size={10} />
+                    </button>
+                    <input
+                      aria-label={`Software notes ${index + 1}`}
+                      className="input py-1 text-xs col-span-3"
+                      placeholder="Notes..."
+                      value={entry.notes ?? ''}
+                      onChange={e => updateSoftware(software.map(program => program.id === entry.id ? { ...program, notes: e.target.value || null } : program))}
+                    />
+                  </div>
+                )) : (
+                  <div className="text-xs text-body/55 font-mono border border-dashed border-steel/30 p-3">No software recorded.</div>
+                )}
+              </div>
+            ) : (
+              <div className="divide-y divide-steel/20">
+                {software.length > 0 ? software.map(entry => (
+                  <div key={entry.id} className="px-3 py-2 text-xs">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-amber font-mono">{entry.name}{entry.rating == null ? '' : `/${entry.rating}`}</span>
+                      <span className="text-cyan-trav font-mono">ACTIVE</span>
+                    </div>
+                    {entry.notes && <div className="text-body/60 mt-1 leading-5">{entry.notes}</div>}
+                  </div>
+                )) : (
+                  <div className="p-3 text-xs text-body/55 font-mono">No software recorded.</div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
     </section>
   );
 }
@@ -480,14 +855,16 @@ export default function ShipViewer() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [specsForm, setSpecsForm] = useState<ShipSpecs>({});
   const [damageForm, setDamageForm] = useState<ShipDamageTrackers>(normalizeShipDamage(null));
-  const [trackingDamage, setTrackingDamage] = useState(false);
   const [damageInput, setDamageInput] = useState('');
+  const [ammoForm, setAmmoForm] = useState<ShipAmmoTracker[]>([]);
   const [identityForm, setIdentityForm] = useState<ShipIdentityForm>(identityFormFromShip(null));
   const [editingRecord, setEditingRecord] = useState(false);
   const schematicRef = useRef<HTMLDivElement>(null);
   const replaceImageRef = useRef<HTMLInputElement>(null);
+  const ammoFormRef = useRef<ShipAmmoTracker[]>([]);
   const selectedShipId = selected?.id ?? null;
   const selectedShipDamage = selected?.damage;
+  const selectedShipAmmo = selected?.ammo;
 
   const loadShips = useCallback(async () => {
     if (!client) return;
@@ -551,9 +928,14 @@ export default function ShipViewer() {
   useEffect(() => {
     const normalized = normalizeShipDamage(selectedShipDamage);
     setDamageForm(normalized);
-    setTrackingDamage(hasDamageValues(normalized));
     setDamageInput('');
   }, [selectedShipId, selectedShipDamage]);
+
+  useEffect(() => {
+    const normalized = normalizeShipAmmo(selectedShipAmmo);
+    ammoFormRef.current = normalized;
+    setAmmoForm(normalized);
+  }, [selectedShipId, selectedShipAmmo]);
 
   async function deleteShip(id: string) {
     if (!client || !confirm('Delete this ship entry?')) return;
@@ -666,7 +1048,8 @@ export default function ShipViewer() {
     }
 
     const schematicType = identityForm.schematic_type;
-    const specs = hasSpecValues(specsForm) ? specsForm : null;
+    const normalizedSpecs = normalizeShipSpecs(specsForm);
+    const specs = hasSpecValues(normalizedSpecs) ? normalizedSpecs : null;
     const payload = {
       name,
       ship_class: identityForm.ship_class.trim() || null,
@@ -701,14 +1084,9 @@ export default function ShipViewer() {
     }
   }
 
-  function toggleDamageTracking() {
-    if (trackingDamage) {
-      setTrackingDamage(false);
-      setDamageInput('');
-      persistDamage(normalizeShipDamage(null));
-    } else {
-      setTrackingDamage(true);
-    }
+  function resetDamageTracker() {
+    setDamageInput('');
+    persistDamage(normalizeShipDamage(null));
   }
 
   function adjustDamageField(key: ShipDamageNumberKey, delta: number) {
@@ -744,6 +1122,59 @@ export default function ShipViewer() {
 
   function saveDamageNotes(notes: string) {
     persistDamage({ ...damageForm, notes: notes.trim() ? notes : null });
+  }
+
+  async function persistAmmo(nextAmmo: ShipAmmoTracker[]) {
+    if (!client || !selected) return;
+    const ammo = normalizeShipAmmo(nextAmmo).filter(entry => entry.name.trim());
+    ammoFormRef.current = ammo;
+    setAmmoForm(ammo);
+    updateShipInState({ ...selected, ammo });
+    const { error } = await client.from('ships').update({ ammo }).eq('id', selected.id);
+    if (error) {
+      setErrorMessage(`Ship ammunition could not be saved: ${error.message}`);
+      loadShips();
+    }
+  }
+
+  function resetAmmoTracker() {
+    persistAmmo([]);
+  }
+
+  function addAmmoTracker() {
+    persistAmmo([...ammoFormRef.current, { id: uuid(), name: 'Missiles', current: 12, max: 12, notes: null }]);
+  }
+
+  function removeAmmoTracker(id: string) {
+    persistAmmo(ammoFormRef.current.filter(entry => entry.id !== id));
+  }
+
+  function updateAmmoField(id: string, patch: Partial<ShipAmmoTracker>) {
+    const nextAmmo = normalizeShipAmmo(ammoFormRef.current.map(entry => {
+      if (entry.id !== id) return entry;
+      const next = { ...entry, ...patch };
+      const max = next.max == null ? null : Math.max(0, Number(next.max));
+      const currentValue = Math.max(0, Number(next.current ?? 0));
+      return {
+        ...next,
+        max,
+        current: max == null ? currentValue : Math.min(currentValue, max),
+      };
+    }));
+    ammoFormRef.current = nextAmmo;
+    setAmmoForm(nextAmmo);
+  }
+
+  function adjustAmmoTracker(id: string, delta: number) {
+    const nextAmmo = ammoFormRef.current.map(entry => {
+      if (entry.id !== id) return entry;
+      const max = entry.max == null ? undefined : entry.max;
+      return {
+        ...entry,
+        current: clampDamageValue(entry.current + delta, max),
+      };
+    });
+    persistAmmo(nextAmmo);
   }
 
   async function handleReplaceImage(e: React.ChangeEvent<HTMLInputElement>) {
@@ -820,11 +1251,14 @@ export default function ShipViewer() {
 
   const selectedSpecs = effectiveShipSpecs(selected);
   const selectedDamage = normalizeShipDamage(selected?.damage);
+  const selectedAmmo = normalizeShipAmmo(selected?.ammo);
   const selectedCanonical = selected?.canonical_id ? CANONICAL_SHIPS.find(c => c.id === selected.canonical_id) : null;
-  const selectedManifestRows = selected ? fleetManifestRows(selected, selectedSpecs) : [];
   const hullDamage = Number(selectedDamage.hull ?? 0);
   const hullRating = typeof selectedSpecs.hull_rating === 'number' ? selectedSpecs.hull_rating : undefined;
   const damageTotal = DAMAGE_FIELDS.reduce((sum, { key }) => sum + Number(selectedDamage[key] ?? 0), 0);
+  const displayedAmmo = ammoForm.length > 0 ? ammoForm : selectedAmmo;
+  const ammoCurrent = displayedAmmo.reduce((sum, entry) => sum + entry.current, 0);
+  const ammoMax = displayedAmmo.reduce((sum, entry) => sum + Number(entry.max ?? 0), 0);
 
   return (
     <div className="h-full flex flex-col md:flex-row">
@@ -969,16 +1403,22 @@ export default function ShipViewer() {
             <div className="flex-1 overflow-auto p-4">
               <div className="grid grid-cols-2 md:grid-cols-6 gap-2 max-w-7xl mx-auto mb-4">
                 <Readout
-                  label="DISPLACEMENT"
+                  label="HULL"
                   value={selected.tonnage ? `${selected.tonnage}t` : '-'}
-                  sub={selected.ship_class ?? selectedCanonical?.ship_class ?? 'Fleet record'}
+                  sub={`${selectedSpecs.hull_config ?? 'Hull'}${hullRating ? `, ${hullRating} HP` : ''}`}
                   tone="cyan"
                 />
                 <Readout
                   label="DRIVES"
                   value={`J${selectedSpecs.j_drive ?? '-'}/M${selectedSpecs.m_drive ?? '-'}`}
-                  sub={selectedSpecs.fuel_tons ? `${selectedSpecs.fuel_tons}t fuel` : 'Fuel not recorded'}
+                  sub={selected.ship_class ?? selectedCanonical?.ship_class ?? 'Fleet record'}
                   tone="amber"
+                />
+                <Readout
+                  label="FUEL"
+                  value={selectedSpecs.fuel_tons ? `${selectedSpecs.fuel_tons}t` : '-'}
+                  sub={selectedSpecs.power_plant ? `Power ${selectedSpecs.power_plant}` : 'Power not recorded'}
+                  tone="cyan"
                 />
                 <Readout
                   label="CARGO"
@@ -993,65 +1433,87 @@ export default function ShipViewer() {
                   tone={damageTotal > 0 ? 'amber' : 'safe'}
                 />
                 <Readout
-                  label="MAINTENANCE"
-                  value={formatCr(selectedSpecs.monthly_maintenance_cr)}
-                  sub="per month"
-                  tone="cyan"
-                />
-                <Readout
-                  label="PURCHASE"
-                  value={formatMCr(selectedSpecs.purchase_price_mcr)}
-                  sub="recorded value"
-                  tone="amber"
+                  label="AMMO"
+                  value={ammoMax > 0 ? `${ammoCurrent}/${ammoMax}` : ammoCurrent || '-'}
+                  sub={displayedAmmo.length > 0 ? `${displayedAmmo.length} tracker${displayedAmmo.length === 1 ? '' : 's'}` : 'No bins'}
+                  tone={ammoCurrent > 0 ? 'cyan' : 'amber'}
                 />
               </div>
 
-              <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_25rem] gap-4 max-w-7xl mx-auto">
-                <section className="border border-cyan-trav/25 bg-panel/30 min-h-[24rem] flex flex-col">
-                  <div className="border-b border-cyan-trav/20 px-3 py-2 flex items-center justify-between gap-3">
-                    <div>
-                      <div className="label text-cyan-trav">ANNOTATABLE SCHEMATIC</div>
+              <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_27rem] gap-4 max-w-7xl mx-auto">
+                <div className="space-y-4 min-w-0">
+                  <section className="border border-cyan-trav/25 bg-panel/30 min-h-[24rem] flex flex-col">
+                    <div className="border-b border-cyan-trav/20 px-3 py-2 flex items-center justify-between gap-3">
+                      <div>
+                        <div className="label text-cyan-trav">ANNOTATABLE SCHEMATIC</div>
+                        <div className="text-[10px] text-body/45 font-mono">
+                          {selected.schematic_type === 'canonical'
+                            ? `${selected.ship_class ?? selectedCanonical?.ship_class ?? 'Canonical'} · ${(selectedCanonical?.name ?? selected.canonical_id ?? 'Unassigned').toUpperCase()}`
+                            : 'CUSTOM SHIP RECORD'}
+                        </div>
+                      </div>
                       <div className="text-[10px] text-body/45 font-mono">
-                        {selected.schematic_type === 'canonical'
-                          ? `${selected.ship_class ?? selectedCanonical?.ship_class ?? 'Canonical'} · ${(selectedCanonical?.name ?? selected.canonical_id ?? 'Unassigned').toUpperCase()}`
-                          : 'CUSTOM SHIP RECORD'}
+                        {(selected.annotations ?? []).length} label{(selected.annotations ?? []).length === 1 ? '' : 's'}
                       </div>
                     </div>
-                    <div className="text-[10px] text-body/45 font-mono">
-                      {(selected.annotations ?? []).length} label{(selected.annotations ?? []).length === 1 ? '' : 's'}
-                    </div>
-                  </div>
 
-                  <div className="flex-1 min-h-80 overflow-auto p-4 flex items-start justify-center">
-                    {selected.schematic_type === 'canonical' && selectedCanonical ? (
-                      <div
-                        ref={schematicRef}
-                        className={`relative w-full max-w-5xl border border-steel bg-void ${editingRecord && annotating ? 'cursor-crosshair' : ''}`}
-                        onClick={handleSchematicClick}
-                      >
-                        <selectedCanonical.Component />
-                        {renderAnnotations()}
-                      </div>
-                    ) : selected.image_url ? (
-                      <div
-                        ref={schematicRef}
-                        className={`relative inline-block max-w-full border border-steel bg-void ${editingRecord && annotating ? 'cursor-crosshair' : ''}`}
-                        onClick={handleSchematicClick}
-                      >
-                        <img
-                          src={selected.image_url}
-                          alt={selected.name}
-                          className="block max-w-full"
+                    <div className="flex-1 min-h-80 overflow-auto p-4 flex items-start justify-center">
+                      {selected.schematic_type === 'canonical' && selectedCanonical ? (
+                        <div
+                          ref={schematicRef}
+                          className={`relative w-full max-w-5xl border border-steel bg-void ${editingRecord && annotating ? 'cursor-crosshair' : ''}`}
+                          onClick={handleSchematicClick}
+                        >
+                          <selectedCanonical.Component />
+                          {renderAnnotations()}
+                        </div>
+                      ) : selected.image_url ? (
+                        <div
+                          ref={schematicRef}
+                          className={`relative inline-block max-w-full border border-steel bg-void ${editingRecord && annotating ? 'cursor-crosshair' : ''}`}
+                          onClick={handleSchematicClick}
+                        >
+                          <img
+                            src={selected.image_url}
+                            alt={selected.name}
+                            className="block max-w-full"
+                          />
+                          {renderAnnotations()}
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-center h-72 w-full text-body/65 text-sm border border-steel bg-void">
+                          No schematic image available.
+                        </div>
+                      )}
+                    </div>
+                  </section>
+
+                  <ShipManifestPanel
+                    specs={selectedSpecs}
+                    editable={editingRecord}
+                    specsForm={specsForm}
+                    onSpecsChange={setSpecsForm}
+                  />
+                  <section className="border border-steel/50 bg-panel/45">
+                    <div className="border-b border-steel/40 px-3 py-2 label">SHIP NOTES</div>
+                    {editingRecord ? (
+                      <div className="p-3">
+                        <textarea
+                          id="ship-notes"
+                          aria-label="Ship Notes"
+                          className="input min-h-36 resize-y"
+                          value={selected.notes ?? ''}
+                          onChange={e => updateSelectedNotes(e.target.value)}
+                          onBlur={saveNotes}
                         />
-                        {renderAnnotations()}
                       </div>
                     ) : (
-                      <div className="flex items-center justify-center h-72 w-full text-body/65 text-sm border border-steel bg-void">
-                        No schematic image available.
+                      <div className="p-3 min-h-28 text-xs text-body/70 leading-5 whitespace-pre-wrap">
+                        {selected.notes || 'No notes recorded.'}
                       </div>
                     )}
-                  </div>
-                </section>
+                  </section>
+                </div>
 
                 <aside className="space-y-3">
                   <ShipRecordPanel
@@ -1074,47 +1536,24 @@ export default function ShipViewer() {
                   <ShipDamagePanel
                     specs={selectedSpecs}
                     damage={damageForm}
-                    tracking={trackingDamage}
                     damageInput={damageInput}
                     onDamageInputChange={setDamageInput}
-                    onToggleTracking={toggleDamageTracking}
                     onApplyDamage={applyHullDamage}
                     onAdjust={adjustDamageField}
+                    onReset={resetDamageTracker}
                     onNotesChange={updateDamageNotes}
                     onNotesBlur={saveDamageNotes}
                   />
-                  <section className="border border-steel/50 bg-panel/45">
-                    <div className="border-b border-steel/40 px-3 py-2 label">SHIP NOTES</div>
-                    {editingRecord ? (
-                      <div className="p-3">
-                        <textarea
-                          id="ship-notes"
-                          aria-label="Ship Notes"
-                          className="input min-h-36 resize-y"
-                          value={selected.notes ?? ''}
-                          onChange={e => updateSelectedNotes(e.target.value)}
-                          onBlur={saveNotes}
-                        />
-                      </div>
-                    ) : (
-                      <div className="p-3 min-h-36 text-xs text-body/70 leading-5 whitespace-pre-wrap">
-                        {selected.notes || 'No notes recorded.'}
-                      </div>
-                    )}
-                  </section>
+                  <ShipAmmoPanel
+                    ammo={ammoForm}
+                    onReset={resetAmmoTracker}
+                    onAdd={addAmmoTracker}
+                    onRemove={removeAmmoTracker}
+                    onAdjust={adjustAmmoTracker}
+                    onFieldChange={updateAmmoField}
+                    onFieldBlur={() => persistAmmo(ammoFormRef.current)}
+                  />
                 </aside>
-              </div>
-              <div className="max-w-7xl mx-auto mt-4 border border-steel/50 bg-panel/35">
-                <div className="border-b border-steel/40 px-3 py-2 label">SYSTEMS MANIFEST</div>
-                <div className="divide-y divide-steel/20">
-                  {selectedManifestRows.map(row => (
-                    <div key={row.section} className="grid grid-cols-1 md:grid-cols-[8rem_minmax(0,1fr)_9rem] gap-1 md:gap-3 px-3 py-2 text-xs">
-                      <div className="text-amber font-mono tracking-wider">{row.section}</div>
-                      <div className="text-body/75 min-w-0 break-words">{row.detail}</div>
-                      <div className="text-cyan-trav font-mono md:text-right">{row.metric}</div>
-                    </div>
-                  ))}
-                </div>
               </div>
               <input ref={replaceImageRef} type="file" accept="image/*" className="hidden" onChange={handleReplaceImage} />
             </div>

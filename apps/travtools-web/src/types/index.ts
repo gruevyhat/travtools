@@ -22,6 +22,8 @@ export interface ShipSpecs {
   crew_notes?: string | null;
   monthly_maintenance_cr?: number | null;
   purchase_price_mcr?: number | null;
+  systems?: ShipSystemEntry[] | null;
+  software?: ShipSoftwareEntry[] | null;
 }
 
 export interface ShipDamageTrackers {
@@ -38,6 +40,28 @@ export interface ShipDamageTrackers {
   notes?: string | null;
 }
 
+export interface ShipSystemEntry {
+  id: string;
+  name: string;
+  quantity?: number | null;
+  notes?: string | null;
+}
+
+export interface ShipSoftwareEntry {
+  id: string;
+  name: string;
+  rating?: number | null;
+  notes?: string | null;
+}
+
+export interface ShipAmmoTracker {
+  id: string;
+  name: string;
+  current: number;
+  max?: number | null;
+  notes?: string | null;
+}
+
 export interface Ship {
   id: string;
   name: string;
@@ -50,6 +74,7 @@ export interface Ship {
   notes: string | null;
   specs: ShipSpecs | null;
   damage?: ShipDamageTrackers | null;
+  ammo?: ShipAmmoTracker[] | null;
   created_at: string;
 }
 

@@ -124,6 +124,7 @@ alter table characters add column if not exists contacts jsonb not null default 
 alter table characters add column if not exists background jsonb not null default '{}'::jsonb;
 alter table ships add column if not exists specs jsonb default null;
 alter table ships add column if not exists damage jsonb not null default '{}'::jsonb;
+alter table ships add column if not exists ammo jsonb not null default '[]'::jsonb;
 alter table trade_deals add column if not exists session_ref text;
 alter table trade_deals add column if not exists base_price integer;
 alter table trade_deals add column if not exists purchase_pct integer;

@@ -412,7 +412,12 @@ async function checkShipInteractions(browser, baseUrl) {
   if (await page.getByRole('button', { name: 'LABEL' }).count() !== 0) {
     throw new Error('Fleet annotation controls were visible before clicking the row cog');
   }
-  await page.getByRole('button', { name: 'TRACK DAMAGE' }).click();
+  if (await page.getByRole('button', { name: 'TRACK DAMAGE' }).count() !== 0) {
+    throw new Error('Fleet ship damage trackers are still collapsible');
+  }
+  if (await page.getByRole('button', { name: 'TRACK AMMO' }).count() !== 0) {
+    throw new Error('Fleet ship ammunition trackers are still collapsible');
+  }
   await page.getByLabel('Hull Damage Input').fill('7');
   await page.getByRole('button', { name: 'APPLY' }).click();
   await page.getByText('7/40', { exact: false }).first().waitFor({ state: 'visible', timeout: 5_000 });
@@ -421,18 +426,29 @@ async function checkShipInteractions(browser, baseUrl) {
   await page.getByLabel('Decrease M-Drive Damage').click();
   await page.getByRole('button', { name: 'RESET DAMAGE' }).waitFor({ state: 'visible', timeout: 5_000 });
   await page.getByRole('button', { name: 'RESET DAMAGE' }).click();
-  await page.getByRole('button', { name: 'TRACK DAMAGE' }).waitFor({ state: 'visible', timeout: 5_000 });
-  if (await page.getByLabel('Hull Damage Input').count() !== 0) {
-    throw new Error('Fleet ship damage trackers stayed expanded after reset');
+  await page.getByLabel('Hull Damage Input').waitFor({ state: 'visible', timeout: 5_000 });
+  if (await page.getByRole('button', { name: 'TRACK DAMAGE' }).count() !== 0) {
+    throw new Error('Fleet ship damage reset collapsed the tracker');
   }
-  await page.getByRole('button', { name: 'TRACK DAMAGE' }).click();
   await page.getByLabel('Hull Damage Input').fill('7');
   await page.getByRole('button', { name: 'APPLY' }).click();
   await page.getByText('7/40', { exact: false }).first().waitFor({ state: 'visible', timeout: 5_000 });
+  await page.getByRole('button', { name: 'ADD AMMO' }).click();
+  await page.getByLabel('Decrease Missiles ammunition').click();
+  const ammoPanelText = await page.locator('section', { hasText: 'AMMUNITION' }).innerText({ timeout: 5_000 });
+  if (!ammoPanelText.includes('11/12')) {
+    throw new Error(`Ammunition decrement did not update the tracker:\n${ammoPanelText}`);
+  }
 
   await page.getByRole('button', { name: 'Edit Scout/Courier ship' }).click();
   await replaceByTyping(page.getByRole('textbox', { name: 'Ship name' }), 'Smoke Scout');
   await replaceByTyping(page.getByLabel('Ship class'), 'Type-SX');
+  await page.getByRole('button', { name: 'ADD SYSTEM' }).click();
+  await replaceByTyping(page.getByLabel('System name 1'), 'Fuel Processors');
+  await replaceByTyping(page.getByLabel('System quantity 1', { exact: true }), '2');
+  await page.getByRole('button', { name: 'ADD SOFTWARE' }).click();
+  await replaceByTyping(page.getByLabel('Software name 1'), 'Fire Control');
+  await replaceByTyping(page.getByLabel('Software rating 1', { exact: true }), '2');
   await page.getByRole('button', { name: 'SAVE SHIP RECORD' }).click();
   await page.locator('aside').getByText('Smoke Scout', { exact: true }).waitFor({ state: 'visible', timeout: 5_000 });
   await page.getByText('Type-SX', { exact: false }).first().waitFor({ state: 'visible', timeout: 5_000 });
@@ -448,6 +464,10 @@ async function checkShipInteractions(browser, baseUrl) {
 
   await page.getByLabel('Ship Notes').fill('Crew cabins assigned.');
   await page.getByLabel('Ship Notes').blur();
+  await page.getByRole('button', { name: 'DONE' }).click();
+  await page.getByText('Fuel Processors', { exact: true }).waitFor({ state: 'visible', timeout: 5_000 });
+  await page.getByText('x2', { exact: true }).waitFor({ state: 'visible', timeout: 5_000 });
+  await page.getByText('Fire Control/2', { exact: true }).waitFor({ state: 'visible', timeout: 5_000 });
 
   await page.screenshot({ path: new URL('ships.png', outputDir).pathname, fullPage: false });
   await context.close();

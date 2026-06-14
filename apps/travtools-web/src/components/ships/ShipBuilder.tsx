@@ -8,10 +8,11 @@ import { computeShipSummary, defaultDesign } from '../../lib/shipBuilder';
 import {
   HULL_CONFIGS, ARMOUR_TYPES, POWER_PLANTS, COMPUTERS, SENSORS,
   TURRET_MOUNTS, WEAPONS, OPTIONAL_SYSTEMS, M_DRIVE_TABLE, J_DRIVE_TABLE,
-  bridgeTons,
+  SOFTWARE, bridgeTons,
 } from '../../data/shipComponents';
 import { SHIP_PRESETS, type ShipPreset } from '../../data/shipPresets';
 import type { ShipDesign, ShipDesignState, ShipDesignSummary, MountConfig, ShipSpecs } from '../../types';
+import NumberStepper from '../shared/NumberStepper';
 import { CANONICAL_SHIPS, type CanonicalShip } from './canonicalShips';
 
 // ── utilities ─────────────────────────────────────────────────────────────────
@@ -116,6 +117,40 @@ function designToFleetSpecs(d: ShipDesignState, s: ShipDesignSummary) {
   if (s.crewMedic)      crewParts.push(`Medic×${s.crewMedic}`);
   if (s.crewSteward)    crewParts.push(`Steward×${s.crewSteward}`);
   if (s.crewGunner)     crewParts.push(`Gunner×${s.crewGunner}`);
+  const systems = d.optional_systems.map(system => {
+    const def = OPTIONAL_SYSTEMS.find(option => option.id === system.type);
+    return {
+      id: system.id,
+      name: def?.name ?? system.type,
+      quantity: system.quantity,
+      notes: def?.notes ?? null,
+    };
+  });
+  const software: NonNullable<ShipSpecs['software']> = [];
+  if (d.software_jump_control > 0) {
+    software.push({
+      id: 'jump-control',
+      name: 'Jump Control',
+      rating: d.software_jump_control,
+      notes: SOFTWARE.find(program => program.id === 'jump_control')?.notes ?? null,
+    });
+  }
+  if (d.software_fire_control > 0) {
+    software.push({
+      id: 'fire-control',
+      name: 'Fire Control',
+      rating: d.software_fire_control,
+      notes: SOFTWARE.find(program => program.id === 'fire_control')?.notes ?? null,
+    });
+  }
+  if (d.software_intellect) {
+    software.push({
+      id: 'intellect',
+      name: 'Intellect',
+      rating: null,
+      notes: SOFTWARE.find(program => program.id === 'intellect')?.notes ?? null,
+    });
+  }
   return {
     tech_level: d.tech_level,
     hull_config: HULL_CONFIGS.find(c => c.id === d.hull_config)?.name ?? d.hull_config,
@@ -133,6 +168,8 @@ function designToFleetSpecs(d: ShipDesignState, s: ShipDesignSummary) {
     crew_notes: crewParts.join(', ') || null,
     monthly_maintenance_cr: Math.round(s.maintenanceCrPerMonth),
     purchase_price_mcr: parseFloat(s.totalCostMCr.toFixed(4)),
+    systems,
+    software,
   };
 }
 
@@ -168,7 +205,9 @@ function presetToDesign(preset: ShipPreset): ShipDesign {
   };
 }
 
-const CANONICAL_SPEC_FIELDS: { key: keyof ShipSpecs; label: string; format?: (value: number | string) => string }[] = [
+type ScalarShipSpecKey = Exclude<keyof ShipSpecs, 'systems' | 'software'>;
+
+const CANONICAL_SPEC_FIELDS: { key: ScalarShipSpecKey; label: string; format?: (value: number | string) => string }[] = [
   { key: 'tech_level', label: 'Tech Level' },
   { key: 'hull_config', label: 'Hull Config' },
   { key: 'hull_rating', label: 'Hull Rating' },
@@ -192,9 +231,19 @@ function NumInput({ value, onChange, min = 0, max, step = 1, className = '' }: {
   value: number; onChange: (n: number) => void; min?: number; max?: number; step?: number; className?: string;
 }) {
   return (
-    <input type="number" value={value} min={min} max={max} step={step}
-      onChange={e => onChange(Number(e.target.value))}
-      className={`input-base w-full ${className}`} />
+    <NumberStepper
+      ariaLabel="ship numeric value"
+      value={value}
+      min={min}
+      max={max}
+      step={step}
+      onChange={raw => {
+        const n = Number(raw);
+        if (!Number.isNaN(n)) onChange(n);
+      }}
+      className={`w-full ${className}`}
+      inputClassName="input-base w-full"
+    />
   );
 }
 
@@ -204,23 +253,19 @@ function Stepper({ value, onChange, min = 0, max, label }: {
   return (
     <div className="flex items-center gap-2">
       {label && <span className="text-xs text-body/60 w-32 flex-shrink-0">{label}</span>}
-      <div className="flex items-center gap-1">
-        <button type="button" onClick={() => onChange(Math.max(min, value - 1))}
-          className="btn-steel px-2 py-0.5 text-sm">−</button>
-        <input
-          type="number"
-          value={value}
-          min={min}
-          max={max}
-          onChange={e => {
-            const n = Number(e.target.value);
-            if (!isNaN(n)) onChange(max !== undefined ? Math.min(max, Math.max(min, n)) : Math.max(min, n));
-          }}
-          className="w-16 text-center text-sm font-mono text-bright input-base py-0.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-        />
-        <button type="button" onClick={() => onChange(max !== undefined ? Math.min(max, value + 1) : value + 1)}
-          className="btn-steel px-2 py-0.5 text-sm">+</button>
-      </div>
+      <NumberStepper
+        ariaLabel={label ?? 'ship stepper value'}
+        value={value}
+        min={min}
+        max={max}
+        onChange={raw => {
+          const n = Number(raw);
+          if (!Number.isNaN(n)) onChange(max !== undefined ? Math.min(max, Math.max(min, n)) : Math.max(min, n));
+        }}
+        className="w-24"
+        inputClassName="input-base py-0.5 text-sm font-mono text-bright"
+        buttonClassName="text-sm"
+      />
     </div>
   );
 }
@@ -420,7 +465,7 @@ function CanonicalShipDetail({
       if (value == null || value === '') return null;
       return { key, label, value: format ? format(value) : String(value) };
     })
-    .filter((row): row is { key: keyof ShipSpecs; label: string; value: string } => row !== null);
+    .filter((row): row is { key: ScalarShipSpecKey; label: string; value: string } => row !== null);
 
   return (
     <div className="flex flex-col h-full bg-void/40">
