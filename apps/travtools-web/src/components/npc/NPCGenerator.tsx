@@ -328,17 +328,23 @@ export default function NPCGenerator() {
           const skills = Array.isArray(npc.skills) ? npc.skills as { name: string; level: number }[] : [];
 
           return (
-            <div key={npc.id} className="border border-steel/40 bg-panel flex items-center gap-3 px-3 py-2.5 flex-wrap">
+            <div key={npc.id} className="border border-steel/40 bg-panel flex items-center gap-4 px-3 py-2.5 flex-wrap">
 
-              {/* Name + meta */}
-              <div className="flex-shrink-0 min-w-[11rem]">
+              {/* Name */}
+              <div className="flex-shrink-0 min-w-[8rem]">
                 <div className="font-mono text-bright font-bold text-sm leading-tight">{npc.name}</div>
-                <div className="text-body/70 text-xs font-mono leading-snug mt-0.5">
-                  {npc.race}{npc.archetype ? ` · ${npc.archetype}` : ''}
-                </div>
-                <div className="text-body/55 text-xs font-mono leading-snug">
-                  {npc.experience_level}{npc.quirk ? <span className="italic text-body/45"> · {npc.quirk}</span> : ''}
-                </div>
+              </div>
+
+              {/* Race & Archetype */}
+              <div className="flex-shrink-0 min-w-[8rem]">
+                <div className="text-body/70 text-xs font-mono leading-snug">{npc.race}</div>
+                <div className="text-body/55 text-xs font-mono leading-snug">{npc.archetype}</div>
+              </div>
+
+              {/* Experience & Quirk */}
+              <div className="flex-shrink-0 min-w-[9rem] max-w-[14rem]">
+                <div className="text-body/70 text-xs font-mono leading-snug">{npc.experience_level}</div>
+                {npc.quirk && <div className="text-body/50 text-xs font-mono italic leading-snug truncate">{npc.quirk}</div>}
               </div>
 
               {/* Stats — clickable */}
