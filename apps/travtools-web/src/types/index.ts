@@ -24,6 +24,20 @@ export interface ShipSpecs {
   purchase_price_mcr?: number | null;
 }
 
+export interface ShipDamageTrackers {
+  hull?: number | null;
+  armour?: number | null;
+  critical_hits?: number | null;
+  m_drive?: number | null;
+  j_drive?: number | null;
+  power_plant?: number | null;
+  bridge?: number | null;
+  sensors?: number | null;
+  weapons?: number | null;
+  cargo?: number | null;
+  notes?: string | null;
+}
+
 export interface Ship {
   id: string;
   name: string;
@@ -35,6 +49,7 @@ export interface Ship {
   annotations: Annotation[];
   notes: string | null;
   specs: ShipSpecs | null;
+  damage?: ShipDamageTrackers | null;
   created_at: string;
 }
 

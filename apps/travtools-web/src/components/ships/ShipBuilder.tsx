@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Plus, Trash2, Save, AlertTriangle, ChevronLeft, ChevronRight,
-  Download, Pencil, Upload, CheckCircle2, X, Anchor, Settings,
+  Download, Upload, CheckCircle2, X, Anchor, Settings,
 } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
 import { computeShipSummary, defaultDesign } from '../../lib/shipBuilder';
@@ -10,8 +10,9 @@ import {
   TURRET_MOUNTS, WEAPONS, OPTIONAL_SYSTEMS, M_DRIVE_TABLE, J_DRIVE_TABLE,
   bridgeTons,
 } from '../../data/shipComponents';
-import { SHIP_PRESETS } from '../../data/shipPresets';
-import type { ShipDesign, ShipDesignState, ShipDesignSummary, MountConfig } from '../../types';
+import { SHIP_PRESETS, type ShipPreset } from '../../data/shipPresets';
+import type { ShipDesign, ShipDesignState, ShipDesignSummary, MountConfig, ShipSpecs } from '../../types';
+import { CANONICAL_SHIPS, type CanonicalShip } from './canonicalShips';
 
 // ── utilities ─────────────────────────────────────────────────────────────────
 
@@ -134,6 +135,56 @@ function designToFleetSpecs(d: ShipDesignState, s: ShipDesignSummary) {
     purchase_price_mcr: parseFloat(s.totalCostMCr.toFixed(4)),
   };
 }
+
+const PRESET_CANONICAL_IDS: Record<string, string> = {
+  type_s: 'type-s',
+  type_a: 'type-a',
+  type_a2: 'type-a2',
+  seeker: 'type-j',
+};
+
+function presetForCanonical(canonicalId: string) {
+  return SHIP_PRESETS.find(preset => PRESET_CANONICAL_IDS[preset.id] === canonicalId) ?? null;
+}
+
+function cloneDesignState(design: ShipDesignState): ShipDesignState {
+  return {
+    ...design,
+    mounts: design.mounts.map(mount => ({ ...mount, weapons: [...mount.weapons] })),
+    optional_systems: design.optional_systems.map(system => ({ ...system })),
+  };
+}
+
+function presetToDesign(preset: ShipPreset): ShipDesign {
+  const design = cloneDesignState(preset.design);
+  return {
+    id: `preset:${preset.id}`,
+    name: preset.name,
+    design,
+    summary: computeShipSummary(design),
+    diagram_url: null,
+    created_at: '',
+    updated_at: '',
+  };
+}
+
+const CANONICAL_SPEC_FIELDS: { key: keyof ShipSpecs; label: string; format?: (value: number | string) => string }[] = [
+  { key: 'tech_level', label: 'Tech Level' },
+  { key: 'hull_config', label: 'Hull Config' },
+  { key: 'hull_rating', label: 'Hull Rating' },
+  { key: 'm_drive', label: 'M-Drive' },
+  { key: 'j_drive', label: 'J-Drive' },
+  { key: 'power_plant', label: 'Power Plant' },
+  { key: 'fuel_tons', label: 'Fuel' },
+  { key: 'bridge_tons', label: 'Bridge' },
+  { key: 'cargo_tons', label: 'Cargo' },
+  { key: 'staterooms', label: 'Staterooms' },
+  { key: 'low_berths', label: 'Low Berths' },
+  { key: 'armour_rating', label: 'Armour' },
+  { key: 'turrets', label: 'Turrets' },
+  { key: 'monthly_maintenance_cr', label: 'Maintenance', format: value => `Cr ${Number(value).toLocaleString()}/mo` },
+  { key: 'purchase_price_mcr', label: 'Purchase', format: value => `MCr ${Number(value).toFixed(2)}` },
+];
 
 // ── common inputs ─────────────────────────────────────────────────────────────
 
@@ -349,13 +400,128 @@ function designManifestRows(d: ShipDesignState, s: ShipDesignSummary) {
   ];
 }
 
+// ── canonical ship detail view ───────────────────────────────────────────────
+
+function CanonicalShipDetail({
+  ship, preset, onAddToFleet, addingToFleet, addedToFleet,
+}: {
+  ship: CanonicalShip;
+  preset: ShipPreset | null;
+  onAddToFleet: () => void;
+  addingToFleet: boolean;
+  addedToFleet: boolean;
+}) {
+  const specs = ship.defaultSpecs ?? {};
+  const Component = ship.Component;
+  const presetDesign = preset ? presetToDesign(preset) : null;
+  const specRows = CANONICAL_SPEC_FIELDS
+    .map(({ key, label, format }) => {
+      const value = specs[key];
+      if (value == null || value === '') return null;
+      return { key, label, value: format ? format(value) : String(value) };
+    })
+    .filter((row): row is { key: keyof ShipSpecs; label: string; value: string } => row !== null);
+
+  return (
+    <div className="flex flex-col h-full bg-void/40">
+      <div className="flex items-start gap-3 px-4 py-3 border-b border-steel/50 flex-shrink-0 bg-panel/70">
+        <div className="flex-1 min-w-0">
+          <div className="text-[10px] text-cyan-trav tracking-[0.25em] font-mono">CANONICAL SHIP</div>
+          <div className="text-bright font-display text-xl tracking-wide truncate">{ship.name}</div>
+          <div className="text-xs text-body/60 font-mono mt-0.5">
+            {ship.ship_class} · {ship.tonnage}t
+            {specs.j_drive ? ` · J${specs.j_drive}` : ''}{specs.m_drive ? `/M${specs.m_drive}` : ''}
+            {specs.purchase_price_mcr ? ` · MCr ${Number(specs.purchase_price_mcr).toFixed(2)}` : ''}
+          </div>
+        </div>
+        <div className="flex gap-2 flex-shrink-0 flex-wrap">
+          <button onClick={onAddToFleet} disabled={addingToFleet}
+            className="btn-amber flex items-center gap-1 text-xs py-1 px-2">
+            {addedToFleet
+              ? <><CheckCircle2 size={12} /> IN FLEET</>
+              : addingToFleet
+                ? 'ADDING...'
+                : <><Anchor size={12} /> ADD TO FLEET</>}
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-auto p-4 space-y-4">
+        <div className="grid grid-cols-2 lg:grid-cols-6 gap-2">
+          <Readout label="DISPLACEMENT" value={`${ship.tonnage}t`} sub={ship.ship_class} tone="cyan" />
+          <Readout label="TECH LEVEL" value={specs.tech_level ?? '-'} sub={String(specs.hull_config ?? 'Canonical hull')} tone="amber" />
+          <Readout label="DRIVES" value={`J${specs.j_drive ?? '-'}/M${specs.m_drive ?? '-'}`} sub={`${specs.fuel_tons ?? '?'}t fuel`} tone="cyan" />
+          <Readout label="CARGO" value={`${specs.cargo_tons ?? '?'}t`} sub={`${specs.staterooms ?? '?'} staterooms`} tone="cyan" />
+          <Readout label="MAINTENANCE" value={specs.monthly_maintenance_cr ? formatCr(specs.monthly_maintenance_cr) : '-'} sub="per month" tone="cyan" />
+          <Readout label="PURCHASE" value={specs.purchase_price_mcr ? formatMCr(specs.purchase_price_mcr) : '-'} sub="new build" tone="amber" />
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_24rem] gap-4">
+          <section className="border border-cyan-trav/25 bg-panel/30 min-h-[24rem] flex flex-col">
+            <div className="border-b border-cyan-trav/20 px-3 py-2">
+              <div className="label text-cyan-trav">CANONICAL DECK PLAN</div>
+              <div className="text-[10px] text-body/45 font-mono">{ship.ship_class.toUpperCase()} · {ship.name.toUpperCase()}</div>
+            </div>
+            <div className="flex-1 min-h-80 overflow-auto p-4 flex items-start justify-center">
+              <div className="w-full max-w-5xl border border-steel bg-void">
+                <Component />
+              </div>
+            </div>
+          </section>
+
+          <aside className="space-y-3">
+            <section className="border border-steel/50 bg-panel/40">
+              <div className="border-b border-steel/40 px-3 py-2 label">SHIP RECORD</div>
+              <div className="divide-y divide-steel/20">
+                {specRows.map(row => (
+                  <div key={row.key} className="grid grid-cols-[8rem_minmax(0,1fr)] gap-3 px-3 py-2 text-xs">
+                    <div className="text-body/45 font-mono tracking-wider">{row.label.toUpperCase()}</div>
+                    <div className="text-amber font-mono min-w-0 break-words">{row.value}</div>
+                  </div>
+                ))}
+                {specs.crew_notes && (
+                  <div className="grid grid-cols-[8rem_minmax(0,1fr)] gap-3 px-3 py-2 text-xs">
+                    <div className="text-body/45 font-mono tracking-wider">CREW</div>
+                    <div className="text-amber font-mono min-w-0 break-words">{specs.crew_notes}</div>
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <section className="border border-steel/50 bg-panel/40">
+              <div className="border-b border-steel/40 px-3 py-2 label">SHIPYARD NOTES</div>
+              <div className="p-3 text-xs text-body/70 leading-5 whitespace-pre-wrap">
+                {preset?.description ?? 'Canonical deck plan available for direct fleet registration.'}
+              </div>
+            </section>
+          </aside>
+        </div>
+
+        {presetDesign && (
+          <section className="border border-steel/50 bg-panel/40">
+            <div className="border-b border-steel/40 px-3 py-2 label">SYSTEMS MANIFEST</div>
+            <div className="divide-y divide-steel/20">
+              {designManifestRows(presetDesign.design, presetDesign.summary).map(row => (
+                <div key={row.section} className="grid grid-cols-1 md:grid-cols-[9rem_minmax(0,1fr)_9rem] gap-1 md:gap-3 px-3 py-2 text-xs">
+                  <div className="text-amber font-mono tracking-wider">{row.section}</div>
+                  <div className="text-body/75 min-w-0 break-words">{row.detail}</div>
+                  <div className="text-cyan-trav font-mono md:text-right">{row.metric}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── design detail view ────────────────────────────────────────────────────────
 
 function DesignDetail({
-  design, onEdit, onDelete, onUploadDiagram, uploadingDiagram, uploadError, onAddToFleet, addingToFleet, addedToFleet,
+  design, onDelete, onUploadDiagram, uploadingDiagram, uploadError, onAddToFleet, addingToFleet, addedToFleet,
 }: {
   design: ShipDesign;
-  onEdit: () => void;
   onDelete: () => void;
   onUploadDiagram: (file: File) => void;
   uploadingDiagram: boolean;
@@ -393,9 +559,6 @@ function DesignDetail({
               : addingToFleet
                 ? 'ADDING...'
                 : <><Anchor size={12} /> ADD TO FLEET</>}
-          </button>
-          <button onClick={onEdit} className="btn-steel flex items-center gap-1 text-xs py-1">
-            <Pencil size={12} /> EDIT
           </button>
           <button onClick={() => downloadJson(`${(d.name || 'ship-design').replace(/\s+/g,'-').toLowerCase()}.json`, { design: d, summary: s })}
             className="btn-steel flex items-center gap-1 text-xs py-1">
@@ -1082,6 +1245,7 @@ export default function ShipBuilder() {
   const [designs, setDesigns] = useState<ShipDesign[]>([]);
   const [mode, setMode] = useState<Mode>('browse');
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [activeCanonicalId, setActiveCanonicalId] = useState<string | null>(null);
   const [draft, setDraft] = useState<ShipDesignState>(defaultDesign());
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -1094,6 +1258,8 @@ export default function ShipBuilder() {
 
   const summary = computeShipSummary(draft);
   const activeDesign = designs.find(d => d.id === activeId) ?? null;
+  const activeCanonicalShip = CANONICAL_SHIPS.find(ship => ship.id === activeCanonicalId) ?? null;
+  const activeCanonicalPreset = activeCanonicalShip ? presetForCanonical(activeCanonicalShip.id) : null;
 
   // ── data loading ───────────────────────────────────────────────────────────
 
@@ -1116,6 +1282,7 @@ export default function ShipBuilder() {
 
   function startNew() {
     setActiveId(null);
+    setActiveCanonicalId(null);
     setDraft(defaultDesign());
     setStep(0);
     setMode('wizard');
@@ -1123,15 +1290,34 @@ export default function ShipBuilder() {
 
   function startEdit(design: ShipDesign) {
     setActiveId(design.id);
-    setDraft(design.design);
+    setActiveCanonicalId(null);
+    setDraft(cloneDesignState(design.design));
     setStep(0);
     setMode('wizard');
   }
 
   function viewDesign(design: ShipDesign) {
     setActiveId(design.id);
+    setActiveCanonicalId(null);
     setMode('detail');
     setAddedToFleet(false);
+  }
+
+  function viewCanonicalShip(ship: CanonicalShip) {
+    setActiveId(null);
+    setActiveCanonicalId(ship.id);
+    setMode('detail');
+    setAddedToFleet(false);
+  }
+
+  function customizeCanonical(ship: CanonicalShip) {
+    const preset = presetForCanonical(ship.id);
+    if (!preset) return;
+    setActiveId(null);
+    setActiveCanonicalId(null);
+    setDraft(cloneDesignState(preset.design));
+    setStep(0);
+    setMode('wizard');
   }
 
   async function save() {
@@ -1179,19 +1365,33 @@ export default function ShipBuilder() {
   }
 
   async function addToFleet() {
-    if (!client || !activeDesign) return;
+    if (!client || (!activeDesign && !activeCanonicalShip)) return;
     setAddingToFleet(true);
-    const d = activeDesign.design;
-    const s = activeDesign.summary;
-    await client.from('ships').insert({
-      name: d.name || 'Unnamed Design',
-      tonnage: d.tonnage,
-      schematic_type: 'custom',
-      image_url: activeDesign.diagram_url ?? null,
-      annotations: [],
-      notes: null,
-      specs: designToFleetSpecs(d, s),
-    });
+    if (activeCanonicalShip) {
+      await client.from('ships').insert({
+        name: activeCanonicalShip.name,
+        ship_class: activeCanonicalShip.ship_class,
+        tonnage: activeCanonicalShip.tonnage,
+        schematic_type: 'canonical',
+        canonical_id: activeCanonicalShip.id,
+        annotations: [],
+        notes: null,
+        damage: {},
+      });
+    } else if (activeDesign) {
+      const d = activeDesign.design;
+      const s = activeDesign.summary;
+      await client.from('ships').insert({
+        name: d.name || 'Unnamed Design',
+        tonnage: d.tonnage,
+        schematic_type: 'custom',
+        image_url: activeDesign.diagram_url ?? null,
+        annotations: [],
+        notes: null,
+        damage: {},
+        specs: designToFleetSpecs(d, s),
+      });
+    }
     setAddingToFleet(false);
     setAddedToFleet(true);
     setTimeout(() => setAddedToFleet(false), 3000);
@@ -1221,7 +1421,8 @@ export default function ShipBuilder() {
   }
 
   function loadPreset(design: ShipDesignState) {
-    setDraft(design);
+    setActiveCanonicalId(null);
+    setDraft(cloneDesignState(design));
     setStep(1);
   }
 
@@ -1259,13 +1460,48 @@ export default function ShipBuilder() {
           </button>
         </div>
         <div className="flex-1 overflow-auto">
+          <div className="px-3 pt-3 pb-1 text-[10px] text-cyan-trav tracking-[0.2em] font-mono">CANONICAL</div>
+          {CANONICAL_SHIPS.map(ship => {
+            const preset = presetForCanonical(ship.id);
+            return (
+              <div key={ship.id}
+                className={`border-b border-steel/20 transition-colors text-xs font-mono flex items-stretch ${
+                  activeCanonicalId === ship.id
+                    ? 'bg-amber/10 text-amber border-l-2 border-l-amber'
+                    : 'text-body/70 hover:bg-steel/20 hover:text-bright'
+                }`}
+              >
+                <button type="button"
+                  onClick={() => viewCanonicalShip(ship)}
+                  className="min-w-0 flex-1 text-left px-3 py-2.5"
+                >
+                  <div className="truncate font-bold">{ship.name}</div>
+                  <div className="text-body/40 text-[10px] mt-0.5">
+                    {ship.ship_class} · {ship.tonnage}t
+                  </div>
+                </button>
+                {preset && (
+                  <button type="button"
+                    onClick={() => customizeCanonical(ship)}
+                    aria-label={`Customize ${ship.name} canonical design`}
+                    title="Customize canonical design"
+                    className="w-10 flex-shrink-0 flex items-center justify-center text-body/45 hover:text-amber focus:text-amber transition-colors"
+                  >
+                    <Settings size={13} />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+
+          <div className="px-3 pt-4 pb-1 text-[10px] text-cyan-trav tracking-[0.2em] font-mono">SAVED DESIGNS</div>
           {designs.length === 0 ? (
-            <div className="p-4 text-xs text-body/40 text-center font-mono">No designs saved.<br />Click NEW DESIGN to start.</div>
+            <div className="px-4 py-3 text-xs text-body/40 text-center font-mono">No saved designs.</div>
           ) : (
             designs.map(d => (
               <div key={d.id}
                 className={`border-b border-steel/20 transition-colors text-xs font-mono flex items-stretch ${
-                  activeId === d.id
+                  activeId === d.id && !activeCanonicalId
                     ? 'bg-amber/10 text-amber border-l-2 border-l-amber'
                     : 'text-body/70 hover:bg-steel/20 hover:text-bright'
                 }`}
@@ -1287,7 +1523,7 @@ export default function ShipBuilder() {
                 >
                   <Settings size={13} />
                 </button>
-                </div>
+              </div>
             ))
           )}
         </div>
@@ -1299,15 +1535,24 @@ export default function ShipBuilder() {
           <div className="flex-1 flex items-center justify-center text-center p-8">
             <div className="space-y-3">
               <div className="text-4xl font-mono text-body/20">⬡</div>
-              <div className="text-sm text-body/50 font-mono">Select a design from the list<br />or click NEW DESIGN to begin.</div>
+              <div className="text-sm text-body/50 font-mono">Select a canonical ship or saved design<br />or click NEW DESIGN to begin.</div>
             </div>
           </div>
         )}
 
-        {mode === 'detail' && activeDesign && (
+        {mode === 'detail' && activeCanonicalShip && (
+          <CanonicalShipDetail
+            ship={activeCanonicalShip}
+            preset={activeCanonicalPreset}
+            onAddToFleet={addToFleet}
+            addingToFleet={addingToFleet}
+            addedToFleet={addedToFleet}
+          />
+        )}
+
+        {mode === 'detail' && !activeCanonicalShip && activeDesign && (
           <DesignDetail
             design={activeDesign}
-            onEdit={() => startEdit(activeDesign)}
             onDelete={() => deleteDesign(activeDesign.id)}
             onUploadDiagram={uploadDiagram}
             uploadingDiagram={uploadingDiagram}

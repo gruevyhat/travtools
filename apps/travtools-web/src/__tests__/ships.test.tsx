@@ -80,7 +80,7 @@ describe('ShipViewer', () => {
 
     render(<ShipViewer />);
 
-    await screen.findByText('Scout/Courier');
+    expect((await screen.findAllByText('Scout/Courier')).length).toBeGreaterThan(0);
     expect(screen.getByLabelText('Type-S Scout/Courier deck plan')).toBeTruthy();
   });
 });

@@ -389,13 +389,42 @@ async function checkShipInteractions(browser, baseUrl) {
   await page.goto(`${baseUrl}#/ships`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1_000);
 
-  await page.getByLabel('Add ship').click();
-  await page.getByRole('button').filter({ hasText: 'Type-S' }).click();
+  if (await page.getByLabel('Add ship').count() !== 0) {
+    throw new Error('Fleet still exposes the Add ship control');
+  }
+
+  await page.getByRole('button', { name: 'SHIPYARD', exact: true }).click();
+  await page.getByRole('button', { name: /Scout\/Courier/ }).first().click();
+  await page.getByText('CANONICAL DECK PLAN').waitFor({ state: 'visible', timeout: 5_000 });
+  await page.getByRole('button', { name: 'ADD TO FLEET' }).click();
+  await page.getByText('IN FLEET').waitFor({ state: 'visible', timeout: 5_000 });
+  await page.getByRole('button', { name: 'FLEET', exact: true }).click();
   await page.getByLabel('Type-S Scout/Courier deck plan').waitFor({ state: 'visible', timeout: 5_000 });
+  if (await page.getByLabel('Add ship').count() !== 0) {
+    throw new Error('Fleet exposed the Add ship control after returning from Shipyard');
+  }
+  if (await page.getByRole('textbox', { name: 'Ship name' }).count() !== 0) {
+    throw new Error('Fleet ship name editor was visible before clicking the row cog');
+  }
+  if (await page.getByRole('button', { name: 'SAVE SHIP RECORD' }).count() !== 0) {
+    throw new Error('Fleet ship record was editable before clicking the row cog');
+  }
+  if (await page.getByRole('button', { name: 'SAVE DAMAGE' }).count() !== 0) {
+    throw new Error('Fleet ship damage trackers were editable before clicking the row cog');
+  }
+  if (await page.getByRole('button', { name: 'LABEL' }).count() !== 0) {
+    throw new Error('Fleet annotation controls were visible before clicking the row cog');
+  }
   await page.getByRole('button', { name: 'Edit Scout/Courier ship' }).click();
   await replaceByTyping(page.getByRole('textbox', { name: 'Ship name' }), 'Smoke Scout');
-  await page.getByRole('button', { name: 'Save ship name' }).click();
+  await replaceByTyping(page.getByLabel('Ship class'), 'Type-SX');
+  await page.getByRole('button', { name: 'SAVE SHIP RECORD' }).click();
   await page.locator('aside').getByText('Smoke Scout', { exact: true }).waitFor({ state: 'visible', timeout: 5_000 });
+  await page.getByText('Type-SX', { exact: false }).first().waitFor({ state: 'visible', timeout: 5_000 });
+
+  await page.getByLabel('Hull Damage').fill('7');
+  await page.getByRole('button', { name: 'SAVE DAMAGE' }).click();
+  await page.getByText('7/40', { exact: false }).waitFor({ state: 'visible', timeout: 5_000 });
 
   await page.getByRole('button', { name: 'LABEL' }).click();
   await page.getByLabel('Type-S Scout/Courier deck plan').click({ position: { x: 200, y: 120 } });
@@ -408,16 +437,6 @@ async function checkShipInteractions(browser, baseUrl) {
 
   await page.getByLabel('Ship Notes').fill('Crew cabins assigned.');
   await page.getByLabel('Ship Notes').blur();
-
-  await page.getByLabel('Add ship').click();
-  await page.getByPlaceholder('Ship name').fill('Smoke Custom');
-  await page.locator('input[type="file"][accept="image/*"]').setInputFiles({
-    name: 'ship.png',
-    mimeType: 'image/png',
-    buffer: tinyPortraitPng,
-  });
-  await page.locator('aside').getByText('Smoke Custom', { exact: true }).waitFor({ state: 'visible', timeout: 5_000 });
-  await page.locator('img[alt="Smoke Custom"]').waitFor({ state: 'visible', timeout: 5_000 });
 
   await page.screenshot({ path: new URL('ships.png', outputDir).pathname, fullPage: false });
   await context.close();
@@ -463,7 +482,7 @@ async function checkShipyardInteractions(browser, baseUrl) {
   await page.getByRole('button', { name: 'ADD TO FLEET' }).click();
   await page.getByText('IN FLEET').waitFor({ state: 'visible', timeout: 5_000 });
   await page.getByRole('button', { name: 'FLEET', exact: true }).click();
-  await page.locator('aside').getByText('Smoke Yard', { exact: true }).waitFor({ state: 'visible', timeout: 5_000 });
+  await page.locator('aside').getByText('Smoke Yard', { exact: true }).first().waitFor({ state: 'visible', timeout: 5_000 });
 
   await context.close();
 
