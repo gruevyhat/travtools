@@ -20,7 +20,15 @@ import { downloadCsv } from '../../lib/csv';
 import { rosterFromCsv, rosterToCsv, type RosterCsvCharacter } from '../../lib/rosterCsv';
 import { CORE_EQUIPMENT } from '../../data/equipment';
 import { fmtDM, DIFFICULTIES, RollMode } from '../../lib/dice';
-import { contactFromNpc, contactLabel, emptyCharacterContact, hasContactValue, normalizeContact } from '../../lib/contacts';
+import {
+  contactFromNpc,
+  contactLabel,
+  emptyCharacterContact,
+  errorMessage,
+  hasContactValue,
+  normalizeContact,
+  syncNpcLinksForCharacter,
+} from '../../lib/contacts';
 import {
   spendWeaponAmmo,
   weaponAmmoState,
@@ -2033,37 +2041,6 @@ export default function PartyRoster() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chars]);
 
-  async function syncNpcLinksForCharacter(characterId: string, contacts: CharacterContact[], previousContacts: CharacterContact[] = []) {
-    if (!client) return;
-    const linkedContacts = contacts.filter(contact => contact.npc_id);
-    const linkedNpcIds = new Set(linkedContacts.map(contact => contact.npc_id));
-    const unlinkedContacts = previousContacts.filter(contact => contact.npc_id && !linkedNpcIds.has(contact.npc_id));
-    if (linkedContacts.length === 0 && unlinkedContacts.length === 0) return;
-
-    const results = await Promise.all([
-      ...linkedContacts.map(contact => {
-        const patch: Record<string, unknown> = {
-          gender_species: contact.gender_species,
-          type: contact.type,
-          description: contact.description,
-          link: contact.link,
-          alive: contact.alive,
-          contact_character_id: characterId,
-          contact_id: contact.id ?? null,
-        };
-        if (contact.name) patch.name = contact.name;
-        return client.from('npcs').update(patch).eq('id', contact.npc_id);
-      }),
-      ...unlinkedContacts.map(contact =>
-        client.from('npcs').update({ contact_character_id: null, contact_id: null }).eq('id', contact.npc_id)
-      ),
-    ]);
-
-    const failed = results.find(result => result.error);
-    if (failed?.error) throw failed.error;
-    await loadNpcs();
-  }
-
   async function saveChar(e: React.FormEvent) {
     e.preventDefault();
     if (!client) return;
@@ -2106,11 +2083,10 @@ export default function PartyRoster() {
         setChars(prev => sortCharacters(prev.map(c => c.id === editingId ? data as Character : c)));
       }
       try {
-        await syncNpcLinksForCharacter(editingId, payload.contacts, previous?.contacts ?? []);
+        const { attempted } = await syncNpcLinksForCharacter(client, editingId, payload.contacts, previous?.contacts ?? []);
+        if (attempted > 0) await loadNpcs();
       } catch (syncError) {
-        setRosterError(syncError instanceof Error
-          ? `Character saved, but NPC link sync failed: ${syncError.message}`
-          : 'Character saved, but NPC link sync failed.');
+        setRosterError(`Character saved, but NPC link sync failed: ${errorMessage(syncError)}`);
       }
       return;
     } else {
@@ -2124,11 +2100,10 @@ export default function PartyRoster() {
         setChars(prev => sortCharacters([...prev, inserted]));
         selectChar(inserted.id);
         try {
-          await syncNpcLinksForCharacter(inserted.id, payload.contacts);
+          const { attempted } = await syncNpcLinksForCharacter(client, inserted.id, payload.contacts);
+          if (attempted > 0) await loadNpcs();
         } catch (syncError) {
-          setRosterError(syncError instanceof Error
-            ? `Character saved, but NPC link sync failed: ${syncError.message}`
-            : 'Character saved, but NPC link sync failed.');
+          setRosterError(`Character saved, but NPC link sync failed: ${errorMessage(syncError)}`);
         }
       }
     }

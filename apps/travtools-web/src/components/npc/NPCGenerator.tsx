@@ -21,8 +21,10 @@ import type { CharacterContact, NpcRecord } from '../../types';
 import {
   type ContactOwner,
   contactLabel,
+  errorMessage,
   hasContactValue,
   isCompleteRosterContact,
+  isMissingNpcContactColumnError,
   makeContactId,
   normalizeContact,
   npcAssociationLabel,
@@ -90,11 +92,6 @@ function hasContactDetails(entry: NpcListEntry, association: string | null): boo
     entry.description ||
     (entry.alive !== null && entry.alive !== undefined)
   );
-}
-
-function isMissingNpcContactColumnError(error: { message?: string; code?: string } | null | undefined): boolean {
-  const message = error?.message ?? '';
-  return error?.code === 'PGRST204' || /schema cache|could not find .* column/i.test(message);
 }
 
 export default function NPCGenerator() {
@@ -426,9 +423,7 @@ export default function NPCGenerator() {
         try {
           await syncRosterContact(savedNpc, nextContactId);
         } catch (syncError) {
-          setSaveError(syncError instanceof Error
-            ? `${savedNpc.name} saved, but roster contact sync failed: ${syncError.message}`
-            : `${savedNpc.name} saved, but roster contact sync failed.`);
+          setSaveError(`${savedNpc.name} saved, but roster contact sync failed: ${errorMessage(syncError)}`);
           return;
         }
       }
@@ -457,9 +452,7 @@ export default function NPCGenerator() {
       await deleteNpc(deleteCandidate);
       setDeleteCandidate(null);
     } catch (error) {
-      setSaveError(error instanceof Error
-        ? `Could not delete ${deleteCandidate.name}: ${error.message}`
-        : `Could not delete ${deleteCandidate.name}.`);
+      setSaveError(`Could not delete ${deleteCandidate.name}: ${errorMessage(error)}`);
     } finally {
       setDeletingNpcId(null);
     }

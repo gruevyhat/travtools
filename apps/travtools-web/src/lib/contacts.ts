@@ -1,6 +1,13 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Character, CharacterContact, NpcRecord } from '../types';
 
 export type ContactOwner = Pick<Character, 'id' | 'name' | 'contacts'>;
+type NpcContactSyncError = { message?: string; code?: string } | null | undefined;
+
+export interface NpcContactSyncResult {
+  attempted: number;
+  usedSchemaFallback: boolean;
+}
 
 function cleanText(value: string | null | undefined): string | null {
   const trimmed = (value ?? '').trim();
@@ -94,4 +101,78 @@ export function npcAssociationLabel(npc: NpcRecord, owners: ContactOwner[]): str
     if (contact) return `${candidate.name} / ${contactLabel(contact)}`;
   }
   return null;
+}
+
+export function isMissingNpcContactColumnError(error: NpcContactSyncError): boolean {
+  const message = error?.message ?? '';
+  return error?.code === 'PGRST204' || /schema cache|could not find .* column/i.test(message);
+}
+
+export function errorMessage(error: unknown, fallback = 'unknown error'): string {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === 'string' && error.trim()) return error.trim();
+  if (error && typeof error === 'object') {
+    const candidate = error as { message?: unknown; details?: unknown; code?: unknown };
+    if (typeof candidate.message === 'string' && candidate.message.trim()) return candidate.message.trim();
+    if (typeof candidate.details === 'string' && candidate.details.trim()) return candidate.details.trim();
+    if (typeof candidate.code === 'string' && candidate.code.trim()) return candidate.code.trim();
+  }
+  return fallback;
+}
+
+function contactNpcId(contact: CharacterContact): string | null {
+  return cleanText(contact.npc_id);
+}
+
+export async function syncNpcLinksForCharacter(
+  client: Pick<SupabaseClient, 'from'>,
+  characterId: string,
+  contacts: CharacterContact[],
+  previousContacts: CharacterContact[] = [],
+): Promise<NpcContactSyncResult> {
+  const linkedContacts = contacts
+    .map(contact => ({ contact, npcId: contactNpcId(contact) }))
+    .filter((entry): entry is { contact: CharacterContact; npcId: string } => Boolean(entry.npcId));
+  const linkedNpcIds = new Set(linkedContacts.map(entry => entry.npcId));
+  const unlinkedContacts = previousContacts
+    .map(contact => ({ contact, npcId: contactNpcId(contact) }))
+    .filter((entry): entry is { contact: CharacterContact; npcId: string } => {
+      if (!entry.npcId) return false;
+      return !linkedNpcIds.has(entry.npcId);
+    });
+
+  if (linkedContacts.length === 0 && unlinkedContacts.length === 0) {
+    return { attempted: 0, usedSchemaFallback: false };
+  }
+
+  const results = await Promise.all([
+    ...linkedContacts.map(({ contact, npcId }) => {
+      const patch: Record<string, unknown> = {
+        gender_species: contact.gender_species,
+        type: contact.type,
+        description: contact.description,
+        link: contact.link,
+        alive: contact.alive,
+        contact_character_id: characterId,
+        contact_id: contact.id ?? null,
+      };
+      if (contact.name) patch.name = contact.name;
+      return client.from('npcs').update(patch).eq('id', npcId);
+    }),
+    ...unlinkedContacts.map(({ npcId }) =>
+      client.from('npcs').update({ contact_character_id: null, contact_id: null }).eq('id', npcId)
+    ),
+  ]);
+
+  let usedSchemaFallback = false;
+  for (const result of results) {
+    if (!result.error) continue;
+    if (isMissingNpcContactColumnError(result.error)) {
+      usedSchemaFallback = true;
+      continue;
+    }
+    throw result.error;
+  }
+
+  return { attempted: results.length, usedSchemaFallback };
 }
