@@ -19,7 +19,16 @@ import { downloadCsv } from '../../lib/csv';
 import { rosterFromCsv, rosterToCsv, type RosterCsvCharacter } from '../../lib/rosterCsv';
 import { CORE_EQUIPMENT } from '../../data/equipment';
 import { fmtDM, DIFFICULTIES, RollMode } from '../../lib/dice';
-import { spendWeaponAmmo, weaponAmmoState, weaponAmmoStateLabel, weaponClipSize, type WeaponAmmoSpendResult } from '../../lib/ammo';
+import {
+  spendWeaponAmmo,
+  updateWeaponAmmoTracker,
+  weaponAmmoState,
+  weaponAmmoStateLabel,
+  weaponAmmoTrackerCount,
+  weaponClipSize,
+  weaponWithAmmoTracker,
+  type WeaponAmmoSpendResult,
+} from '../../lib/ammo';
 import NumberStepper from '../shared/NumberStepper';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -505,6 +514,7 @@ interface RollTarget {
   applyJackOfAllTrades?: boolean;
   weapon?: Weapon;
   weaponIndex?: number;
+  weaponTrackerIndex?: number;
 }
 
 interface AttackResult {
@@ -560,7 +570,7 @@ function RollModal({
   const isWeapon = !!initialTarget.weapon;
   const currentWeapon = isWeapon
     ? initialTarget.weaponIndex !== undefined
-      ? char.weapons?.[initialTarget.weaponIndex] ?? initialTarget.weapon!
+      ? weaponWithAmmoTracker(char.weapons?.[initialTarget.weaponIndex] ?? initialTarget.weapon!, initialTarget.weaponTrackerIndex)
       : initialTarget.weapon!
     : null;
   const isMelee = currentWeapon?.range === 'Melee';
@@ -659,8 +669,9 @@ function RollModal({
 
   const success = attackResult !== null && attackResult.total >= difficulty;
   const effect = attackResult !== null ? attackResult.total - difficulty : 0;
+  const weaponCopyLabel = initialTarget.weaponTrackerIndex !== undefined ? ` #${initialTarget.weaponTrackerIndex + 1}` : '';
   const modalTitle = isWeapon
-    ? `${currentWeapon?.name ?? initialTarget.label} ATTACK — ${charDisplayName(char)}`
+    ? `${currentWeapon?.name ?? initialTarget.label}${weaponCopyLabel} ATTACK — ${charDisplayName(char)}`
     : isInitiative ? `INITIATIVE — ${charDisplayName(char)}`
     : isCustom ? `UNKNOWN CHECK — ${charDisplayName(char)}`
     : `${label} CHECK — ${charDisplayName(char)}`;
@@ -1110,12 +1121,12 @@ function CharDetailContent({
   function openStatRoll(stat: CharStat) {
     setRollTarget({ label: STAT_LABELS[stat], skillLevel: 0, charKey: stat, isPsionic: false });
   }
-  function openWeaponRoll(weapon: Weapon, weaponIndex: number) {
+  function openWeaponRoll(weapon: Weapon, weaponIndex: number, weaponTrackerIndex?: number) {
     const isMelee = weapon.range === 'Melee';
     const wSkillChar = skillChar(weapon.skill);
     const defaultChar = wSkillChar ?? (isMelee ? 'str' : 'dex');
     const skillLvl = char.skills.find(s => s.name === weapon.skill)?.level ?? 0;
-    setRollTarget({ label: weapon.name, skillLevel: skillLvl, charKey: defaultChar, isPsionic: false, weapon, weaponIndex });
+    setRollTarget({ label: weapon.name, skillLevel: skillLvl, charKey: defaultChar, isPsionic: false, weapon, weaponIndex, weaponTrackerIndex });
   }
   function openInitiativeRoll() {
     const dexDM = statDM(effectiveVal('dex'));
@@ -1225,13 +1236,19 @@ function CharDetailContent({
     onStatAdjust(char.id, { psi_cur: rawCurFromEffective('psi', Math.max(0, psiCur - normalizedCost)) });
   }
 
-  function spendCharacterWeaponAmmo(weaponIndex: number | undefined, amount: number): WeaponAmmoSpendResult | null {
+  function spendCharacterWeaponAmmo(weaponIndex: number | undefined, weaponTrackerIndex: number | undefined, amount: number): WeaponAmmoSpendResult | null {
     if (weaponIndex === undefined) return null;
     const weapon = char.weapons?.[weaponIndex];
     if (!weapon) return null;
-    const result = spendWeaponAmmo(weapon, amount);
+    const result = spendWeaponAmmo(weaponWithAmmoTracker(weapon, weaponTrackerIndex), amount);
     if (!result) return null;
-    const weapons = (char.weapons ?? []).map((item, i) => i === weaponIndex ? result.weapon : item);
+    const weapons = (char.weapons ?? []).map((item, i) => i === weaponIndex
+      ? updateWeaponAmmoTracker(item, weaponTrackerIndex, {
+        ammo_clips: result.weapon.ammo_clips ?? null,
+        ammo_rounds: result.weapon.ammo_rounds ?? null,
+        ammo_clip_size: result.weapon.ammo_clip_size ?? null,
+      })
+      : item);
     onStatAdjust(char.id, { weapons });
     return result;
   }
@@ -1494,7 +1511,7 @@ function CharDetailContent({
           onSave={handleRollSave}
           onSaveDamage={handleDamageSave}
           onSpendPsi={spendPsiCost}
-          onSpendAmmo={amount => spendCharacterWeaponAmmo(rollTarget.weaponIndex, amount)}
+          onSpendAmmo={amount => spendCharacterWeaponAmmo(rollTarget.weaponIndex, rollTarget.weaponTrackerIndex, amount)}
         />
       )}
 
@@ -1753,17 +1770,22 @@ function CharDetailContent({
             </div>
             {(char.weapons ?? []).map((w, i) => {
               const weaponMass = massFor(w, ['Weapon']);
-              const ammoState = weaponAmmoState(w);
-              const showAmmo = w.range !== 'Melee' && ammoState.tracked;
-              const roundsLabel = ammoState.clipSize === null
-                ? `${ammoState.rounds} rounds`
-                : `${ammoState.rounds}/${ammoState.clipSize} rounds`;
-              const canReload = ammoState.clipSize !== null && ammoState.clips > 0 && ammoState.rounds < ammoState.clipSize;
+              const ammoTrackerCount = weaponAmmoTrackerCount(w);
+              const ammoEntries = Array.from({ length: ammoTrackerCount }, (_, trackerIndex) => {
+                const effectiveTrackerIndex = ammoTrackerCount > 1 ? trackerIndex : undefined;
+                return {
+                  key: effectiveTrackerIndex ?? 'single',
+                  trackerIndex: effectiveTrackerIndex,
+                  label: `#${trackerIndex + 1}`,
+                  state: weaponAmmoState(weaponWithAmmoTracker(w, effectiveTrackerIndex)),
+                };
+              });
+              const showAmmo = w.range !== 'Melee' && ammoEntries.some(entry => entry.state.tracked);
               return (
                 <div key={i} className="space-y-0.5">
                   <button
                     type="button"
-                    onClick={() => openWeaponRoll(w, i)}
+                    onClick={() => openWeaponRoll(w, i, ammoTrackerCount > 1 ? 0 : undefined)}
                     className={`w-full grid grid-cols-[minmax(6rem,1fr)_4rem_5rem] ${WEAPON_ROSTER_GRID} gap-2 border border-steel/40 hover:border-amber/60 px-3 py-2 text-xs font-mono text-left transition-colors group items-center`}
                     aria-label={`Roll ${w.name} attack`}
                     title={`Roll ${w.name} attack`}
@@ -1780,67 +1802,76 @@ function CharDetailContent({
                       {w.traits ? ` · ${w.traits}` : ''}
                     </span>
                   </button>
-                  {showAmmo && (
-                    <div className="flex items-center gap-x-3 gap-y-0.5 border-x border-b border-steel/30 px-3 py-0.5 text-[9px] leading-none font-mono text-body/55">
-                      <div className="flex items-center gap-1">
-                        <span>Clips:</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const weapons = (char.weapons ?? []).map((item, index) =>
-                              index === i ? { ...item, ammo_clips: ammoState.clips + 1 } : item
-                            );
-                            onStatAdjust(char.id, { weapons });
-                          }}
-                          className="h-4 w-4 border border-steel/40 text-cyan-trav hover:border-cyan-dim hover:text-cyan-bright leading-none"
-                          aria-label={`Increase ${w.name} clips`}
-                          title={`Increase ${w.name} clips`}
-                        >
-                          +
-                        </button>
-                        <span className="min-w-4 text-center text-amber">{ammoState.clips}</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const weapons = (char.weapons ?? []).map((item, index) =>
-                              index === i ? { ...item, ammo_clips: Math.max(0, ammoState.clips - 1) } : item
-                            );
-                            onStatAdjust(char.id, { weapons });
-                          }}
-                          disabled={ammoState.clips <= 0}
-                          className="h-4 w-4 border border-steel/40 text-cyan-trav hover:border-cyan-dim hover:text-cyan-bright disabled:opacity-30 disabled:cursor-not-allowed leading-none"
-                          aria-label={`Decrease ${w.name} clips`}
-                          title={`Decrease ${w.name} clips`}
-                        >
-                          -
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!canReload || ammoState.clipSize === null) return;
-                            const weapons = (char.weapons ?? []).map((item, index) =>
-                              index === i
-                                ? { ...item, ammo_rounds: ammoState.clipSize, ammo_clips: Math.max(0, ammoState.clips - 1) }
-                                : item
-                            );
-                            onStatAdjust(char.id, { weapons });
-                          }}
-                          disabled={!canReload}
-                          className="h-4 border border-steel/40 px-1 text-[8px] text-amber hover:border-amber hover:bg-steel/20 disabled:opacity-30 disabled:cursor-not-allowed leading-none"
-                          aria-label={`Reload ${w.name}`}
-                          title={`Reload ${w.name}`}
-                        >
-                          RLD
-                        </button>
+                  {showAmmo && ammoEntries.filter(entry => entry.state.tracked).map(entry => {
+                    const ammoState = entry.state;
+                    const roundsLabel = ammoState.clipSize === null
+                      ? `${ammoState.rounds} rounds`
+                      : `${ammoState.rounds}/${ammoState.clipSize} rounds`;
+                    const canReload = ammoState.clipSize !== null && ammoState.clips > 0 && ammoState.rounds < ammoState.clipSize;
+                    const updateAmmo = (patch: { ammo_clips?: number | null; ammo_rounds?: number | null; ammo_clip_size?: number | null }) => {
+                      const weapons = (char.weapons ?? []).map((item, index) =>
+                        index === i ? updateWeaponAmmoTracker(item, entry.trackerIndex, patch) : item
+                      );
+                      onStatAdjust(char.id, { weapons });
+                    };
+                    return (
+                      <div key={entry.key} className="flex items-center gap-x-3 gap-y-0.5 border-x border-b border-steel/30 px-3 py-0.5 text-[9px] leading-none font-mono text-body/55">
+                        {ammoTrackerCount > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => openWeaponRoll(w, i, entry.trackerIndex)}
+                            className="h-4 border border-steel/40 px-1 text-cyan-trav hover:border-cyan-dim hover:text-cyan-bright leading-none"
+                            aria-label={`Roll ${w.name} ${entry.label} attack`}
+                            title={`Roll ${w.name} ${entry.label} attack`}
+                          >
+                            {entry.label}
+                          </button>
+                        )}
+                        <div className="flex items-center gap-1">
+                          <span>Clips:</span>
+                          <button
+                            type="button"
+                            onClick={() => updateAmmo({ ammo_clips: ammoState.clips + 1 })}
+                            className="h-4 w-4 border border-steel/40 text-cyan-trav hover:border-cyan-dim hover:text-cyan-bright leading-none"
+                            aria-label={`Increase ${w.name} ${entry.label} clips`}
+                            title={`Increase ${w.name} ${entry.label} clips`}
+                          >
+                            +
+                          </button>
+                          <span className="min-w-4 text-center text-amber">{ammoState.clips}</span>
+                          <button
+                            type="button"
+                            onClick={() => updateAmmo({ ammo_clips: Math.max(0, ammoState.clips - 1) })}
+                            disabled={ammoState.clips <= 0}
+                            className="h-4 w-4 border border-steel/40 text-cyan-trav hover:border-cyan-dim hover:text-cyan-bright disabled:opacity-30 disabled:cursor-not-allowed leading-none"
+                            aria-label={`Decrease ${w.name} ${entry.label} clips`}
+                            title={`Decrease ${w.name} ${entry.label} clips`}
+                          >
+                            -
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!canReload || ammoState.clipSize === null) return;
+                              updateAmmo({ ammo_rounds: ammoState.clipSize, ammo_clips: Math.max(0, ammoState.clips - 1) });
+                            }}
+                            disabled={!canReload}
+                            className="h-4 border border-steel/40 px-1 text-[8px] text-amber hover:border-amber hover:bg-steel/20 disabled:opacity-30 disabled:cursor-not-allowed leading-none"
+                            aria-label={`Reload ${w.name} ${entry.label}`}
+                            title={`Reload ${w.name} ${entry.label}`}
+                          >
+                            RLD
+                          </button>
+                        </div>
+                        <div className="min-w-0 flex flex-1 items-center gap-1">
+                          <span className="shrink-0">Rounds:</span>
+                          <span className="min-w-0 truncate text-amber" title={roundsLabel}>
+                            {ammoRoundBars(ammoState.rounds)}
+                          </span>
+                        </div>
                       </div>
-                      <div className="min-w-0 flex flex-1 items-center gap-1">
-                        <span className="shrink-0">Rounds:</span>
-                        <span className="min-w-0 truncate text-amber" title={roundsLabel}>
-                          {ammoRoundBars(ammoState.rounds)}
-                        </span>
-                      </div>
-                    </div>
-                  )}
+                    );
+                  })}
                 </div>
               );
             })}

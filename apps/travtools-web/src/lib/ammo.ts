@@ -1,5 +1,5 @@
 import { CORE_EQUIPMENT } from '../data/equipment';
-import type { Weapon } from '../types';
+import type { Weapon, WeaponAmmoTracker } from '../types';
 
 export interface WeaponAmmoState {
   tracked: boolean;
@@ -35,6 +35,13 @@ function nonNegativeInteger(value: unknown): number | null {
 function positiveInteger(value: unknown): number | null {
   const parsed = integerOrNull(value);
   return parsed !== null && parsed > 0 ? parsed : null;
+}
+
+function inferredQuantityFromName(name: string | null | undefined): number | null {
+  const match = (name ?? '').match(/\(x\s*(\d+)\)/i);
+  if (!match) return null;
+  const value = parseInt(match[1], 10);
+  return Number.isFinite(value) && value > 0 ? value : null;
 }
 
 function normalizedWeaponName(name: string | null | undefined): string {
@@ -82,6 +89,56 @@ export function coreWeaponMagazineSize(weapon: Pick<Weapon, 'name'>): number | n
 
 export function weaponClipSize(weapon: Weapon): number | null {
   return positiveInteger(weapon.ammo_clip_size) ?? coreWeaponMagazineSize(weapon);
+}
+
+export function weaponQuantity(weapon: Pick<Weapon, 'quantity' | 'name'>): number {
+  const value = weapon.quantity ?? inferredQuantityFromName(weapon.name) ?? 1;
+  return Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 1;
+}
+
+export function weaponAmmoTrackerCount(weapon: Weapon): number {
+  return Math.max(1, weaponQuantity(weapon));
+}
+
+function ammoFieldsFromWeapon(weapon: Weapon): WeaponAmmoTracker {
+  return {
+    ammo_clips: weapon.ammo_clips ?? null,
+    ammo_rounds: weapon.ammo_rounds ?? null,
+    ammo_clip_size: weapon.ammo_clip_size ?? null,
+  };
+}
+
+export function weaponWithAmmoTracker(weapon: Weapon, trackerIndex: number | undefined): Weapon {
+  if (trackerIndex === undefined) return weapon;
+  const tracker = Array.isArray(weapon.ammo_trackers) ? weapon.ammo_trackers[trackerIndex] : undefined;
+  const fields = tracker ?? (trackerIndex === 0
+    ? ammoFieldsFromWeapon(weapon)
+    : { ammo_clips: null, ammo_rounds: null, ammo_clip_size: weapon.ammo_clip_size ?? null });
+  return {
+    ...weapon,
+    ammo_clips: fields.ammo_clips ?? null,
+    ammo_rounds: fields.ammo_rounds ?? null,
+    ammo_clip_size: fields.ammo_clip_size ?? weapon.ammo_clip_size ?? null,
+  };
+}
+
+export function updateWeaponAmmoTracker(
+  weapon: Weapon,
+  trackerIndex: number | undefined,
+  patch: WeaponAmmoTracker,
+): Weapon {
+  if (trackerIndex === undefined) return { ...weapon, ...patch };
+
+  const trackerCount = Math.max(weaponAmmoTrackerCount(weapon), trackerIndex + 1);
+  const ammo_trackers = Array.from({ length: trackerCount }, (_, index) => {
+    const base = ammoFieldsFromWeapon(weaponWithAmmoTracker(weapon, index));
+    return index === trackerIndex ? { ...base, ...patch } : base;
+  });
+  return {
+    ...weapon,
+    ...(trackerIndex === 0 ? patch : {}),
+    ammo_trackers,
+  };
 }
 
 export function weaponAmmoState(weapon: Weapon): WeaponAmmoState {
