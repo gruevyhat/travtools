@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Check, Clock, Dice5, Plus, RefreshCcw, Search, ShoppingCart, Truck, Users, X } from 'lucide-react';
+import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
+import { Check, Clock, Dice5, Plus, RefreshCcw, ShoppingCart, Truck, Users, X } from 'lucide-react';
 import { fmtDM, rollD66, rollTravellerCheck } from '../../lib/dice';
 import {
   characterSkillCheckDm,
@@ -36,16 +36,13 @@ import {
   type WorldProfile,
 } from '../../lib/trade';
 import { TRADE_GOODS, formatBasePrice, type TradeGood } from '../../data/tradeGoods';
-import {
-  TROJAN_REACH_WORLDS,
-  searchTrojanReachWorlds,
-  type TrojanReachWorld,
-} from '../../data/trojanReachWorlds';
 import { lookupPassageFare, type PassengerClass } from '../../data/passageFares';
 import { mailTrafficDm } from '../../data/freightTraffic';
 import { lookupRandomPassenger } from '../../data/randomPassenger';
 import type { Character, TradeDeal } from '../../types';
 import NumberStepper from '../shared/NumberStepper';
+
+const WorldCatalogPanel = lazy(() => import('./WorldCatalogPanel'));
 
 export type TradeDealDraft = Omit<TradeDeal, 'id' | 'created_at' | 'updated_at'>;
 
@@ -97,15 +94,6 @@ const FREIGHT_LABELS: Record<FreightLotSize, string> = {
   minor: 'Minor',
   major: 'Major',
 };
-
-type TradeContactMethod = 'standard' | 'blackMarket' | 'online';
-
-interface TradeContactMethodOption {
-  id: TradeContactMethod;
-  label: string;
-  sub: string;
-  disabled?: boolean;
-}
 
 interface AvailableLot {
   id: string;
@@ -219,111 +207,6 @@ function SmallReadout({ label, value, tone = 'text-cyan-trav' }: { label: string
 function numberFromInput(value: string, fallback: number): number {
   const parsed = parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function profileFromCatalogWorld(world: TrojanReachWorld): WorldProfile {
-  const parsed = parseWorldUwp(world.uwp);
-  return {
-    name: world.name,
-    uwp: world.uwp,
-    tradeCodes: world.tradeCodes,
-    starport: parsed?.starport ?? 'X',
-    size: parsed?.size,
-    atmosphere: parsed?.atmosphere,
-    hydrographics: parsed?.hydrographics,
-    population: parsed?.population ?? 0,
-    government: parsed?.government,
-    techLevel: parsed?.techLevel ?? 0,
-    lawLevel: parsed?.lawLevel ?? 0,
-    zone: world.zone,
-  };
-}
-
-function catalogWorldLabel(world: TrojanReachWorld): string {
-  return `${world.name} ${world.hex} · ${world.uwp} · ${world.tradeCodes.length > 0 ? world.tradeCodes.join(' ') : 'No trade codes'}`;
-}
-
-function WorldCatalogPanel({
-  query,
-  onQueryChange,
-  target,
-  onTargetChange,
-  onSelect,
-  containerClassName = 'panel p-3 space-y-3 lg:sticky lg:top-20 lg:max-h-[calc(100vh-7rem)] lg:overflow-hidden lg:flex lg:flex-col',
-}: {
-  query: string;
-  onQueryChange: (query: string) => void;
-  target: 'source' | 'destination';
-  onTargetChange: (target: 'source' | 'destination') => void;
-  onSelect: (world: TrojanReachWorld, target: 'source' | 'destination') => void;
-  containerClassName?: string;
-}) {
-  const matches = useMemo(() => searchTrojanReachWorlds(query, query.trim() ? 80 : 328), [query]);
-
-  return (
-    <aside className={containerClassName}>
-      <div className="flex items-center justify-between gap-3 mb-1">
-        <span className="label">TROJAN REACH WORLDS</span>
-        <span className="font-mono text-[10px] text-body/55">{matches.length} / {TROJAN_REACH_WORLDS.length}</span>
-      </div>
-      <div className="relative">
-        <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-body/65 pointer-events-none" />
-        <input
-          className="input pl-6 text-xs"
-          aria-label="Trojan Reach World Catalog Search"
-          placeholder="Search name, hex, UWP, trade code..."
-          value={query}
-          onChange={event => onQueryChange(event.target.value)}
-        />
-      </div>
-      <div className="grid grid-cols-2 gap-1">
-        {(['source', 'destination'] as const).map(option => (
-          <button
-            key={option}
-            type="button"
-            onClick={() => onTargetChange(option)}
-            className={`border px-2 py-1 text-[10px] font-mono tracking-widest ${
-              target === option
-                ? 'border-amber bg-amber/15 text-amber'
-                : 'border-steel/50 bg-void/40 text-body/60 hover:border-cyan-trav/70 hover:text-cyan-trav'
-            }`}
-          >
-            {option.toUpperCase()}
-          </button>
-        ))}
-      </div>
-      <div className="space-y-1.5 overflow-y-auto pr-1 lg:flex-1 max-h-96 lg:max-h-none">
-        {matches.map(world => (
-          <button
-            key={`${world.hex}-${world.name}`}
-            type="button"
-            onClick={() => onSelect(world, target)}
-            className="w-full text-left border border-steel/40 bg-void/50 px-2 py-1.5 text-xs space-y-1 hover:border-amber/60 hover:bg-steel/20 transition-colors group"
-            aria-label={`Select ${world.name} for ${target}`}
-            title={`${world.remarks || 'No remarks'} · ${world.allegianceName}`}
-          >
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-cyan-trav w-9">{world.hex}</span>
-              <span className="font-bold text-bright flex-1 truncate group-hover:text-amber">{world.name}</span>
-              {world.zone !== 'normal' && <span className="text-[9px] font-mono text-alert border border-alert/50 px-1">{world.zone.toUpperCase()}</span>}
-            </div>
-            <div className="flex items-center gap-2 pl-11 font-mono text-[10px] text-body/60">
-              <span>{world.uwp}</span>
-              <span className="truncate text-body/55">{world.subsector}</span>
-            </div>
-            <div className="pl-11 text-[10px] text-body/65 truncate">
-              {world.tradeCodes.join(' ') || 'No trade codes'} · {world.pbg} · {world.allegiance}
-            </div>
-          </button>
-        ))}
-        {matches.length === 0 && (
-          <div className="border border-steel/40 bg-void/40 px-2 py-4 text-center text-[11px] text-body/55">
-            No Trojan Reach worlds match that search.
-          </div>
-        )}
-      </div>
-    </aside>
-  );
 }
 
 function firstCharacterId(characters: Character[]): string {
@@ -674,11 +557,6 @@ function WorldProfileForm({
   value: WorldProfile;
   onChange: (profile: WorldProfile) => void;
 }) {
-  const selectedCatalogWorld = useMemo(
-    () => TROJAN_REACH_WORLDS.find(world => world.name === value.name && world.uwp === value.uwp) ?? null,
-    [value.name, value.uwp],
-  );
-
   const toggleCode = (code: string) => {
     const nextCodes = value.tradeCodes.includes(code)
       ? value.tradeCodes.filter(existing => existing !== code)
@@ -708,11 +586,6 @@ function WorldProfileForm({
   return (
     <section className="panel p-3 space-y-3">
       <div className="panel-header -mx-3 -mt-3 mb-1">{title.toUpperCase()} WORLD</div>
-      <div className="text-[10px] font-mono text-body/50 truncate">
-        {selectedCatalogWorld
-          ? `CATALOG ${catalogWorldLabel(selectedCatalogWorld)} · ${selectedCatalogWorld.subsector}`
-          : 'CATALOG custom/manual world'}
-      </div>
       <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
         <div className="col-span-2">
           <Field label={`${title} Name`}>
@@ -880,8 +753,8 @@ export function TradeSessionPanel({ deals, characters = [], onCreateDeals, onUpd
   const brokerSkill = brokerSkillInfo?.skillLevel ?? 0;
   const [supplierAttempts, setSupplierAttempts] = useState(0);
   const [buyerAttempts, setBuyerAttempts] = useState(0);
-  const [supplierMethod, setSupplierMethod] = useState<TradeContactMethod>('standard');
-  const [buyerMethod, setBuyerMethod] = useState<TradeContactMethod>('standard');
+  const [supplierMethod, setSupplierMethod] = useState<'standard' | 'blackMarket' | 'online'>('standard');
+  const [buyerMethod, setBuyerMethod] = useState<'standard' | 'blackMarket' | 'online'>('standard');
   const blackMarket = supplierMethod === 'blackMarket';
   const [supplierRolls, setSupplierRolls] = useState<SkillCheck[]>([]);
   const [buyerRolls, setBuyerRolls] = useState<SkillCheck[]>([]);
@@ -935,8 +808,7 @@ export function TradeSessionPanel({ deals, characters = [], onCreateDeals, onUpd
     setTravelDice(rollDice(parsecs));
   }
 
-  function handleCatalogSelect(world: TrojanReachWorld, target: 'source' | 'destination') {
-    const profile = profileFromCatalogWorld(world);
+  function handleCatalogSelect(profile: WorldProfile, target: 'source' | 'destination') {
     if (target === 'source') setSource(profile);
     else setDestination(profile);
   }
@@ -1103,14 +975,16 @@ export function TradeSessionPanel({ deals, characters = [], onCreateDeals, onUpd
               onChange={e => setSessionRef(e.target.value)}
             />
           </div>
-          <WorldCatalogPanel
-            containerClassName="space-y-3"
-            query={worldCatalogQuery}
-            onQueryChange={setWorldCatalogQuery}
-            target={worldCatalogTarget}
-            onTargetChange={setWorldCatalogTarget}
-            onSelect={handleCatalogSelect}
-          />
+          <Suspense fallback={<div className="panel p-3 text-xs font-mono tracking-widest text-amber">LOADING WORLD CATALOG...</div>}>
+            <WorldCatalogPanel
+              containerClassName="space-y-3"
+              query={worldCatalogQuery}
+              onQueryChange={setWorldCatalogQuery}
+              target={worldCatalogTarget}
+              onTargetChange={setWorldCatalogTarget}
+              onSelect={handleCatalogSelect}
+            />
+          </Suspense>
         </div>
       </aside>
 
@@ -1186,14 +1060,14 @@ export function TradeSessionPanel({ deals, characters = [], onCreateDeals, onUpd
                 <div className="label">METHOD</div>
                 <div className="flex gap-1 flex-wrap">
                   {([
-                    { id: 'standard', label: 'BROKER', sub: 'Broker · 1D days' },
-                    { id: 'blackMarket', label: '⚠ BLACK MARKET', sub: 'Streetwise · 1D days' },
+                    { id: 'standard', label: 'BROKER', sub: 'Broker · 1D days', disabled: false },
+                    { id: 'blackMarket', label: '⚠ BLACK MARKET', sub: 'Streetwise · 1D days', disabled: false },
                     { id: 'online', label: 'ONLINE', sub: `Admin · 1D hours${(source.techLevel ?? 0) < 8 ? ' · TL8+ only' : ''}`, disabled: (source.techLevel ?? 0) < 8 },
-                  ] satisfies TradeContactMethodOption[]).map(m => (
+                  ] as const).map(m => (
                     <button
                       key={m.id}
                       type="button"
-                      disabled={m.disabled}
+                      disabled={m.disabled ?? false}
                       onClick={() => setSupplierMethod(m.id)}
                       className={`flex flex-col items-start px-2.5 py-1.5 border text-left transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${supplierMethod === m.id ? 'border-amber bg-amber/10 text-amber' : 'border-steel/40 text-body/60 hover:text-body'}`}
                     >
@@ -1458,14 +1332,14 @@ export function TradeSessionPanel({ deals, characters = [], onCreateDeals, onUpd
                 <div className="label">METHOD</div>
                 <div className="flex gap-1 flex-wrap">
                   {([
-                    { id: 'standard', label: 'BROKER', sub: 'Broker · 1D days' },
-                    { id: 'blackMarket', label: '⚠ BLACK MARKET', sub: 'Streetwise · 1D days' },
+                    { id: 'standard', label: 'BROKER', sub: 'Broker · 1D days', disabled: false },
+                    { id: 'blackMarket', label: '⚠ BLACK MARKET', sub: 'Streetwise · 1D days', disabled: false },
                     { id: 'online', label: 'ONLINE', sub: `Admin · 1D hours${(destination.techLevel ?? 0) < 8 ? ' · TL8+ only' : ''}`, disabled: (destination.techLevel ?? 0) < 8 },
-                  ] satisfies TradeContactMethodOption[]).map(m => (
+                  ] as const).map(m => (
                     <button
                       key={m.id}
                       type="button"
-                      disabled={m.disabled}
+                      disabled={m.disabled ?? false}
                       onClick={() => setBuyerMethod(m.id)}
                       className={`flex flex-col items-start px-2.5 py-1.5 border text-left transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${buyerMethod === m.id ? 'border-amber bg-amber/10 text-amber' : 'border-steel/40 text-body/60 hover:text-body'}`}
                     >
