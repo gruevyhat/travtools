@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { NavLink, Outlet, Link } from 'react-router-dom';
 import { BookOpen, Dices, Ship, Swords, TrendingUp, Package, Users, ScrollText, UserPlus, Wifi, WifiOff, Settings } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
 import { COMBAT_MODULE_DISABLED } from '../../lib/moduleFlags';
-import GlobalToolsDrawer from '../tools/GlobalToolsDrawer';
 import FanNotice from '../legal/FanNotice';
+
+const GlobalToolsDrawer = lazy(() => import('../tools/GlobalToolsDrawer'));
 
 const IMPERIAL_OFFSET = 1_000_000; // rough offset to 57th century Imperial years
 function imperialDate() {
@@ -140,7 +141,11 @@ export default function Shell() {
         <FanNotice />
       </footer>
 
-      <GlobalToolsDrawer open={toolsOpen} onClose={() => setToolsOpen(false)} />
+      {toolsOpen && (
+        <Suspense fallback={<div className="fixed right-4 bottom-4 z-50 border border-amber/50 bg-panel px-3 py-2 text-xs font-mono tracking-widest text-amber">LOADING TOOLS...</div>}>
+          <GlobalToolsDrawer open={toolsOpen} onClose={() => setToolsOpen(false)} />
+        </Suspense>
+      )}
     </div>
   );
 }

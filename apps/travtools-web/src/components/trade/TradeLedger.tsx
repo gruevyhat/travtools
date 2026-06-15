@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { Suspense, lazy, useEffect, useRef, useState, useCallback } from 'react';
 import { Download, Plus, Search, Upload, X, Check } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
 import { Character, TradeDeal } from '../../types';
@@ -14,8 +14,11 @@ import {
 } from '../../lib/trade';
 import { downloadCsv, parseCsvRows } from '../../lib/csv';
 import { TRADE_GOODS, searchTradeGoods, formatBasePrice } from '../../data/tradeGoods';
-import { PassengersFreightPanel, TradeSessionPanel, type TradeDealDraft } from './TradeMiniGame';
+import type { TradeDealDraft } from './TradeMiniGame';
 import NumberStepper from '../shared/NumberStepper';
+
+const TradeSessionPanel = lazy(() => import('./TradeMiniGame').then(module => ({ default: module.TradeSessionPanel })));
+const PassengersFreightPanel = lazy(() => import('./TradeMiniGame').then(module => ({ default: module.PassengersFreightPanel })));
 
 type Status = 'all' | 'active' | 'completed' | 'cancelled';
 type TradeTab = 'deals' | 'session' | 'traffic';
@@ -81,21 +84,28 @@ export default function TradeLedger() {
 
   useEffect(() => {
     loadDeals();
-    loadCharacters();
     if (!client) return;
     const tradeChannel = client
       .channel('trade-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'trade_deals' }, loadDeals)
       .subscribe();
+    return () => {
+      client.removeChannel(tradeChannel);
+    };
+  }, [client, loadDeals]);
+
+  useEffect(() => {
+    if (activeTab === 'deals') return;
+    loadCharacters();
+    if (!client) return;
     const characterChannel = client
       .channel('trade-roster-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'characters' }, loadCharacters)
       .subscribe();
     return () => {
-      client.removeChannel(tradeChannel);
       client.removeChannel(characterChannel);
     };
-  }, [client, loadDeals, loadCharacters]);
+  }, [activeTab, client, loadCharacters]);
 
   async function saveDeal(e: React.FormEvent) {
     e.preventDefault();
@@ -580,17 +590,21 @@ export default function TradeLedger() {
         </>
       )}
 
-      {activeTab === 'session' && (
-        <TradeSessionPanel
-          deals={deals}
-          characters={characters}
-          onCreateDeals={createSessionDeals}
-          onUpdateDeal={updateSessionDeal}
-          busy={sessionBusy}
-        />
-      )}
+      {activeTab !== 'deals' && (
+        <Suspense fallback={<div className="panel p-4 text-xs font-mono tracking-widest text-amber">LOADING TRADE TOOLS...</div>}>
+          {activeTab === 'session' && (
+            <TradeSessionPanel
+              deals={deals}
+              characters={characters}
+              onCreateDeals={createSessionDeals}
+              onUpdateDeal={updateSessionDeal}
+              busy={sessionBusy}
+            />
+          )}
 
-      {activeTab === 'traffic' && <PassengersFreightPanel characters={characters} />}
+          {activeTab === 'traffic' && <PassengersFreightPanel characters={characters} />}
+        </Suspense>
+      )}
     </div>
   );
 }

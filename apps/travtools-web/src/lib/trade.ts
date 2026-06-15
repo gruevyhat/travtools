@@ -6,7 +6,7 @@ import { lookupFreightTraffic } from '../data/freightTraffic';
 import { lookupPassageFare, type PassengerClass } from '../data/passageFares';
 
 export type TradeStatusFilter = 'all' | TradeDeal['status'];
-export type StarportClass = 'A' | 'B' | 'C' | 'D' | 'E' | 'X';
+export type StarportClass = 'A' | 'B' | 'C' | 'D' | 'E' | 'X' | 'Y';
 export type TravelZone = 'normal' | 'amber' | 'red';
 
 export const TRAVELLER_TRADE_CODES = [
@@ -268,7 +268,7 @@ function parseUwpCode(value: string): number | null {
 
 export function parseWorldUwp(input: string): ParsedWorldUwp | null {
   const compact = input.trim().toUpperCase().replace(/\s+/g, '');
-  const match = compact.match(/^([A-EX])([0-9A-Z])([0-9A-Z])([0-9A-Z])([0-9A-Z])([0-9A-Z])([0-9A-Z])-?([0-9A-Z])$/);
+  const match = compact.match(/^([A-EXY])([0-9A-Z])([0-9A-Z])([0-9A-Z])([0-9A-Z])([0-9A-Z])([0-9A-Z])-?([0-9A-Z])$/);
   if (!match) return null;
 
   const [, starport, sizeCode, atmosphereCode, hydrographicsCode, populationCode, governmentCode, lawCode, techCode] = match;
@@ -379,7 +379,7 @@ function starportTrafficDm(starport: StarportClass): number {
   if (starport === 'A') return 2;
   if (starport === 'B') return 1;
   if (starport === 'E') return -1;
-  if (starport === 'X') return -3;
+  if (starport === 'X' || starport === 'Y') return -3;
   return 0;
 }
 

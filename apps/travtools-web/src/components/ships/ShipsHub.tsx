@@ -1,6 +1,7 @@
-import { useState } from 'react';
-import ShipViewer from './ShipViewer';
-import ShipBuilder from './ShipBuilder';
+import { Suspense, lazy, useState } from 'react';
+
+const ShipViewer = lazy(() => import('./ShipViewer'));
+const ShipBuilder = lazy(() => import('./ShipBuilder'));
 
 type Tab = 'fleet' | 'shipyard';
 
@@ -26,7 +27,9 @@ export default function ShipsHub() {
 
       {/* Content */}
       <div className="flex-1 overflow-hidden">
-        {tab === 'fleet' ? <ShipViewer /> : <ShipBuilder />}
+        <Suspense fallback={<div className="p-4 text-xs font-mono tracking-widest text-amber">LOADING SHIPS MODULE...</div>}>
+          {tab === 'fleet' ? <ShipViewer /> : <ShipBuilder />}
+        </Suspense>
       </div>
     </div>
   );

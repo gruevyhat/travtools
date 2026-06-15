@@ -22,6 +22,7 @@ import {
 import { lookupModifiedPrice } from '../data/modifiedPrice';
 import { lookupFreightTraffic } from '../data/freightTraffic';
 import { lookupPassengerTraffic } from '../data/passengerTraffic';
+import { TROJAN_REACH_WORLDS, searchTrojanReachWorlds } from '../data/trojanReachWorlds';
 import type { Character, TradeDeal } from '../types';
 import * as SupabaseContext from '../lib/supabaseContext';
 
@@ -269,8 +270,23 @@ describe('trade helpers', () => {
       lawLevel: 9,
       techLevel: 12,
     });
+    expect(parseWorldUwp('YF00000-0')?.starport).toBe('Y');
     expect(parseWorldUwp('Q788899-C')).toBeNull();
     expect(parseWorldUwp('A78889-C')).toBeNull();
+  });
+
+  it('catalogs Trojan Reach worlds for trade sessions', () => {
+    expect(TROJAN_REACH_WORLDS).toHaveLength(328);
+
+    const drinax = searchTrojanReachWorlds('Drinax')[0];
+    expect(drinax).toEqual(expect.objectContaining({
+      name: 'Drinax',
+      hex: '2223',
+      uwp: 'A43645A-E',
+      tradeCodes: ['Ni', 'Ht'],
+    }));
+
+    expect(searchTrojanReachWorlds('0404').map(world => world.name)).toEqual(expect.arrayContaining(['Eglise']));
   });
 
   it('looks up passenger and freight traffic dice', () => {
@@ -363,14 +379,15 @@ describe('TradeLedger', () => {
     render(<TradeLedger />);
 
     fireEvent.click(screen.getByRole('button', { name: 'TRADE SESSION' }));
-    expect(await screen.findByText(/TRADE SESSION · ROUTE/i)).toBeTruthy();
-    expect(screen.getByLabelText('Source UWP')).toBeTruthy();
+    expect(await screen.findByText(/TROJAN REACH WORLDS/i)).toBeTruthy();
     expect(screen.queryByLabelText('Source Starport')).toBeNull();
     expect(screen.queryByLabelText('Source Population')).toBeNull();
-    fireEvent.change(screen.getByLabelText('Source UWP'), { target: { value: 'C100200-8' } });
-    expect((screen.getByLabelText('Source UWP') as HTMLInputElement).value).toBe('C100200-8');
-    expect(screen.getByRole('button', { name: /2 SUPPLIER/i })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: /3 LOTS/i }));
+    fireEvent.change(screen.getByLabelText('Trojan Reach World Catalog Search'), { target: { value: 'Torpol' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'Select Torpol for source' }));
+    expect(screen.getAllByText('Torpol').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('B55A77A-8').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: /ROLL SUPPLIER/i })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'NEXT' }));
     expect(screen.getByRole('button', { name: /ROLL LOTS/i })).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'PASSENGERS & FREIGHT' }));
@@ -392,16 +409,17 @@ describe('TradeLedger', () => {
     render(<TradeLedger />);
 
     fireEvent.click(screen.getByRole('button', { name: 'TRADE SESSION' }));
-    fireEvent.click(await screen.findByRole('button', { name: /3 LOTS/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'NEXT' }));
     fireEvent.click(await screen.findByRole('button', { name: /ROLL LOTS/i }));
     fireEvent.click((await screen.findAllByRole('button', { name: /CART/i }))[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'NEXT' }));
     fireEvent.click(screen.getByRole('button', { name: 'PRICE' }));
     fireEvent.click(screen.getByRole('button', { name: /PURCHASE ALL/i }));
 
     await waitFor(() => {
       expect(mock.insert).toHaveBeenCalledWith(expect.objectContaining({
         status: 'active',
-        world_bought: 'Regina',
+        world_bought: 'Drinax',
         session_ref: 'Session Trade Run',
         base_price: expect.any(Number),
         purchase_pct: expect.any(Number),
@@ -422,10 +440,11 @@ describe('TradeLedger', () => {
     render(<TradeLedger />);
 
     fireEvent.click(screen.getByRole('button', { name: 'TRADE SESSION' }));
-    fireEvent.click(await screen.findByRole('button', { name: /2 SUPPLIER/i }));
 
     const characterSelect = await screen.findByLabelText('Supplier Check Character') as HTMLSelectElement;
-    expect(characterSelect.value).toBe('char-2');
+    await waitFor(() => {
+      expect(characterSelect.value).toBe('char-2');
+    });
 
     fireEvent.change(screen.getByLabelText('Supplier Check Skill'), { target: { value: 'Streetwise' } });
     await waitFor(() => {
@@ -452,7 +471,9 @@ describe('TradeLedger', () => {
     render(<TradeLedger />);
 
     fireEvent.click(screen.getByRole('button', { name: 'TRADE SESSION' }));
-    fireEvent.click(await screen.findByRole('button', { name: /2 SUPPLIER/i }));
+    await waitFor(() => {
+      expect((screen.getByLabelText('Supplier Check Character') as HTMLSelectElement).value).toBe('char-1');
+    });
     fireEvent.click(await screen.findByRole('button', { name: /ROLL SUPPLIER/i }));
 
     expect(await screen.findByText(/Mara Vale · Broker\/INT/i)).toBeTruthy();

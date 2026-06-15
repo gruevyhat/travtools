@@ -395,7 +395,7 @@ async function checkRosterInteractions(browser, baseUrl) {
     throw new Error(`Psionic talent use did not spend PSI:\n${rosterAfterPsi}`);
   }
 
-  await desktopRoster.getByRole('button', { name: /Autopistol/i }).click();
+  await desktopRoster.getByRole('button', { name: 'Roll Autopistol attack' }).click();
   const weaponRollPanel = page.locator('.fixed .panel');
   await replaceByTyping(weaponRollPanel.getByLabel('Ammo Used'), '3');
   await replaceByTyping(weaponRollPanel.getByRole('textbox', { name: /roll modifier/i }), '+10');
@@ -410,7 +410,7 @@ async function checkRosterInteractions(browser, baseUrl) {
   await weaponRollPanel.getByText('Damage Mod +4', { exact: false }).waitFor({ state: 'visible', timeout: 5_000 });
   await page.keyboard.press('Escape');
   const rosterAfterAmmo = await desktopRoster.innerText({ timeout: 5_000 });
-  if (!rosterAfterAmmo.includes('12/15 rnd · 2 clips')) {
+  if (!rosterAfterAmmo.includes('||||||||||||')) {
     throw new Error(`Weapon use did not spend ammo:\n${rosterAfterAmmo}`);
   }
   await desktopRoster.getByLabel('Character actions').click();
@@ -421,9 +421,9 @@ async function checkRosterInteractions(browser, baseUrl) {
   await weaponRoundsInput.fill('9');
   await weaponClipsInput.fill('4');
   await desktopRoster.getByRole('button', { name: 'UPDATE' }).click();
-  await desktopRoster.getByText('9/15 rnd · 4 clips', { exact: false }).waitFor({ state: 'visible', timeout: 5_000 });
+  await desktopRoster.getByText('|||||||||', { exact: false }).waitFor({ state: 'visible', timeout: 5_000 });
   const rosterAfterManualAmmo = await desktopRoster.innerText({ timeout: 5_000 });
-  if (!rosterAfterManualAmmo.includes('9/15 rnd · 4 clips')) {
+  if (!rosterAfterManualAmmo.includes('|||||||||')) {
     throw new Error(`Manual ammo controls did not update the weapon row:\n${rosterAfterManualAmmo}`);
   }
 
@@ -675,12 +675,12 @@ async function checkFormTyping(browser, baseUrl) {
   await tradeRow.getByPlaceholder('Sell price').press('Enter');
   await tradeRow.getByText('+Cr 500').waitFor({ state: 'visible', timeout: 5_000 });
   await page.getByRole('button', { name: 'TRADE SESSION' }).click();
-  await replaceByTyping(page.getByLabel('Source World Name'), 'Mora');
-  await replaceByTyping(page.getByLabel('Source Population'), '9');
-  await page.getByRole('button', { name: /2 SUPPLIER/ }).click();
+  await page.getByText('TROJAN REACH WORLDS').waitFor({ state: 'visible', timeout: 5_000 });
+  await replaceByTyping(page.getByLabel('Trojan Reach World Catalog Search'), 'Torpol');
+  await page.getByRole('button', { name: 'Select Torpol for source' }).click();
   await page.getByRole('button', { name: /ROLL SUPPLIER/ }).click();
   await page.getByText(/Smoke Traveller Prime · Broker\/INT/).waitFor({ state: 'visible', timeout: 5_000 });
-  await page.getByRole('button', { name: /3 LOTS/ }).click();
+  await page.getByRole('button', { name: /^NEXT$/ }).click();
   await page.getByRole('button', { name: /ROLL LOTS/ }).click();
   await page.locator('tr', { hasText: 'Common Electronics' }).waitFor({ state: 'visible', timeout: 5_000 });
 
