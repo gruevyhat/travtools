@@ -1,0 +1,33 @@
+[
+  {
+    "id": "deffa1c9-29cb-46bf-bd20-725231f2a2cc",
+    "name": "The Golden Pariah (Harrier)",
+    "ship_class": null,
+    "tonnage": 200,
+    "image_url": "https://plytyqsbolucfnnsdyqw.supabase.co/storage/v1/object/public/ship-schematics/designs/272996cc-149e-4ea4-b7e2-f7f3aec5f13d/diagram.jpg",
+    "schematic_type": "custom",
+    "canonical_id": null,
+    "annotations": [],
+    "notes": null,
+    "created_at": "2026-06-14T01:27:13.012563+00:00",
+    "specs": {
+      "j_drive": 2,
+      "m_drive": 6,
+      "turrets": 2,
+      "fuel_tons": 42,
+      "cargo_tons": 29.5,
+      "crew_notes": "Pilot×1, Astrogator×1, Engineer×1, Medic×1, Steward×1, Gunner×2",
+      "low_berths": 8,
+      "staterooms": 8,
+      "tech_level": 15,
+      "bridge_tons": 10,
+      "hull_config": "Streamlined",
+      "hull_rating": 80,
+      "power_plant": 260,
+      "armour_rating": 4,
+      "purchase_price_mcr": 120.19,
+      "monthly_maintenance_cr": 10016
+    },
+    "damage": {}
+  }
+]

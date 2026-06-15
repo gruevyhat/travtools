@@ -1,0 +1,52 @@
+{
+  "backupCreatedAt": "2026-06-15T01:55:36.610Z",
+  "sourceUrl": "https://plytyqsbolucfnnsdyqw.supabase.co",
+  "method": "Supabase PostgREST anon select with exact counts",
+  "tables": {
+    "characters": {
+      "rowCount": 5,
+      "exactCount": 5,
+      "file": "characters.json"
+    },
+    "npcs": {
+      "rowCount": 0,
+      "exactCount": 0,
+      "file": "npcs.json"
+    },
+    "ships": {
+      "rowCount": 1,
+      "exactCount": 1,
+      "file": "ships.json"
+    },
+    "ship_designs": {
+      "rowCount": 1,
+      "exactCount": 1,
+      "file": "ship_designs.json"
+    },
+    "trade_deals": {
+      "rowCount": 0,
+      "exactCount": 0,
+      "file": "trade_deals.json"
+    },
+    "inventory_items": {
+      "rowCount": 0,
+      "exactCount": 0,
+      "file": "inventory_items.json"
+    },
+    "roll_log": {
+      "rowCount": 374,
+      "exactCount": 374,
+      "file": "roll_log.json"
+    },
+    "session_journal": {
+      "rowCount": 1,
+      "exactCount": 1,
+      "file": "session_journal.json"
+    }
+  },
+  "git": {
+    "commit": "613596321dfe",
+    "fullCommit": "613596321dfe05e44a6fd573727d06c39af80460",
+    "note": "Backup directory name includes HEAD short commit for the upstream push target."
+  }
+}
