@@ -132,13 +132,6 @@ export interface Weapon {
   ammo_clips?: number | null;
   ammo_rounds?: number | null;
   ammo_clip_size?: number | null;
-  ammo_trackers?: WeaponAmmoTracker[] | null;
-}
-
-export interface WeaponAmmoTracker {
-  ammo_clips?: number | null;
-  ammo_rounds?: number | null;
-  ammo_clip_size?: number | null;
 }
 
 export interface AttributeMods {

@@ -1,11 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   spendWeaponAmmo,
-  updateWeaponAmmoTracker,
   weaponAmmoLabel,
   weaponAmmoState,
-  weaponAmmoTrackerCount,
-  weaponWithAmmoTracker,
 } from '../lib/ammo';
 import type { Weapon } from '../types';
 
@@ -93,7 +90,7 @@ describe('weapon ammo tracking', () => {
     expect(spendWeaponAmmo(weapon, 1)).toBeNull();
   });
 
-  it('creates one ammo tracker slot per weapon quantity', () => {
+  it('keeps one clip tracker regardless of weapon quantity', () => {
     const weapon: Weapon = {
       name: 'Autopistol',
       skill: 'Gun Combat (Slug)',
@@ -103,32 +100,6 @@ describe('weapon ammo tracking', () => {
       quantity: 3,
     };
 
-    expect(weaponAmmoTrackerCount(weapon)).toBe(3);
-    expect(weaponAmmoState(weaponWithAmmoTracker(weapon, 0))).toMatchObject({ rounds: 15, clips: 0 });
-    expect(weaponAmmoState(weaponWithAmmoTracker(weapon, 2))).toMatchObject({ rounds: 15, clips: 0 });
-  });
-
-  it('updates one weapon copy without changing the other ammo trackers', () => {
-    const weapon: Weapon = {
-      name: 'Autopistol',
-      skill: 'Gun Combat (Slug)',
-      range: '10m',
-      damage: '3D-3',
-      traits: '',
-      quantity: 2,
-      ammo_rounds: 7,
-      ammo_clips: 1,
-      ammo_clip_size: 15,
-    };
-
-    const updated = updateWeaponAmmoTracker(weapon, 1, { ammo_rounds: 4, ammo_clips: 0 });
-
-    expect(updated.ammo_rounds).toBe(7);
-    expect(updated.ammo_trackers).toEqual([
-      { ammo_clips: 1, ammo_rounds: 7, ammo_clip_size: 15 },
-      { ammo_clips: 0, ammo_rounds: 4, ammo_clip_size: 15 },
-    ]);
-    expect(weaponAmmoState(weaponWithAmmoTracker(updated, 0))).toMatchObject({ rounds: 7, clips: 1 });
-    expect(weaponAmmoState(weaponWithAmmoTracker(updated, 1))).toMatchObject({ rounds: 4, clips: 0 });
+    expect(weaponAmmoState(weapon)).toMatchObject({ rounds: 15, clips: 0, totalRounds: 15 });
   });
 });
