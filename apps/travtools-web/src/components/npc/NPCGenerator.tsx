@@ -95,7 +95,7 @@ function hasContactDetails(entry: NpcListEntry, association: string | null): boo
 }
 
 export default function NPCGenerator() {
-  const { client } = useSupabase();
+  const { client, canEdit } = useSupabase();
 
   // ── Generator state ───────────────────────────────────────────────────────
   const initial = generateQuickCharacter();
@@ -695,10 +695,12 @@ export default function NPCGenerator() {
               {savedMsg}
             </div>
           )}
-          <button type="button" onClick={handleSave} disabled={saving}
-            className="btn-amber w-full disabled:opacity-50 text-xs">
-            {saving ? 'SAVING…' : 'SAVE NPC'}
-          </button>
+          {canEdit && (
+            <button type="button" onClick={handleSave} disabled={saving}
+              className="btn-amber w-full disabled:opacity-50 text-xs">
+              {saving ? 'SAVING…' : 'SAVE NPC'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -804,7 +806,7 @@ export default function NPCGenerator() {
                           )}
                         </td>
                         <td className="px-3 py-2 text-right text-xs font-mono text-bright">
-                          {entry.npc ? (
+                          {canEdit && entry.npc ? (
                             <button type="button" aria-label={`Delete ${entry.name}`}
                               onClick={() => setDeleteCandidate(entry.npc)}
                               className="inline-flex h-7 w-7 items-center justify-center text-body/35 transition-colors hover:text-alert">

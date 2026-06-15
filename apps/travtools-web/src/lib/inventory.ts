@@ -8,7 +8,7 @@ export const OTHER_OWNER_LABEL = 'Other';
 export type InventoryOwnerType = 'party' | 'character' | 'other';
 
 export type InventoryCharacter = Pick<Character,
-  'id' | 'name' | 'player' | 'created_at' | 'weapons' | 'armour' | 'personal_equipment' | 'augments'
+  'id' | 'name' | 'player' | 'status' | 'created_at' | 'weapons' | 'armour' | 'personal_equipment' | 'augments'
 >;
 
 export interface InventoryListItem extends InventoryItem {

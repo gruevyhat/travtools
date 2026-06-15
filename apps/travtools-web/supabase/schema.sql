@@ -95,6 +95,18 @@ create table if not exists characters (
   created_at timestamptz not null default now()
 );
 
+-- Party Treasury (shared credits ledger)
+create table if not exists party_treasury (
+  id uuid default gen_random_uuid() primary key,
+  created_at timestamptz not null default now(),
+  amount integer not null,
+  type text not null
+    check (type in ('income', 'expense', 'loot', 'share', 'trade')),
+  description text not null,
+  character_id uuid references characters(id) on delete set null,
+  session_ref text
+);
+
 -- Roll Log (shared dice roll history, realtime)
 create table if not exists roll_log (
   id uuid default gen_random_uuid() primary key,
@@ -151,23 +163,110 @@ alter table trade_deals add column if not exists trade_code text;
 select pg_notify('pgrst', 'reload schema');
 
 -- ============================================================
--- Row Level Security
--- For a trusted group (no auth), allow anon read/write.
--- Tighten these policies if you add Supabase Auth later.
+-- Authentication & Row Level Security
+--
+-- Security model:
+--   - Anyone (anon) can read all tables and append dice rolls.
+--   - Only allowlisted Google accounts can write everything else.
+--   - The boundary is enforced entirely in the database; client-
+--     side canEdit is UX-only.
 -- ============================================================
+
+-- Allowlist: one row per permitted editor (Google account email).
+create table if not exists allowed_editors (
+  email text primary key,
+  note text,
+  created_at timestamptz not null default now()
+);
+alter table allowed_editors enable row level security;
+
+-- Authenticated users may check whether their own email is listed.
+drop policy if exists "editor_read_self" on allowed_editors;
+create policy "editor_read_self" on allowed_editors
+  for select to authenticated
+  using (lower(email) = lower(auth.jwt() ->> 'email'));
+
+-- SECURITY DEFINER so write policies can use this without granting
+-- every authenticated user SELECT on the full allowlist.
+create or replace function public.is_allowed_editor()
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.allowed_editors
+    where lower(email) = lower(auth.jwt() ->> 'email')
+  );
+$$;
+
+-- ── Seed the allowlist ───────────────────────────────────────
+insert into allowed_editors (email, note)
+values ('graham.horwood@gmail.com', 'GM')
+on conflict do nothing;
+
+-- ── Helper macro: public read + allowlisted-editor write ─────
+-- Used for all 8 protected tables below (ships, trade_deals,
+-- inventory_items, party_treasury, characters, session_journal,
+-- ship_designs, npcs). Anon realtime subscriptions require the
+-- SELECT policy to include the 'anon' role.
 
 alter table ships enable row level security;
 alter table trade_deals enable row level security;
 alter table inventory_items enable row level security;
+alter table party_treasury enable row level security;
 alter table characters enable row level security;
 
-create policy "anon_all_ships" on ships for all to anon using (true) with check (true);
-create policy "anon_all_trade" on trade_deals for all to anon using (true) with check (true);
-create policy "anon_all_inventory" on inventory_items for all to anon using (true) with check (true);
-create policy "anon_all_characters" on characters for all to anon using (true) with check (true);
+-- ships
+drop policy if exists "anon_all_ships"             on ships;
+drop policy if exists "public_read_ships"           on ships;
+drop policy if exists "editor_write_ships"          on ships;
+create policy "public_read_ships"  on ships for select to anon, authenticated using (true);
+create policy "editor_write_ships" on ships for all    to authenticated
+  using (public.is_allowed_editor()) with check (public.is_allowed_editor());
 
+-- trade_deals
+drop policy if exists "anon_all_trade"              on trade_deals;
+drop policy if exists "public_read_trade"           on trade_deals;
+drop policy if exists "editor_write_trade"          on trade_deals;
+create policy "public_read_trade"  on trade_deals for select to anon, authenticated using (true);
+create policy "editor_write_trade" on trade_deals for all    to authenticated
+  using (public.is_allowed_editor()) with check (public.is_allowed_editor());
+
+-- inventory_items
+drop policy if exists "anon_all_inventory"          on inventory_items;
+drop policy if exists "public_read_inventory"       on inventory_items;
+drop policy if exists "editor_write_inventory"      on inventory_items;
+create policy "public_read_inventory"  on inventory_items for select to anon, authenticated using (true);
+create policy "editor_write_inventory" on inventory_items for all    to authenticated
+  using (public.is_allowed_editor()) with check (public.is_allowed_editor());
+
+-- party_treasury
+drop policy if exists "anon_all_party_treasury"     on party_treasury;
+drop policy if exists "public_read_party_treasury"  on party_treasury;
+drop policy if exists "editor_write_party_treasury" on party_treasury;
+create policy "public_read_party_treasury"  on party_treasury for select to anon, authenticated using (true);
+create policy "editor_write_party_treasury" on party_treasury for all    to authenticated
+  using (public.is_allowed_editor()) with check (public.is_allowed_editor());
+
+-- characters
+drop policy if exists "anon_all_characters"         on characters;
+drop policy if exists "public_read_characters"      on characters;
+drop policy if exists "editor_write_characters"     on characters;
+create policy "public_read_characters"  on characters for select to anon, authenticated using (true);
+create policy "editor_write_characters" on characters for all    to authenticated
+  using (public.is_allowed_editor()) with check (public.is_allowed_editor());
+
+-- roll_log: anon can read + insert (dice rolls stay open); only
+-- allowlisted editors can update or delete (clear log).
 alter table roll_log enable row level security;
-create policy "anon_all_roll_log" on roll_log for all to anon using (true) with check (true);
+drop policy if exists "anon_all_roll_log"           on roll_log;
+drop policy if exists "public_read_roll_log"        on roll_log;
+drop policy if exists "public_append_roll_log"      on roll_log;
+drop policy if exists "editor_update_roll_log"      on roll_log;
+drop policy if exists "editor_delete_roll_log"      on roll_log;
+create policy "public_read_roll_log"   on roll_log for select to anon, authenticated using (true);
+create policy "public_append_roll_log" on roll_log for insert to anon, authenticated with check (true);
+create policy "editor_update_roll_log" on roll_log for update to authenticated
+  using (public.is_allowed_editor()) with check (public.is_allowed_editor());
+create policy "editor_delete_roll_log" on roll_log for delete to authenticated
+  using (public.is_allowed_editor());
 
 -- Session Journal (shared timestamped notes per session, realtime)
 create table if not exists session_journal (
@@ -180,7 +279,12 @@ create table if not exists session_journal (
 );
 
 alter table session_journal enable row level security;
-create policy "anon_all_session_journal" on session_journal for all to anon using (true) with check (true);
+drop policy if exists "anon_all_session_journal"         on session_journal;
+drop policy if exists "public_read_session_journal"      on session_journal;
+drop policy if exists "editor_write_session_journal"     on session_journal;
+create policy "public_read_session_journal"  on session_journal for select to anon, authenticated using (true);
+create policy "editor_write_session_journal" on session_journal for all    to authenticated
+  using (public.is_allowed_editor()) with check (public.is_allowed_editor());
 
 -- Ship Designs (custom-built spacecraft, realtime)
 create table if not exists ship_designs (
@@ -193,7 +297,12 @@ create table if not exists ship_designs (
 );
 
 alter table ship_designs enable row level security;
-create policy "anon_all_ship_designs" on ship_designs for all to anon using (true) with check (true);
+drop policy if exists "anon_all_ship_designs"            on ship_designs;
+drop policy if exists "public_read_ship_designs"         on ship_designs;
+drop policy if exists "editor_write_ship_designs"        on ship_designs;
+create policy "public_read_ship_designs"  on ship_designs for select to anon, authenticated using (true);
+create policy "editor_write_ship_designs" on ship_designs for all    to authenticated
+  using (public.is_allowed_editor()) with check (public.is_allowed_editor());
 alter table ship_designs add column if not exists diagram_url text;
 alter table ship_designs replica identity full;
 
@@ -242,7 +351,29 @@ alter table npcs add column if not exists alive boolean;
 alter table npcs add column if not exists contact_character_id uuid references characters(id) on delete set null;
 alter table npcs add column if not exists contact_id text;
 alter table npcs enable row level security;
-create policy "anon_all_npcs" on npcs for all to anon using (true) with check (true);
+drop policy if exists "anon_all_npcs"                    on npcs;
+drop policy if exists "public_read_npcs"                 on npcs;
+drop policy if exists "editor_write_npcs"                on npcs;
+create policy "public_read_npcs"  on npcs for select to anon, authenticated using (true);
+create policy "editor_write_npcs" on npcs for all    to authenticated
+  using (public.is_allowed_editor()) with check (public.is_allowed_editor());
+
+alter table party_treasury replica identity full;
+
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
+    and not exists (
+      select 1
+      from pg_publication_tables
+      where pubname = 'supabase_realtime'
+        and schemaname = 'public'
+        and tablename = 'party_treasury'
+    )
+  then
+    alter publication supabase_realtime add table public.party_treasury;
+  end if;
+end $$;
 
 -- ============================================================
 -- Storage bucket for custom ship schematic images.
@@ -262,14 +393,20 @@ drop policy if exists "Public read ship-schematics" on storage.objects;
 create policy "Public read ship-schematics" on storage.objects
   for select using (bucket_id = 'ship-schematics');
 
-drop policy if exists "Anon insert ship-schematics" on storage.objects;
-create policy "Anon insert ship-schematics" on storage.objects
-  for insert with check (bucket_id = 'ship-schematics');
+drop policy if exists "Anon insert ship-schematics"   on storage.objects;
+drop policy if exists "Editor insert ship-schematics" on storage.objects;
+create policy "Editor insert ship-schematics" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'ship-schematics' and public.is_allowed_editor());
 
-drop policy if exists "Anon update ship-schematics" on storage.objects;
-create policy "Anon update ship-schematics" on storage.objects
-  for update using (bucket_id = 'ship-schematics');
+drop policy if exists "Anon update ship-schematics"   on storage.objects;
+drop policy if exists "Editor update ship-schematics" on storage.objects;
+create policy "Editor update ship-schematics" on storage.objects
+  for update to authenticated
+  using (bucket_id = 'ship-schematics' and public.is_allowed_editor());
 
-drop policy if exists "Anon delete ship-schematics" on storage.objects;
-create policy "Anon delete ship-schematics" on storage.objects
-  for delete using (bucket_id = 'ship-schematics');
+drop policy if exists "Anon delete ship-schematics"   on storage.objects;
+drop policy if exists "Editor delete ship-schematics" on storage.objects;
+create policy "Editor delete ship-schematics" on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'ship-schematics' and public.is_allowed_editor());

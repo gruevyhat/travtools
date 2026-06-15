@@ -10,6 +10,12 @@ function mockSupabase() {
     isConfigured: true,
     configure: vi.fn(),
     reset: vi.fn(),
+    session: null,
+    user: null,
+    canEdit: false,
+    authReady: true,
+    signInWithGoogle: vi.fn(),
+    signOut: vi.fn(),
   });
 }
 

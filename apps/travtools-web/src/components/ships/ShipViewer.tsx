@@ -911,7 +911,7 @@ function ShipManifestPanel({ specs, editable, specsForm, onSpecsChange, onStartE
 }
 
 export default function ShipViewer() {
-  const { client } = useSupabase();
+  const { client, canEdit } = useSupabase();
   const [ships, setShips] = useState<Ship[]>([]);
   const [selected, setSelected] = useState<Ship | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -1301,7 +1301,7 @@ export default function ShipViewer() {
                 </div>
                 <div className="flex items-center gap-2 min-w-0">
                   <div className="text-bright font-display text-xl tracking-wide truncate">{selected.name}</div>
-                  {!editingRecord && (
+                  {!editingRecord && canEdit && (
                     <button
                       type="button"
                       onClick={() => startEditShip(selected)}
@@ -1467,22 +1467,22 @@ export default function ShipViewer() {
                   />
                   <ShipAmmoPanel
                     ammo={ammoForm}
-                    onReset={resetAmmoTracker}
-                    onAdd={addAmmoTracker}
-                    onRemove={removeAmmoTracker}
-                    onAdjust={adjustAmmoTracker}
-                    onFieldChange={updateAmmoField}
+                    onReset={canEdit ? resetAmmoTracker : () => {}}
+                    onAdd={canEdit ? addAmmoTracker : () => {}}
+                    onRemove={canEdit ? removeAmmoTracker : () => {}}
+                    onAdjust={canEdit ? adjustAmmoTracker : () => {}}
+                    onFieldChange={canEdit ? updateAmmoField : () => {}}
                   />
                   <ShipDamagePanel
                     specs={selectedSpecs}
                     damage={damageForm}
                     damageInput={damageInput}
                     onDamageInputChange={setDamageInput}
-                    onApplyDamage={applyHullDamage}
-                    onAdjust={adjustDamageField}
-                    onReset={resetDamageTracker}
+                    onApplyDamage={canEdit ? applyHullDamage : () => {}}
+                    onAdjust={canEdit ? adjustDamageField : () => {}}
+                    onReset={canEdit ? resetDamageTracker : () => {}}
                     onNotesChange={updateDamageNotes}
-                    onNotesBlur={saveDamageNotes}
+                    onNotesBlur={canEdit ? saveDamageNotes : () => {}}
                   />
                 </aside>
               </div>

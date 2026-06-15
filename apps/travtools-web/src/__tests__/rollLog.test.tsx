@@ -96,6 +96,12 @@ describe('RollLog', () => {
       isConfigured: true,
       configure: vi.fn(),
       reset: vi.fn(),
+      session: null,
+      user: null,
+      canEdit: true,
+      authReady: true,
+      signInWithGoogle: vi.fn(),
+      signOut: vi.fn(),
     });
 
     render(<RollLog />);
@@ -122,6 +128,12 @@ describe('RollLog', () => {
       isConfigured: true,
       configure: vi.fn(),
       reset: vi.fn(),
+      session: null,
+      user: null,
+      canEdit: true,
+      authReady: true,
+      signInWithGoogle: vi.fn(),
+      signOut: vi.fn(),
     });
 
     render(<RollLog />);

@@ -1,6 +1,6 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { NavLink, Outlet, Link } from 'react-router-dom';
-import { BookOpen, Dices, Ship, Swords, TrendingUp, Package, Users, ScrollText, UserPlus, Wifi, WifiOff, Settings } from 'lucide-react';
+import { BookOpen, Dices, LogIn, LogOut, Ship, Swords, TrendingUp, Package, Users, ScrollText, UserPlus, Wifi, WifiOff, Settings } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
 import { COMBAT_MODULE_DISABLED } from '../../lib/moduleFlags';
 import FanNotice from '../legal/FanNotice';
@@ -28,7 +28,7 @@ const NAV_ITEMS = [
 ];
 
 export default function Shell() {
-  const { isConfigured, reset } = useSupabase();
+  const { isConfigured, reset, session, canEdit, signInWithGoogle, signOut } = useSupabase();
   const [toolsOpen, setToolsOpen] = useState(false);
   const [online, setOnline] = useState(() => navigator.onLine);
 
@@ -101,6 +101,11 @@ export default function Shell() {
             <span className="text-steel tracking-widest hidden md:block">
               IMP DATE: {imperialDate()}
             </span>
+            {isConfigured && !canEdit && (
+              <span className="hidden md:block text-[10px] tracking-widest border border-amber/40 px-1.5 py-0.5 text-amber/70">
+                READ-ONLY
+              </span>
+            )}
             <div className="flex items-center gap-1.5">
               {!online ? (
                 <>
@@ -119,6 +124,31 @@ export default function Shell() {
                 </>
               )}
             </div>
+            {isConfigured && (
+              session ? (
+                <div className="flex items-center gap-2">
+                  <span className="hidden lg:block text-body/60 truncate max-w-[8rem]" title={session.user.email}>
+                    {session.user.email}
+                  </span>
+                  <button
+                    onClick={signOut}
+                    title="Sign out"
+                    className="text-body hover:text-amber transition-colors"
+                  >
+                    <LogOut size={13} />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={signInWithGoogle}
+                  title="Sign in with Google"
+                  className="btn-steel flex items-center gap-1 text-xs py-1"
+                >
+                  <LogIn size={13} />
+                  SIGN IN
+                </button>
+              )
+            )}
             {isConfigured && (
               <button
                 onClick={reset}

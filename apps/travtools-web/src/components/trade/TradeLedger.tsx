@@ -45,7 +45,7 @@ function Field({ name, children }: { name: string; children: React.ReactNode }) 
 }
 
 export default function TradeLedger() {
-  const { client } = useSupabase();
+  const { client, canEdit } = useSupabase();
   const [deals, setDeals] = useState<TradeDeal[]>([]);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [filter, setFilter] = useState<Status>('all');
@@ -366,9 +366,11 @@ export default function TradeLedger() {
           </label>
         </div>
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => csvImportRef.current?.click()} className="btn-steel flex items-center gap-1">
-            <Upload size={13} /> IMPORT CSV
-          </button>
+          {canEdit && (
+            <button type="button" onClick={() => csvImportRef.current?.click()} className="btn-steel flex items-center gap-1">
+              <Upload size={13} /> IMPORT CSV
+            </button>
+          )}
           <button
             type="button"
             onClick={exportCsv}
@@ -383,12 +385,14 @@ export default function TradeLedger() {
           >
             TRADE GOODS
           </button>
-          <button
-            onClick={() => { setForm(EMPTY); setEditing(null); setShowForm(v => !v); }}
-            className="btn-amber flex items-center gap-1"
-          >
-            <Plus size={13} /> NEW DEAL
-          </button>
+          {canEdit && (
+            <button
+              onClick={() => { setForm(EMPTY); setEditing(null); setShowForm(v => !v); }}
+              className="btn-amber flex items-center gap-1"
+            >
+              <Plus size={13} /> NEW DEAL
+            </button>
+          )}
         </div>
       </div>
 
@@ -547,7 +551,7 @@ export default function TradeLedger() {
                   </td>
                   <td className="table-cell">
                     <div className="flex gap-1 justify-end">
-                      {deal.status === 'active' && (
+                      {canEdit && deal.status === 'active' && (
                         completingId === deal.id ? (
                           <div className="flex gap-1 items-center">
                             <input
@@ -568,10 +572,12 @@ export default function TradeLedger() {
                           </>
                         )
                       )}
-                      <button onClick={() => startEdit(deal)} className="btn-steel text-xs px-2 py-0.5">EDIT</button>
-                      <button onClick={() => deleteDeal(deal.id)} className="text-alert/50 hover:text-alert transition-colors">
-                        <X size={13} />
-                      </button>
+                      {canEdit && <button onClick={() => startEdit(deal)} className="btn-steel text-xs px-2 py-0.5">EDIT</button>}
+                      {canEdit && (
+                        <button onClick={() => deleteDeal(deal.id)} className="text-alert/50 hover:text-alert transition-colors">
+                          <X size={13} />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -599,6 +605,7 @@ export default function TradeLedger() {
               onCreateDeals={createSessionDeals}
               onUpdateDeal={updateSessionDeal}
               busy={sessionBusy}
+              canEdit={canEdit}
             />
           )}
 

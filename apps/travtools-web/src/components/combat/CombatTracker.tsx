@@ -228,7 +228,7 @@ function StatBar({ cur, max, label }: { cur: number; max: number; label: string 
 }
 
 export default function CombatTracker() {
-  const { client } = useSupabase();
+  const { client, canEdit } = useSupabase();
   const [chars, setChars] = useState<Character[]>([]);
   const syncChannel = useRef<{
     send: (args: { type: 'broadcast'; event: string; payload: { combatants: CombatCombatant[]; round: number; activeIndex: number } }) => Promise<unknown>;
@@ -323,7 +323,7 @@ export default function CombatTracker() {
   }
 
   async function applyDamageAmount(combatantId: string, pts: number) {
-    if (pts <= 0) return true;
+    if (!canEdit || pts <= 0) return true;
 
     const combatant = combatants.find(x => x.id === combatantId);
     if (!combatant) return false;
@@ -367,6 +367,7 @@ export default function CombatTracker() {
   }
 
   async function adjustStat(charId: string, stat: 'str' | 'dex' | 'end', delta: number) {
+    if (!canEdit) return;
     const char = chars.find(x => x.id === charId);
     if (!char || !client) return;
     const maxKey: PhysicalStatKey = stat === 'end' ? 'end_stat' : stat;

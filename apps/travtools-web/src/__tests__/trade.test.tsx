@@ -337,6 +337,12 @@ describe('TradeLedger', () => {
       isConfigured: true,
       configure: vi.fn(),
       reset: vi.fn(),
+      session: null,
+      user: null,
+      canEdit: true,
+      authReady: true,
+      signInWithGoogle: vi.fn(),
+      signOut: vi.fn(),
     });
 
     render(<TradeLedger />);
@@ -353,6 +359,12 @@ describe('TradeLedger', () => {
       isConfigured: true,
       configure: vi.fn(),
       reset: vi.fn(),
+      session: null,
+      user: null,
+      canEdit: true,
+      authReady: true,
+      signInWithGoogle: vi.fn(),
+      signOut: vi.fn(),
     });
 
     render(<TradeLedger />);
@@ -374,6 +386,12 @@ describe('TradeLedger', () => {
       isConfigured: true,
       configure: vi.fn(),
       reset: vi.fn(),
+      session: null,
+      user: null,
+      canEdit: true,
+      authReady: true,
+      signInWithGoogle: vi.fn(),
+      signOut: vi.fn(),
     });
 
     render(<TradeLedger />);
@@ -403,6 +421,12 @@ describe('TradeLedger', () => {
       isConfigured: true,
       configure: vi.fn(),
       reset: vi.fn(),
+      session: null,
+      user: null,
+      canEdit: true,
+      authReady: true,
+      signInWithGoogle: vi.fn(),
+      signOut: vi.fn(),
     });
     vi.spyOn(Math, 'random').mockReturnValue(0.5);
 
@@ -434,6 +458,12 @@ describe('TradeLedger', () => {
       isConfigured: true,
       configure: vi.fn(),
       reset: vi.fn(),
+      session: null,
+      user: null,
+      canEdit: true,
+      authReady: true,
+      signInWithGoogle: vi.fn(),
+      signOut: vi.fn(),
     });
     vi.spyOn(Math, 'random').mockReturnValue(0.5);
 
@@ -465,6 +495,12 @@ describe('TradeLedger', () => {
       isConfigured: true,
       configure: vi.fn(),
       reset: vi.fn(),
+      session: null,
+      user: null,
+      canEdit: true,
+      authReady: true,
+      signInWithGoogle: vi.fn(),
+      signOut: vi.fn(),
     });
     vi.spyOn(Math, 'random').mockReturnValue(0.5);
 

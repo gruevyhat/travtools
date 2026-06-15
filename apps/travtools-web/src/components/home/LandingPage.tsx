@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
 import { COMBAT_MODULE_DISABLED } from '../../lib/moduleFlags';
+import { formatTreasuryCr, runningBalance } from '../../lib/treasury';
 import { CANONICAL_SHIPS } from '../ships/canonicalShips';
 
 interface LandingStats {
@@ -22,6 +23,7 @@ interface LandingStats {
   ships: number | null;
   activeDeals: number | null;
   inventory: number | null;
+  treasuryBalance: number | null;
   latestRoll: string | null;
 }
 
@@ -38,6 +40,7 @@ const INITIAL_STATS: LandingStats = {
   ships: null,
   activeDeals: null,
   inventory: null,
+  treasuryBalance: null,
   latestRoll: null,
 };
 
@@ -63,11 +66,12 @@ export default function LandingPage() {
   const loadStats = useCallback(async () => {
     if (!client) return;
     setLoading(true);
-    const [characters, ships, activeDeals, inventory, latestRoll] = await Promise.all([
+    const [characters, ships, activeDeals, inventory, treasury, latestRoll] = await Promise.all([
       client.from('characters').select('*', { count: 'exact', head: true }),
       client.from('ships').select('*', { count: 'exact', head: true }),
       client.from('trade_deals').select('*', { count: 'exact', head: true }).eq('status', 'active'),
       client.from('inventory_items').select('*', { count: 'exact', head: true }),
+      client.from('party_treasury').select('amount'),
       client
         .from('roll_log')
         .select('character_name,check_label,total,created_at')
@@ -81,6 +85,9 @@ export default function LandingPage() {
       ships: ships.count ?? null,
       activeDeals: activeDeals.count ?? null,
       inventory: inventory.count ?? null,
+      treasuryBalance: treasury.data
+        ? runningBalance((treasury.data as Array<{ amount: number }>).map(row => ({ amount: row.amount })))
+        : null,
       latestRoll: latestRoll.data
         ? `${latestRoll.data.character_name} / ${latestRoll.data.check_label} / ${latestRoll.data.total}`
         : null,
@@ -91,7 +98,7 @@ export default function LandingPage() {
   useEffect(() => {
     loadStats();
     if (!client) return;
-    const tables = ['characters', 'ships', 'trade_deals', 'inventory_items', 'roll_log'];
+    const tables = ['characters', 'ships', 'trade_deals', 'inventory_items', 'party_treasury', 'roll_log'];
     const channels = tables.map(table =>
       client
         .channel(`landing-${table}`)
@@ -137,7 +144,7 @@ export default function LandingPage() {
               Shared campaign operations for roster status, ship plans, trade cargo, party inventory, and table rolls.
             </p>
 
-            <div className="mt-8 grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-2xl">
+            <div className="mt-8 grid grid-cols-2 sm:grid-cols-5 gap-3 max-w-3xl">
               <div className="border border-steel/70 bg-panel/80 px-3 py-3">
                 <div className="text-[10px] text-body/70 tracking-widest">CREW</div>
                 <div className="mt-1 text-2xl font-mono text-amber glow-amber">{displayCount(stats.characters)}</div>
@@ -153,6 +160,12 @@ export default function LandingPage() {
               <div className="border border-steel/70 bg-panel/80 px-3 py-3">
                 <div className="text-[10px] text-body/70 tracking-widest">GEAR</div>
                 <div className="mt-1 text-2xl font-mono text-cyan-trav glow-cyan">{displayCount(stats.inventory)}</div>
+              </div>
+              <div className="border border-steel/70 bg-panel/80 px-3 py-3">
+                <div className="text-[10px] text-body/70 tracking-widest">TREASURY</div>
+                <div className={`mt-1 text-lg font-mono ${stats.treasuryBalance !== null && stats.treasuryBalance < 0 ? 'text-alert' : 'text-safe'}`}>
+                  {stats.treasuryBalance === null ? 'Cr --' : formatTreasuryCr(stats.treasuryBalance)}
+                </div>
               </div>
             </div>
 

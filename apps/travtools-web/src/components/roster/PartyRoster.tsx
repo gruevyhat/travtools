@@ -1882,7 +1882,7 @@ function CharDetailContent({
 // ─── Mobile Card (accordion) ──────────────────────────────────────────────────
 
 function CharCard({
-  char, npcs, onEdit, onDelete, onRollSave, onStatAdjust, onPortraitUpload, uploadingPortrait,
+  char, npcs, onEdit, onDelete, onRollSave, onStatAdjust, onPortraitUpload, uploadingPortrait, canEdit,
 }: {
   char: Character;
   npcs: NpcRecord[];
@@ -1892,6 +1892,7 @@ function CharCard({
   onStatAdjust: (id: string, patch: Partial<Character>) => void;
   onPortraitUpload: (char: Character, file: File) => void;
   uploadingPortrait: boolean;
+  canEdit: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const displayName = charDisplayName(char);
@@ -1907,14 +1908,14 @@ function CharCard({
           <CharacterPortrait
             char={char}
             size="sm"
-            editable
+            editable={canEdit}
             uploading={uploadingPortrait}
             onUpload={file => onPortraitUpload(char, file)}
           />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <div className="text-bright font-bold font-mono text-sm truncate">{displayName}</div>
-              <CharacterActionsMenu onEdit={onEdit} onDelete={onDelete} />
+              {canEdit && <CharacterActionsMenu onEdit={onEdit} onDelete={onDelete} />}
             </div>
             <div className="text-xs text-body/70 mt-0.5 space-x-2">
               {char.rank && <span className="text-amber">{char.rank}</span>}
@@ -1986,7 +1987,7 @@ function CharSidebarRow({
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function PartyRoster() {
-  const { client } = useSupabase();
+  const { client, canEdit } = useSupabase();
   const [chars, setChars] = useState<Character[]>([]);
   const [npcs, setNpcs] = useState<NpcRecord[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -3235,19 +3236,23 @@ export default function PartyRoster() {
             </div>
           </div>
           <div className="flex gap-2">
-            <button type="button" onClick={() => fileRef.current?.click()} title="Import roster CSV" aria-label="Import roster CSV" className="btn-steel w-8 h-8 flex items-center justify-center p-0">
-              <Upload size={14} />
-            </button>
+            {canEdit && (
+              <button type="button" onClick={() => fileRef.current?.click()} title="Import roster CSV" aria-label="Import roster CSV" className="btn-steel w-8 h-8 flex items-center justify-center p-0">
+                <Upload size={14} />
+              </button>
+            )}
             <button type="button" onClick={exportCsv} title="Export roster CSV" aria-label="Export roster CSV" className="btn-steel w-8 h-8 flex items-center justify-center p-0">
               <Download size={14} />
             </button>
-            <button
-              onClick={() => { setForm(EMPTY); setSkillsRaw(''); setTalentsRaw(''); setEditing(null); setShowForm(v => !v); }}
-              title="Add Traveller"
-              aria-label="Add Traveller"
-              className="btn-amber w-8 h-8 flex items-center justify-center p-0">
-              <Plus size={14} />
-            </button>
+            {canEdit && (
+              <button
+                onClick={() => { setForm(EMPTY); setSkillsRaw(''); setTalentsRaw(''); setEditing(null); setShowForm(v => !v); }}
+                title="Add Traveller"
+                aria-label="Add Traveller"
+                className="btn-amber w-8 h-8 flex items-center justify-center p-0">
+                <Plus size={14} />
+              </button>
+            )}
           </div>
         </div>
 
@@ -3263,6 +3268,7 @@ export default function PartyRoster() {
               onStatAdjust={handleStatAdjust}
               onPortraitUpload={uploadPortrait}
               uploadingPortrait={uploadingPortraitId === char.id}
+              canEdit={canEdit}
             />
           ))}
         </div>
@@ -3285,6 +3291,7 @@ export default function PartyRoster() {
               onStatAdjust={handleStatAdjust}
               onPortraitUpload={uploadPortrait}
               uploadingPortrait={uploadingPortraitId === char.id}
+              canEdit={canEdit}
             />
           )) : (
             <div className="text-xs text-body/55 border border-steel/30 px-3 py-4 text-center">No deceased Travellers</div>
@@ -3303,12 +3310,14 @@ export default function PartyRoster() {
               <div className="text-[10px] text-body/55 font-mono">{activeChars.length} ACTIVE</div>
             </div>
             <div className="flex gap-1">
-              <button type="button" onClick={() => fileRef.current?.click()}
-                title="Import roster CSV"
-                aria-label="Import roster CSV"
-                className="btn-steel w-7 h-7 flex items-center justify-center p-0">
-                <Upload size={12} />
-              </button>
+              {canEdit && (
+                <button type="button" onClick={() => fileRef.current?.click()}
+                  title="Import roster CSV"
+                  aria-label="Import roster CSV"
+                  className="btn-steel w-7 h-7 flex items-center justify-center p-0">
+                  <Upload size={12} />
+                </button>
+              )}
               <button type="button" onClick={exportCsv}
                 title="Export roster CSV"
                 aria-label="Export roster CSV"
@@ -3317,13 +3326,15 @@ export default function PartyRoster() {
               </button>
             </div>
           </div>
-          <div className="p-2 border-b border-steel/50 flex-shrink-0">
-            <button
-              onClick={() => { setForm(EMPTY); setSkillsRaw(''); setTalentsRaw(''); setEditing(null); setShowForm(true); selectChar(null); }}
-              className="btn-amber w-full flex items-center justify-center gap-1 text-xs">
-              <Plus size={12} /> ADD CHARACTER
-            </button>
-          </div>
+          {canEdit && (
+            <div className="p-2 border-b border-steel/50 flex-shrink-0">
+              <button
+                onClick={() => { setForm(EMPTY); setSkillsRaw(''); setTalentsRaw(''); setEditing(null); setShowForm(true); selectChar(null); }}
+                className="btn-amber w-full flex items-center justify-center gap-1 text-xs">
+                <Plus size={12} /> ADD CHARACTER
+              </button>
+            </div>
+          )}
 
           <div className="flex-1 overflow-y-auto">
             {activeChars.map(char => (
@@ -3363,7 +3374,7 @@ export default function PartyRoster() {
                 <div className="absolute right-0 top-0 hidden lg:block">
                   <CharacterPortrait
                     char={selectedChar}
-                    editable
+                    editable={canEdit}
                     uploading={uploadingPortraitId === selectedChar.id}
                     onUpload={file => uploadPortrait(selectedChar, file)}
                   />
@@ -3374,10 +3385,10 @@ export default function PartyRoster() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <div className="text-bright font-bold font-mono text-xl truncate">{charDisplayName(selectedChar)}</div>
-                      <CharacterActionsMenu
+                      {canEdit && <CharacterActionsMenu
                         onEdit={() => startEdit(selectedChar)}
                         onDelete={() => deleteChar(selectedChar.id)}
-                      />
+                      />}
                     </div>
                     <div className="text-xs text-body/70 mt-1 flex flex-wrap gap-x-2">
                       {selectedChar.rank && <span className="text-amber">{selectedChar.rank}</span>}

@@ -10,7 +10,7 @@ import {
   PARTY_OWNER_LABEL,
   type InventoryCharacter,
 } from '../lib/inventory';
-import type { InventoryItem } from '../types';
+import type { InventoryItem, PartyTreasuryTransaction } from '../types';
 import * as SupabaseContext from '../lib/supabaseContext';
 
 const baseItems: InventoryItem[] = [
@@ -74,13 +74,20 @@ const rosterCharacters: InventoryCharacter[] = [
   },
 ];
 
-function makeInventoryClient(initialItems: InventoryItem[] = [], initialCharacters: InventoryCharacter[] = []) {
+function makeInventoryClient(
+  initialItems: InventoryItem[] = [],
+  initialCharacters: InventoryCharacter[] = [],
+  initialTreasury: PartyTreasuryTransaction[] = [],
+) {
   let items = [...initialItems];
   const characters = [...initialCharacters];
+  let treasury = [...initialTreasury];
   const order = vi.fn(async () => ({ data: items, error: null }));
   const select = vi.fn(() => ({ order }));
   const characterOrder = vi.fn(async () => ({ data: characters, error: null }));
   const characterSelect = vi.fn(() => ({ order: characterOrder }));
+  const treasuryOrder = vi.fn(async () => ({ data: treasury, error: null }));
+  const treasurySelect = vi.fn(() => ({ order: treasuryOrder }));
   const single = vi.fn(async () => ({ data: null, error: null }));
   const insert = vi.fn((payload: Omit<InventoryItem, 'id' | 'created_at'>) => ({
     select: vi.fn(() => ({
@@ -90,6 +97,36 @@ function makeInventoryClient(initialItems: InventoryItem[] = [], initialCharacte
         return { data: row, error: null };
       }),
     })),
+  }));
+  const insertTreasury = vi.fn((payload: Omit<PartyTreasuryTransaction, 'id' | 'created_at'> | Array<Omit<PartyTreasuryTransaction, 'id' | 'created_at'>>) => ({
+    select: vi.fn(() => {
+      if (Array.isArray(payload)) {
+        return Promise.resolve({
+          data: payload.map((row, index) => {
+            const inserted = {
+              id: `treasury-new-${index}`,
+              created_at: `2026-01-02T00:00:0${index}Z`,
+              ...row,
+            } as PartyTreasuryTransaction;
+            treasury = [...treasury, inserted];
+            return inserted;
+          }),
+          error: null,
+        });
+      }
+
+      return {
+        single: vi.fn(async () => {
+          const row = {
+            id: 'treasury-new',
+            created_at: '2026-01-02T00:00:00Z',
+            ...payload,
+          } as PartyTreasuryTransaction;
+          treasury = [...treasury, row];
+          return { data: row, error: null };
+        }),
+      };
+    }),
   }));
   const update = vi.fn((payload: Partial<InventoryItem>) => ({
     eq: vi.fn((_: string, id: string) => ({
@@ -116,9 +153,11 @@ function makeInventoryClient(initialItems: InventoryItem[] = [], initialCharacte
 
   return {
     client: {
-      from: vi.fn((table: string) => table === 'characters'
-        ? { select: characterSelect }
-        : { select, insert, update, delete: deleteFn }),
+      from: vi.fn((table: string) => {
+        if (table === 'characters') return { select: characterSelect };
+        if (table === 'party_treasury') return { select: treasurySelect, insert: insertTreasury };
+        return { select, insert, update, delete: deleteFn };
+      }),
       channel: vi.fn(() => ({
         on: vi.fn().mockReturnThis(),
         subscribe: vi.fn(),
@@ -126,6 +165,7 @@ function makeInventoryClient(initialItems: InventoryItem[] = [], initialCharacte
       removeChannel: vi.fn(),
     },
     insert,
+    insertTreasury,
     select,
     characterSelect,
     single,
@@ -184,6 +224,12 @@ describe('InventoryManager', () => {
       isConfigured: true,
       configure: vi.fn(),
       reset: vi.fn(),
+      session: null,
+      user: null,
+      canEdit: true,
+      authReady: true,
+      signInWithGoogle: vi.fn(),
+      signOut: vi.fn(),
     });
 
     render(<InventoryManager />);
@@ -201,6 +247,12 @@ describe('InventoryManager', () => {
       isConfigured: true,
       configure: vi.fn(),
       reset: vi.fn(),
+      session: null,
+      user: null,
+      canEdit: true,
+      authReady: true,
+      signInWithGoogle: vi.fn(),
+      signOut: vi.fn(),
     });
 
     render(<InventoryManager />);
@@ -223,6 +275,12 @@ describe('InventoryManager', () => {
       isConfigured: true,
       configure: vi.fn(),
       reset: vi.fn(),
+      session: null,
+      user: null,
+      canEdit: true,
+      authReady: true,
+      signInWithGoogle: vi.fn(),
+      signOut: vi.fn(),
     });
 
     render(<InventoryManager />);
@@ -246,6 +304,12 @@ describe('InventoryManager', () => {
       isConfigured: true,
       configure: vi.fn(),
       reset: vi.fn(),
+      session: null,
+      user: null,
+      canEdit: true,
+      authReady: true,
+      signInWithGoogle: vi.fn(),
+      signOut: vi.fn(),
     });
 
     render(<InventoryManager />);
@@ -259,5 +323,95 @@ describe('InventoryManager', () => {
     expect((screen.getByLabelText('Weight (kg each)') as HTMLInputElement).value).toBe('1');
     expect((screen.getByLabelText('Value (Cr each)') as HTMLInputElement).value).toBe('1500');
     expect((screen.getByLabelText('Notes') as HTMLInputElement).value).toContain('Core Rules p.114');
+  });
+
+  it('shows party treasury balance and adds a transaction', async () => {
+    const mock = makeInventoryClient([], rosterCharacters, [
+      {
+        id: 'treasury-1',
+        created_at: '2026-01-01T00:00:00Z',
+        amount: 10000,
+        type: 'income',
+        description: 'Starting stake',
+        character_id: null,
+        session_ref: 'Session 1',
+      },
+    ]);
+    vi.spyOn(SupabaseContext, 'useSupabase').mockReturnValue({
+      client: mock.client as never,
+      isConfigured: true,
+      configure: vi.fn(),
+      reset: vi.fn(),
+      session: null,
+      user: null,
+      canEdit: true,
+      authReady: true,
+      signInWithGoogle: vi.fn(),
+      signOut: vi.fn(),
+    });
+
+    render(<InventoryManager />);
+
+    expect(await screen.findByText('PARTY TREASURY')).toBeTruthy();
+    expect(screen.getAllByText('Cr 10,000').length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole('button', { name: /TRANSACTION/i }));
+    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '2500' } });
+    fireEvent.change(screen.getByLabelText('Type'), { target: { value: 'expense' } });
+    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Dock fees' } });
+    fireEvent.click(screen.getByRole('button', { name: /SAVE/i }));
+
+    await waitFor(() => {
+      expect(mock.insertTreasury).toHaveBeenCalledWith(expect.objectContaining({
+        amount: -2500,
+        type: 'expense',
+        description: 'Dock fees',
+      }));
+    });
+    expect(await screen.findByText('Dock fees')).toBeTruthy();
+  });
+
+  it('posts a loot split with party income and character share payouts', async () => {
+    const secondCharacter: InventoryCharacter = {
+      ...rosterCharacters[0],
+      id: 'char-2',
+      name: 'Belen Shaw',
+      player: 'Jesse',
+      weapons: [],
+      armour: [],
+      personal_equipment: [],
+      augments: [],
+    };
+    const mock = makeInventoryClient([], [rosterCharacters[0], secondCharacter]);
+    vi.spyOn(SupabaseContext, 'useSupabase').mockReturnValue({
+      client: mock.client as never,
+      isConfigured: true,
+      configure: vi.fn(),
+      reset: vi.fn(),
+      session: null,
+      user: null,
+      canEdit: true,
+      authReady: true,
+      signInWithGoogle: vi.fn(),
+      signOut: vi.fn(),
+    });
+
+    render(<InventoryManager />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /SPLIT LOOT/i }));
+    fireEvent.change(screen.getByLabelText('Loot Total'), { target: { value: '10001' } });
+    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Recovered cargo' } });
+    expect(screen.getByText('Cr 5,000')).toBeTruthy();
+    expect(screen.getByText('Cr 1')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /POST SPLIT/i }));
+
+    await waitFor(() => {
+      expect(mock.insertTreasury).toHaveBeenCalledWith([
+        expect.objectContaining({ amount: 10001, type: 'loot', description: 'Recovered cargo', character_id: null }),
+        expect.objectContaining({ amount: -5000, type: 'share', description: 'Recovered cargo share', character_id: 'char-1' }),
+        expect.objectContaining({ amount: -5000, type: 'share', description: 'Recovered cargo share', character_id: 'char-2' }),
+      ]);
+    });
+    expect(await screen.findByText('Recovered cargo')).toBeTruthy();
   });
 });

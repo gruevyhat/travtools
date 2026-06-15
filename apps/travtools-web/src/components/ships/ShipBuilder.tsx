@@ -452,7 +452,7 @@ function designManifestRows(d: ShipDesignState, s: ShipDesignSummary) {
 // ── canonical ship detail view ───────────────────────────────────────────────
 
 function CanonicalShipDetail({
-  ship, preset, onAddToFleet, addingToFleet, addedToFleet, fleetError,
+  ship, preset, onAddToFleet, addingToFleet, addedToFleet, fleetError, canEdit,
 }: {
   ship: CanonicalShip;
   preset: ShipPreset | null;
@@ -460,6 +460,7 @@ function CanonicalShipDetail({
   addingToFleet: boolean;
   addedToFleet: boolean;
   fleetError: string | null;
+  canEdit: boolean;
 }) {
   const specs = ship.defaultSpecs ?? {};
   const Component = ship.Component;
@@ -485,14 +486,16 @@ function CanonicalShipDetail({
           </div>
         </div>
         <div className="flex gap-2 flex-shrink-0 flex-wrap">
-          <button onClick={onAddToFleet} disabled={addingToFleet}
-            className="btn-amber flex items-center gap-1 text-xs py-1 px-2">
-            {addedToFleet
-              ? <><CheckCircle2 size={12} /> IN FLEET</>
-              : addingToFleet
-                ? 'ADDING...'
-                : <><Anchor size={12} /> ADD TO FLEET</>}
-          </button>
+          {canEdit && (
+            <button onClick={onAddToFleet} disabled={addingToFleet}
+              className="btn-amber flex items-center gap-1 text-xs py-1 px-2">
+              {addedToFleet
+                ? <><CheckCircle2 size={12} /> IN FLEET</>
+                : addingToFleet
+                  ? 'ADDING...'
+                  : <><Anchor size={12} /> ADD TO FLEET</>}
+            </button>
+          )}
         </div>
       </div>
 
@@ -576,7 +579,7 @@ function CanonicalShipDetail({
 // ── design detail view ────────────────────────────────────────────────────────
 
 function DesignDetail({
-  design, onDelete, onUploadDiagram, uploadingDiagram, uploadError, onAddToFleet, addingToFleet, addedToFleet, fleetError,
+  design, onDelete, onUploadDiagram, uploadingDiagram, uploadError, onAddToFleet, addingToFleet, addedToFleet, fleetError, canEdit,
 }: {
   design: ShipDesign;
   onDelete: () => void;
@@ -587,6 +590,7 @@ function DesignDetail({
   addingToFleet: boolean;
   addedToFleet: boolean;
   fleetError: string | null;
+  canEdit: boolean;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const s = design.summary;
@@ -610,21 +614,25 @@ function DesignDetail({
           </div>
         </div>
         <div className="flex gap-2 flex-shrink-0 flex-wrap">
-          <button onClick={onAddToFleet} disabled={addingToFleet}
-            className="btn-amber flex items-center gap-1 text-xs py-1 px-2">
-            {addedToFleet
-              ? <><CheckCircle2 size={12} /> IN FLEET</>
-              : addingToFleet
-                ? 'ADDING...'
-                : <><Anchor size={12} /> ADD TO FLEET</>}
-          </button>
+          {canEdit && (
+            <button onClick={onAddToFleet} disabled={addingToFleet}
+              className="btn-amber flex items-center gap-1 text-xs py-1 px-2">
+              {addedToFleet
+                ? <><CheckCircle2 size={12} /> IN FLEET</>
+                : addingToFleet
+                  ? 'ADDING...'
+                  : <><Anchor size={12} /> ADD TO FLEET</>}
+            </button>
+          )}
           <button onClick={() => downloadJson(`${(d.name || 'ship-design').replace(/\s+/g,'-').toLowerCase()}.json`, { design: d, summary: s })}
             className="btn-steel flex items-center gap-1 text-xs py-1">
             <Download size={12} /> JSON
           </button>
-          <button onClick={onDelete} className="btn-steel flex items-center gap-1 text-xs py-1 text-alert/80 hover:text-alert">
-            <Trash2 size={12} /> DEL
-          </button>
+          {canEdit && (
+            <button onClick={onDelete} className="btn-steel flex items-center gap-1 text-xs py-1 text-alert/80 hover:text-alert">
+              <Trash2 size={12} /> DEL
+            </button>
+          )}
         </div>
       </div>
 
@@ -664,16 +672,18 @@ function DesignDetail({
                 <div className="label text-cyan-trav">TECHNICAL SCHEMATIC</div>
                 <div className="text-[10px] text-body/45 font-mono">{d.name.toUpperCase()} · {hullConfig.toUpperCase()}</div>
               </div>
-              <button onClick={() => fileRef.current?.click()}
-                disabled={uploadingDiagram}
-                className="btn-steel flex items-center gap-1 text-xs py-1">
-                <Upload size={12} /> {design.diagram_url ? (uploadingDiagram ? 'UPLOADING...' : 'REPLACE DIAGRAM') : (uploadingDiagram ? 'UPLOADING...' : 'UPLOAD DIAGRAM')}
-              </button>
+              {canEdit && (
+                <button onClick={() => fileRef.current?.click()}
+                  disabled={uploadingDiagram}
+                  className="btn-steel flex items-center gap-1 text-xs py-1">
+                  <Upload size={12} /> {design.diagram_url ? (uploadingDiagram ? 'UPLOADING...' : 'REPLACE DIAGRAM') : (uploadingDiagram ? 'UPLOADING...' : 'UPLOAD DIAGRAM')}
+                </button>
+              )}
             </div>
             <div className="flex-1 min-h-80 flex items-center justify-center p-4">
               {design.diagram_url ? (
                 <img src={design.diagram_url} alt={`${d.name} diagram`} className="max-h-[32rem] max-w-full border border-steel/50 bg-void object-contain" />
-              ) : (
+              ) : canEdit ? (
                 <button onClick={() => fileRef.current?.click()}
                   disabled={uploadingDiagram}
                   className="w-full max-w-lg min-h-72 border-2 border-dashed border-steel/50 bg-void/50 text-xs text-body/55 hover:border-cyan-trav hover:text-cyan-trav transition-colors flex flex-col items-center justify-center gap-2">
@@ -681,6 +691,10 @@ function DesignDetail({
                   {uploadingDiagram ? 'UPLOADING...' : 'DROP IN A SHIP DIAGRAM'}
                   <span className="text-[10px]">PNG, JPG, SVG, WEBP</span>
                 </button>
+              ) : (
+                <div className="w-full max-w-lg min-h-72 border-2 border-dashed border-steel/20 bg-void/30 text-xs text-body/30 flex items-center justify-center">
+                  NO DIAGRAM
+                </div>
               )}
             </div>
             <input ref={fileRef} type="file" accept="image/*" className="hidden"
@@ -1207,7 +1221,7 @@ function StepQuarters({ draft, set }: {
   );
 }
 
-function StepReview({ draft, summary, activeId, onSave, saving, saved, saveError, onUploadDiagram, uploadingDiagram, designRecord }: {
+function StepReview({ draft, summary, activeId, onSave, saving, saved, saveError, onUploadDiagram, uploadingDiagram, designRecord, canEdit }: {
   draft: ShipDesignState;
   summary: ShipDesignSummary;
   activeId: string | null;
@@ -1218,6 +1232,7 @@ function StepReview({ draft, summary, activeId, onSave, saving, saved, saveError
   onUploadDiagram: (f: File) => void;
   uploadingDiagram: boolean;
   designRecord: ShipDesign | null;
+  canEdit: boolean;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -1255,31 +1270,33 @@ function StepReview({ draft, summary, activeId, onSave, saving, saved, saveError
         <StatBlockDisplay d={draft} s={summary} />
       </div>
 
-      {/* Diagram upload (only after save) */}
-      <div>
-        <div className="label mb-2">SHIP DIAGRAM</div>
-        {!activeId ? (
-          <div className="text-xs text-body/50 font-mono border border-steel/30 rounded p-3">
-            Save this design first, then upload a diagram.
-          </div>
-        ) : designRecord?.diagram_url ? (
-          <div className="space-y-2">
-            <img src={designRecord.diagram_url} alt="Ship diagram" className="max-w-xs rounded border border-steel/40" />
+      {/* Diagram upload (only after save, only for editors) */}
+      {canEdit && (
+        <div>
+          <div className="label mb-2">SHIP DIAGRAM</div>
+          {!activeId ? (
+            <div className="text-xs text-body/50 font-mono border border-steel/30 rounded p-3">
+              Save this design first, then upload a diagram.
+            </div>
+          ) : designRecord?.diagram_url ? (
+            <div className="space-y-2">
+              <img src={designRecord.diagram_url} alt="Ship diagram" className="max-w-xs rounded border border-steel/40" />
+              <button onClick={() => fileRef.current?.click()} disabled={uploadingDiagram}
+                className="btn-steel flex items-center gap-1 text-xs py-1">
+                <Upload size={12} /> {uploadingDiagram ? 'UPLOADING...' : 'REPLACE'}
+              </button>
+            </div>
+          ) : (
             <button onClick={() => fileRef.current?.click()} disabled={uploadingDiagram}
-              className="btn-steel flex items-center gap-1 text-xs py-1">
-              <Upload size={12} /> {uploadingDiagram ? 'UPLOADING...' : 'REPLACE'}
+              className="w-full sm:w-72 border-2 border-dashed border-steel/40 rounded p-4 text-xs text-body/50 hover:border-steel hover:text-body/70 transition-colors flex flex-col items-center gap-2">
+              <Upload size={18} />
+              {uploadingDiagram ? 'UPLOADING...' : 'CLICK TO UPLOAD DIAGRAM'}
             </button>
-          </div>
-        ) : (
-          <button onClick={() => fileRef.current?.click()} disabled={uploadingDiagram}
-            className="w-full sm:w-72 border-2 border-dashed border-steel/40 rounded p-4 text-xs text-body/50 hover:border-steel hover:text-body/70 transition-colors flex flex-col items-center gap-2">
-            <Upload size={18} />
-            {uploadingDiagram ? 'UPLOADING...' : 'CLICK TO UPLOAD DIAGRAM'}
-          </button>
-        )}
-        <input ref={fileRef} type="file" accept="image/*" className="hidden"
-          onChange={e => { const f = e.target.files?.[0]; if (f) onUploadDiagram(f); e.target.value = ''; }} />
-      </div>
+          )}
+          <input ref={fileRef} type="file" accept="image/*" className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) onUploadDiagram(f); e.target.value = ''; }} />
+        </div>
+      )}
 
       {/* Save + Export */}
       {saveError && (
@@ -1288,10 +1305,12 @@ function StepReview({ draft, summary, activeId, onSave, saving, saved, saveError
         </div>
       )}
       <div className="flex gap-3 flex-wrap">
-        <button onClick={onSave} disabled={saving}
-          className="btn-amber flex items-center gap-2 py-2 px-4">
-          {saved ? <><CheckCircle2 size={14} /> SAVED!</> : saving ? <><Save size={14} /> SAVING...</> : <><Save size={14} /> {activeId ? 'UPDATE DESIGN' : 'SAVE DESIGN'}</>}
-        </button>
+        {canEdit && (
+          <button onClick={onSave} disabled={saving}
+            className="btn-amber flex items-center gap-2 py-2 px-4">
+            {saved ? <><CheckCircle2 size={14} /> SAVED!</> : saving ? <><Save size={14} /> SAVING...</> : <><Save size={14} /> {activeId ? 'UPDATE DESIGN' : 'SAVE DESIGN'}</>}
+          </button>
+        )}
         <button onClick={() => downloadJson(`${(draft.name || 'ship-design').replace(/\s+/g,'-').toLowerCase()}.json`, { design: draft, summary })}
           className="btn-steel flex items-center gap-2 py-2 px-4">
           <Download size={14} /> EXPORT JSON
@@ -1306,7 +1325,7 @@ function StepReview({ draft, summary, activeId, onSave, saving, saved, saveError
 type Mode = 'browse' | 'detail' | 'wizard';
 
 export default function ShipBuilder() {
-  const { client } = useSupabase();
+  const { client, canEdit } = useSupabase();
   const [designs, setDesigns] = useState<ShipDesign[]>([]);
   const [mode, setMode] = useState<Mode>('browse');
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -1526,6 +1545,7 @@ export default function ShipBuilder() {
           onSave={save} saving={saving} saved={saved} saveError={saveError}
           onUploadDiagram={uploadDiagram} uploadingDiagram={uploadingDiagram}
           designRecord={activeDesign}
+          canEdit={canEdit}
         />
       );
       default: return null;
@@ -1536,11 +1556,13 @@ export default function ShipBuilder() {
     <div className="flex h-full overflow-hidden">
       {/* Sidebar — design list */}
       <aside className="w-56 flex-shrink-0 border-r border-steel/50 flex flex-col bg-panel/40">
-        <div className="p-3 border-b border-steel/30">
-          <button onClick={startNew} className="btn-amber w-full flex items-center justify-center gap-1 text-xs py-1.5">
-            <Plus size={13} /> NEW DESIGN
-          </button>
-        </div>
+        {canEdit && (
+          <div className="p-3 border-b border-steel/30">
+            <button onClick={startNew} className="btn-amber w-full flex items-center justify-center gap-1 text-xs py-1.5">
+              <Plus size={13} /> NEW DESIGN
+            </button>
+          </div>
+        )}
         <div className="flex-1 overflow-auto">
           <div className="px-3 pt-3 pb-1 text-[10px] text-cyan-trav tracking-[0.2em] font-mono">CANONICAL</div>
           {CANONICAL_SHIPS.map(ship => {
@@ -1597,14 +1619,16 @@ export default function ShipBuilder() {
                     {d.design.tonnage}t · J{d.design.j_drive}/M{d.design.m_drive}
                   </div>
                 </button>
-                <button type="button"
-                  onClick={() => startEdit(d)}
-                  aria-label={`Edit ${d.name || 'Unnamed'} design`}
-                  title="Edit design"
-                  className="w-10 flex-shrink-0 flex items-center justify-center text-body/45 hover:text-amber focus:text-amber transition-colors"
-                >
-                  <Settings size={13} />
-                </button>
+                {canEdit && (
+                  <button type="button"
+                    onClick={() => startEdit(d)}
+                    aria-label={`Edit ${d.name || 'Unnamed'} design`}
+                    title="Edit design"
+                    className="w-10 flex-shrink-0 flex items-center justify-center text-body/45 hover:text-amber focus:text-amber transition-colors"
+                  >
+                    <Settings size={13} />
+                  </button>
+                )}
               </div>
             ))
           )}
@@ -1630,6 +1654,7 @@ export default function ShipBuilder() {
             addingToFleet={addingToFleet}
             addedToFleet={addedToFleet}
             fleetError={fleetError}
+            canEdit={canEdit}
           />
         )}
 
@@ -1644,6 +1669,7 @@ export default function ShipBuilder() {
             addingToFleet={addingToFleet}
             addedToFleet={addedToFleet}
             fleetError={fleetError}
+            canEdit={canEdit}
           />
         )}
 

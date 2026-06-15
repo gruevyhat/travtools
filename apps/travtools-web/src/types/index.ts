@@ -110,6 +110,18 @@ export interface InventoryItem {
   created_at: string;
 }
 
+export type PartyTreasuryTransactionType = 'income' | 'expense' | 'loot' | 'share' | 'trade';
+
+export interface PartyTreasuryTransaction {
+  id: string;
+  created_at: string;
+  amount: number;
+  type: PartyTreasuryTransactionType;
+  description: string;
+  character_id: string | null;
+  session_ref: string | null;
+}
+
 export interface Skill {
   name: string;
   level: number;

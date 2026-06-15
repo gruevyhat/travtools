@@ -12,6 +12,12 @@ describe('SetupScreen', () => {
       reset: vi.fn(),
       client: null,
       isConfigured: false,
+      session: null,
+      user: null,
+      canEdit: false,
+      authReady: true,
+      signInWithGoogle: vi.fn(),
+      signOut: vi.fn(),
     });
 
     render(<SetupScreen />);
@@ -33,6 +39,12 @@ describe('SetupScreen', () => {
       reset: vi.fn(),
       client: null,
       isConfigured: false,
+      session: null,
+      user: null,
+      canEdit: false,
+      authReady: true,
+      signInWithGoogle: vi.fn(),
+      signOut: vi.fn(),
     });
 
     render(<SetupScreen />);

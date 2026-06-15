@@ -29,6 +29,7 @@ import {
   searchCoreEquipment,
 } from '../../data/equipment';
 import NumberStepper from '../shared/NumberStepper';
+import PartyTreasuryPanel from './PartyTreasuryPanel';
 
 type ItemForm = Omit<InventoryItem, 'id' | 'created_at'>;
 
@@ -53,7 +54,7 @@ function Field({ name, children }: { name: string; children: React.ReactNode }) 
 }
 
 export default function InventoryManager() {
-  const { client } = useSupabase();
+  const { client, canEdit } = useSupabase();
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [characters, setCharacters] = useState<InventoryCharacter[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -85,7 +86,7 @@ export default function InventoryManager() {
     if (!client) return;
     const { data, error } = await client
       .from('characters')
-      .select('id,name,player,created_at,weapons,armour,personal_equipment,augments')
+      .select('id,name,player,status,created_at,weapons,armour,personal_equipment,augments')
       .order('name');
     if (error) {
       setErrorMessage('Roster equipment could not be loaded.');
@@ -348,6 +349,7 @@ export default function InventoryManager() {
   return (
     <div className="p-4 space-y-4 h-full overflow-auto">
       <input ref={csvImportRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleCsvImport} />
+      <PartyTreasuryPanel characters={characters} />
       {/* Summary */}
       <div className="grid grid-cols-3 gap-4">
         {[
@@ -372,33 +374,37 @@ export default function InventoryManager() {
           <option value="">All categories</option>
           {INVENTORY_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
-        {selectedIds.length > 0 && (
+        {canEdit && selectedIds.length > 0 && (
           <button onClick={deleteSelectedItems} className="btn-danger flex items-center gap-1">
             <Trash2 size={13} /> DELETE {selectedIds.length}
           </button>
         )}
         <div className="flex-1" />
-        <button type="button" onClick={() => csvImportRef.current?.click()} className="btn-steel flex items-center gap-1">
-          <Upload size={13} /> IMPORT CSV
-        </button>
+        {canEdit && (
+          <button type="button" onClick={() => csvImportRef.current?.click()} className="btn-steel flex items-center gap-1">
+            <Upload size={13} /> IMPORT CSV
+          </button>
+        )}
         <button type="button" onClick={exportCsv} className="btn-steel flex items-center gap-1">
           <Download size={13} /> EXPORT CSV
         </button>
-        <button
-          onClick={() => {
-            setForm(EMPTY);
-            resetOwnerControls();
-            setEditing(null);
-            setShowForm(v => {
-              const next = !v;
-              setShowEquipmentReference(next);
-              return next;
-            });
-          }}
-          className="btn-amber flex items-center gap-1"
-        >
-          <Plus size={13} /> ADD ITEM
-        </button>
+        {canEdit && (
+          <button
+            onClick={() => {
+              setForm(EMPTY);
+              resetOwnerControls();
+              setEditing(null);
+              setShowForm(v => {
+                const next = !v;
+                setShowEquipmentReference(next);
+                return next;
+              });
+            }}
+            className="btn-amber flex items-center gap-1"
+          >
+            <Plus size={13} /> ADD ITEM
+          </button>
+        )}
       </div>
 
       {errorMessage && (
@@ -573,8 +579,9 @@ export default function InventoryManager() {
                   type="checkbox"
                   aria-label="Select all visible inventory items"
                   checked={allVisibleSelected}
+                  disabled={!canEdit}
                   onChange={toggleAllVisible}
-                  className="accent-amber"
+                  className="accent-amber disabled:opacity-20 disabled:cursor-not-allowed"
                 />
               </th>
               <th className="table-header">Item</th>
@@ -596,7 +603,7 @@ export default function InventoryManager() {
                     type="checkbox"
                     aria-label={`Select ${item.name}`}
                     checked={!item.readOnly && selectedIds.includes(item.id)}
-                    disabled={item.readOnly}
+                    disabled={item.readOnly || !canEdit}
                     onChange={() => toggleSelected(item.id)}
                     className="accent-amber disabled:opacity-20 disabled:cursor-not-allowed"
                   />
@@ -611,7 +618,7 @@ export default function InventoryManager() {
                   )}
                 </td>
                 <td className="table-cell">
-                  {item.readOnly ? (
+                  {item.readOnly || !canEdit ? (
                     <div className="text-right font-mono text-amber">{item.quantity}</div>
                   ) : (
                     <div className="flex items-center justify-end gap-1 select-none">
@@ -661,8 +668,8 @@ export default function InventoryManager() {
                   </span>
                 </td>
                 <td className="table-cell">
-                  {item.readOnly ? (
-                    <div className="text-right text-[10px] text-body/45 font-mono">ROSTER</div>
+                  {item.readOnly || !canEdit ? (
+                    <div className="text-right text-[10px] text-body/45 font-mono">{item.readOnly ? 'ROSTER' : ''}</div>
                   ) : (
                     <div className="flex gap-1 justify-end">
                       <button onClick={() => startEdit(item)} className="btn-steel text-xs px-2 py-0.5">EDIT</button>

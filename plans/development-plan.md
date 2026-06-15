@@ -36,7 +36,7 @@ Travtools is an unofficial fan tool for a private campaign. It is not affiliated
 | 7 | Depth | Campaign-depth additions: combat, journal, analytics, richer refs | In Progress |
 | 8 | Arbitrary Dice Notation Roller | Free-form dice expressions in global tools | Implemented |
 | 9 | Ship Builder | Guided spacecraft construction and Fleet integration | In Progress |
-| 10 | Party Treasury & Loot Shares | Shared credits ledger and split-loot workflow | Backlog |
+| 10 | Party Treasury & Loot Shares | Shared credits ledger and split-loot workflow | In Progress |
 | 11 | Full Trade Mini-Game | Complete passenger, freight, and speculative-trade workflow | Implemented |
 | 12 | Ammunition Tracking | Persistent weapon ammo and magazine tracking | Complete |
 | 13 | Quick Character Generator | Fast NPC generation from Core Rules quick-character tables | Shipped as NPC route |
@@ -784,27 +784,28 @@ CREATE TABLE party_treasury (
 ### Features
 
 **Party Balance header card** (shown at top of the Inventory Manager route and as a landing dashboard stat)
-- Running balance = Σ all `amount` values
-- Last transaction timestamp
+- [x] Running balance = Σ all `amount` values
+- [x] Last transaction timestamp
 
 **Transaction log** (tabular, newest first)
-- Columns: Date, Type chip (colour-coded), Description, Character, Amount (green/red), Running Balance
-- Filter by type and by session ref
+- [x] Columns: Date, Type chip (colour-coded), Description, Character, Amount (green/red), Running Balance
+- [x] Filter by type and by session ref
 - Pagination (100 per page, LOAD MORE)
 
 **Add Transaction form**
-- Amount (positive for income, negative for expense, or use separate +/− toggle)
-- Type selector: Income / Expense / Loot / Trade Payout
-- Description (free text)
-- Character attribution (optional — select from roster)
-- Session label (free text, defaults to most recent session label used)
+- [x] Amount entry; Expense and Share post as negative party-fund transactions
+- [x] Type selector: Income / Expense / Loot / Trade Payout
+- [x] Description (free text)
+- [x] Character attribution (optional — select from roster)
+- [x] Session label (free text)
 
 **Split Loot action**
-- Enter total loot value (Credits)
-- Select participating characters (defaults to all active party members)
-- Shows per-character share (integer floor, remainder stays in party funds)
-- On confirm: creates one `loot` transaction for the total and one `share` credit transaction per character; optionally updates each character's `finances.cash` field
-- Supabase realtime broadcasts the split so all players see it immediately
+- [x] Enter total loot value (Credits)
+- [x] Select participating characters (defaults to all active party members)
+- [x] Shows per-character share (integer floor, remainder stays in party funds)
+- [x] On confirm: creates one `loot` transaction for the total and one negative `share` payout transaction per character
+- [ ] Optional: update each character's `finances.cash` field from split payouts
+- [x] Supabase realtime broadcasts the split so all players see it immediately
 
 **Integration hooks**
 - Trade Ledger: on marking a deal SOLD, show "Add profit to party treasury?" prompt
@@ -812,11 +813,11 @@ CREATE TABLE party_treasury (
 - Passenger/Freight tab (M11): completing a run adds fares automatically
 
 **Tests**
-- [ ] Unit: `runningBalance(transactions)` sums amounts correctly including negatives
-- [ ] Unit: `splitLoot(total, participantCount)` returns correct per-share and remainder
-- [ ] Unit: filter by type and session ref
-- [ ] Component: add transaction form submits; balance updates optimistically
-- [ ] Component: split loot modal shows correct per-character share; confirms creates correct transaction count
+- [x] Unit: `runningBalance(transactions)` sums amounts correctly including negatives
+- [x] Unit: `splitLoot(total, participantCount)` returns correct per-share and remainder
+- [x] Unit: filter by type and session ref
+- [x] Component: add transaction form submits; balance updates
+- [x] Component: split loot modal shows correct per-character share; confirms creates correct transaction count
 - [ ] E2E smoke: add income, add expense, verify balance; split loot, verify character entries appear
 
 ---

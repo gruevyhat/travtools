@@ -21,7 +21,7 @@ export function relTime(iso: string): string {
 }
 
 export default function RollLog() {
-  const { client } = useSupabase();
+  const { client, canEdit } = useSupabase();
   const [entries, setEntries] = useState<RollLogEntry[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
@@ -103,7 +103,7 @@ export default function RollLog() {
 
         <div className="flex-1" />
 
-        {confirmClear ? (
+        {canEdit && (confirmClear ? (
           <div className="flex items-center gap-2">
             <span className="text-xs text-alert font-mono">
               Clear {entries.length} roll{entries.length !== 1 ? 's' : ''}?
@@ -119,7 +119,7 @@ export default function RollLog() {
           <button type="button" onClick={() => setConfirmClear(true)} className="btn-danger flex items-center gap-1">
             <Trash2 size={13} /> CLEAR LOG
           </button>
-        )}
+        ))}
       </div>
 
       {errorMessage && (

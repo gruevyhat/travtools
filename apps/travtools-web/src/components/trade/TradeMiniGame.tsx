@@ -149,6 +149,7 @@ interface TradeSessionPanelProps {
   onCreateDeals: (payloads: TradeDealDraft[]) => Promise<void>;
   onUpdateDeal: (id: string, patch: Partial<TradeDeal>) => Promise<void>;
   busy?: boolean;
+  canEdit?: boolean;
 }
 
 interface PassengersFreightPanelProps {
@@ -741,7 +742,7 @@ const TRADE_STEPS = [
   { id: 'sell', label: 'SELL' },
 ] as const;
 
-export function TradeSessionPanel({ deals, characters = [], onCreateDeals, onUpdateDeal, busy = false }: TradeSessionPanelProps) {
+export function TradeSessionPanel({ deals, characters = [], onCreateDeals, onUpdateDeal, busy = false, canEdit = true }: TradeSessionPanelProps) {
   const [source, setSource] = useState<WorldProfile>(DEFAULT_SOURCE);
   const [destination, setDestination] = useState<WorldProfile>(DEFAULT_DESTINATION);
   const [sessionRef, setSessionRef] = useState('Session Trade Run');
@@ -1265,7 +1266,7 @@ export function TradeSessionPanel({ deals, characters = [], onCreateDeals, onUpd
                 <button type="button" onClick={priceCart} disabled={cart.length === 0} className="btn-steel text-xs flex items-center gap-1">
                   <Dice5 size={13} /> PRICE
                 </button>
-                <button type="button" onClick={purchaseCart} disabled={busy || cart.length === 0} className="btn-amber text-xs flex items-center gap-1">
+                <button type="button" onClick={purchaseCart} disabled={!canEdit || busy || cart.length === 0} className="btn-amber text-xs flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed">
                   <Check size={13} /> PURCHASE ALL
                 </button>
                 {cart.length > 0 && <span className="text-[11px] font-mono text-body/55">{cart.length} item{cart.length !== 1 ? 's' : ''}</span>}
@@ -1403,9 +1404,11 @@ export function TradeSessionPanel({ deals, characters = [], onCreateDeals, onUpd
             <section className="panel overflow-hidden">
               <div className="panel-header flex items-center justify-between gap-3">
                 <span>SELL CARGO</span>
-                <button type="button" onClick={priceActiveDeals} className="btn-amber text-xs flex items-center gap-1">
-                  <Dice5 size={13} /> PRICE ACTIVE DEALS
-                </button>
+                {canEdit && (
+                  <button type="button" onClick={priceActiveDeals} className="btn-amber text-xs flex items-center gap-1">
+                    <Dice5 size={13} /> PRICE ACTIVE DEALS
+                  </button>
+                )}
               </div>
               <div className="p-3 border-b border-steel/30">
                 <BrokerSelector
@@ -1450,7 +1453,7 @@ export function TradeSessionPanel({ deals, characters = [], onCreateDeals, onUpd
                           )}
                         </td>
                         <td className="table-cell text-right">
-                          <button type="button" onClick={() => sellQuotedDeal(quote)} disabled={busy} className="btn-amber text-xs">SELL</button>
+                          <button type="button" onClick={() => sellQuotedDeal(quote)} disabled={!canEdit || busy} className="btn-amber text-xs disabled:opacity-40 disabled:cursor-not-allowed">SELL</button>
                         </td>
                       </tr>
                     ))}

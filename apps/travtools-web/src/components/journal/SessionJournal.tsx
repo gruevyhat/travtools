@@ -8,7 +8,7 @@ function relDate(iso: string): string {
 }
 
 export default function SessionJournal() {
-  const { client } = useSupabase();
+  const { client, canEdit } = useSupabase();
   const [entries, setEntries] = useState<SessionJournalEntry[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
@@ -98,9 +98,11 @@ export default function SessionJournal() {
           {entries.length} SESSION{entries.length !== 1 ? 'S' : ''} RECORDED
         </div>
         <div className="flex-1" />
-        <button type="button" onClick={createSession} className="btn-amber flex items-center gap-1 text-xs">
-          <Plus size={12} /> NEW SESSION
-        </button>
+        {canEdit && (
+          <button type="button" onClick={createSession} className="btn-amber flex items-center gap-1 text-xs">
+            <Plus size={12} /> NEW SESSION
+          </button>
+        )}
       </div>
 
       {errorMessage && (
@@ -113,7 +115,7 @@ export default function SessionJournal() {
       {entries.length === 0 && (
         <div className="text-center py-16 text-body/65 text-sm space-y-2">
           <div className="text-4xl opacity-20">📓</div>
-          <div>No sessions recorded yet. Create a new session to start taking notes.</div>
+          <div>No sessions recorded yet.{canEdit ? ' Create a new session to start taking notes.' : ''}</div>
         </div>
       )}
 
@@ -142,14 +144,18 @@ export default function SessionJournal() {
                 {isOpen ? <ChevronUp size={13} className="text-body/50 flex-shrink-0" /> : <ChevronDown size={13} className="text-body/50 flex-shrink-0" />}
               </button>
 
-              {/* Expanded edit area */}
+              {/* Expanded area */}
               {isOpen && (
                 <div className="border-t border-steel/40 px-4 py-3 space-y-3">
                   <div className="space-y-1">
                     <label className="label">SESSION NAME</label>
-                    <input className="input text-sm" value={editName}
+                    <input
+                      className="input text-sm"
+                      value={editName}
+                      readOnly={!canEdit}
                       onChange={e => setEditName(e.target.value)}
-                      onBlur={saveEntry} />
+                      onBlur={() => canEdit && saveEntry()}
+                    />
                   </div>
 
                   <div className="space-y-1">
@@ -157,34 +163,37 @@ export default function SessionJournal() {
                     <textarea
                       className="input min-h-[240px] resize-y text-sm font-mono leading-relaxed"
                       value={editContent}
+                      readOnly={!canEdit}
                       onChange={e => setEditContent(e.target.value)}
-                      onBlur={saveEntry}
-                      placeholder="Session notes, plot hooks, NPC names, loot found…"
+                      onBlur={() => canEdit && saveEntry()}
+                      placeholder={canEdit ? 'Session notes, plot hooks, NPC names, loot found…' : ''}
                     />
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <button type="button" onClick={saveEntry} disabled={saving}
-                      className="btn-amber text-xs flex items-center gap-1">
-                      <Check size={12} />
-                      {saving ? 'SAVING…' : 'SAVE'}
-                    </button>
-
-                    {confirmDelete === entry.id ? (
-                      <>
-                        <span className="text-xs text-alert font-mono">Delete this session?</span>
-                        <button type="button" onClick={() => deleteEntry(entry.id)}
-                          className="btn-danger text-xs">CONFIRM</button>
-                        <button type="button" onClick={() => setConfirmDelete(null)}
-                          className="btn-steel text-xs">CANCEL</button>
-                      </>
-                    ) : (
-                      <button type="button" onClick={() => setConfirmDelete(entry.id)}
-                        className="btn-danger flex items-center gap-1 text-xs ml-auto">
-                        <Trash2 size={12} /> DELETE
+                  {canEdit && (
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={saveEntry} disabled={saving}
+                        className="btn-amber text-xs flex items-center gap-1">
+                        <Check size={12} />
+                        {saving ? 'SAVING…' : 'SAVE'}
                       </button>
-                    )}
-                  </div>
+
+                      {confirmDelete === entry.id ? (
+                        <>
+                          <span className="text-xs text-alert font-mono">Delete this session?</span>
+                          <button type="button" onClick={() => deleteEntry(entry.id)}
+                            className="btn-danger text-xs">CONFIRM</button>
+                          <button type="button" onClick={() => setConfirmDelete(null)}
+                            className="btn-steel text-xs">CANCEL</button>
+                        </>
+                      ) : (
+                        <button type="button" onClick={() => setConfirmDelete(entry.id)}
+                          className="btn-danger flex items-center gap-1 text-xs ml-auto">
+                          <Trash2 size={12} /> DELETE
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

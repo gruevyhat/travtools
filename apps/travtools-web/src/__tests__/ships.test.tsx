@@ -87,6 +87,12 @@ describe('ship helpers', () => {
       isConfigured: true,
       configure: vi.fn(),
       reset: vi.fn(),
+      session: null,
+      user: null,
+      canEdit: true,
+      authReady: true,
+      signInWithGoogle: vi.fn(),
+      signOut: vi.fn(),
     });
 
     const { container } = render(<ShipViewer />);
@@ -116,6 +122,12 @@ describe('ShipViewer', () => {
       isConfigured: true,
       configure: vi.fn(),
       reset: vi.fn(),
+      session: null,
+      user: null,
+      canEdit: true,
+      authReady: true,
+      signInWithGoogle: vi.fn(),
+      signOut: vi.fn(),
     });
 
     render(<ShipViewer />);
@@ -134,6 +146,12 @@ describe('ShipViewer', () => {
       isConfigured: true,
       configure: vi.fn(),
       reset: vi.fn(),
+      session: null,
+      user: null,
+      canEdit: true,
+      authReady: true,
+      signInWithGoogle: vi.fn(),
+      signOut: vi.fn(),
     });
 
     const { container } = render(<ShipViewer />);
@@ -157,6 +175,12 @@ describe('ShipViewer', () => {
       isConfigured: true,
       configure: vi.fn(),
       reset: vi.fn(),
+      session: null,
+      user: null,
+      canEdit: true,
+      authReady: true,
+      signInWithGoogle: vi.fn(),
+      signOut: vi.fn(),
     });
 
     render(<ShipViewer />);
@@ -174,6 +198,12 @@ describe('ShipViewer', () => {
       isConfigured: true,
       configure: vi.fn(),
       reset: vi.fn(),
+      session: null,
+      user: null,
+      canEdit: true,
+      authReady: true,
+      signInWithGoogle: vi.fn(),
+      signOut: vi.fn(),
     });
 
     render(<ShipViewer />);
@@ -203,6 +233,12 @@ describe('ShipViewer', () => {
       isConfigured: true,
       configure: vi.fn(),
       reset: vi.fn(),
+      session: null,
+      user: null,
+      canEdit: true,
+      authReady: true,
+      signInWithGoogle: vi.fn(),
+      signOut: vi.fn(),
     });
 
     render(<ShipViewer />);
@@ -224,6 +260,12 @@ describe('ShipViewer', () => {
       isConfigured: true,
       configure: vi.fn(),
       reset: vi.fn(),
+      session: null,
+      user: null,
+      canEdit: true,
+      authReady: true,
+      signInWithGoogle: vi.fn(),
+      signOut: vi.fn(),
     });
 
     const { container } = render(<ShipViewer />);
@@ -257,6 +299,12 @@ describe('ShipBuilder', () => {
       isConfigured: true,
       configure: vi.fn(),
       reset: vi.fn(),
+      session: null,
+      user: null,
+      canEdit: true,
+      authReady: true,
+      signInWithGoogle: vi.fn(),
+      signOut: vi.fn(),
     });
 
     const { container } = render(<ShipBuilder />);
@@ -285,6 +333,12 @@ describe('ShipBuilder', () => {
       isConfigured: true,
       configure: vi.fn(),
       reset: vi.fn(),
+      session: null,
+      user: null,
+      canEdit: true,
+      authReady: true,
+      signInWithGoogle: vi.fn(),
+      signOut: vi.fn(),
     });
 
     render(<ShipBuilder />);
