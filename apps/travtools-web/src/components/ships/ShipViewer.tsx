@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Minus, Plus, Trash2, Upload, Tag, X, Settings } from 'lucide-react';
+import { Minus, Plus, Trash2, Upload, X, Settings } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
-import { Ship, ShipSpecs, Annotation, ShipDamageTrackers, ShipAmmoTracker, ShipSoftwareEntry, ShipSystemEntry } from '../../types';
+import { Ship, ShipSpecs, ShipDamageTrackers, ShipAmmoTracker, ShipSoftwareEntry, ShipSystemEntry } from '../../types';
 import { CANONICAL_SHIPS } from './canonicalShips';
-import { annotationPosition, removeAnnotationById, sortShips } from '../../lib/ships';
+import { sortShips } from '../../lib/ships';
 import { OPTIONAL_SYSTEMS, SOFTWARE } from '../../data/shipComponents';
 import NumberStepper from '../shared/NumberStepper';
 
@@ -64,8 +64,6 @@ interface ShipRecordPanelProps {
   onCanonicalChange: (id: string) => void;
   onSchematicTypeChange: (type: Ship['schematic_type']) => void;
   onUploadImage: () => void;
-  onSave: () => void;
-  onReset: () => void;
 }
 
 interface ShipDamagePanelProps {
@@ -94,6 +92,7 @@ interface ShipManifestPanelProps {
   editable: boolean;
   specsForm: ShipSpecs;
   onSpecsChange: (specs: ShipSpecs) => void;
+  onStartEditWithSpecs: (specs: ShipSpecs) => void;
 }
 
 function hasSpecValues(specs: ShipSpecs | null) {
@@ -259,19 +258,61 @@ function clampDamageValue(value: number, max?: number) {
 
 function fleetManifestRows(specs: ShipSpecs) {
   return [
-    { section: 'Drives', detail: `Jump-${specs.j_drive ?? '-'} / Thrust-${specs.m_drive ?? '-'}`, metric: specs.fuel_tons ? `${specs.fuel_tons}t fuel` : '-' },
-    { section: 'Power', detail: specs.power_plant ? `Plant output ${specs.power_plant}` : 'Power plant not recorded', metric: specs.tech_level ? `TL${specs.tech_level}` : '-' },
-    { section: 'Bridge', detail: specs.bridge_tons ? `${specs.bridge_tons}t bridge and ship controls` : 'Bridge not recorded', metric: specs.hull_config ?? '-' },
-    { section: 'Protection', detail: specs.armour_rating ? `Armour rating ${specs.armour_rating}` : 'Unarmoured or unknown', metric: specs.hull_rating ? `${specs.hull_rating} HP` : '-' },
-    { section: 'Weapons', detail: specs.turrets ? `${specs.turrets} turret${specs.turrets === 1 ? '' : 's'} or mount entries` : 'No mounts recorded', metric: specs.turrets ?? '-' },
-    { section: 'Crew', detail: specs.crew_notes || 'Crew requirements not recorded', metric: specs.staterooms ? `${specs.staterooms} rooms` : '-' },
-    { section: 'Berths', detail: `${specs.low_berths ?? 0} low berths`, metric: specs.cargo_tons ? `${specs.cargo_tons}t cargo` : '-' },
+    {
+      section: 'Drives',
+      values: [
+        ['Jump', specs.j_drive == null ? '-' : `J-${specs.j_drive}`],
+        ['Thrust', specs.m_drive == null ? '-' : `M-${specs.m_drive}`],
+        ['Fuel', specs.fuel_tons ? `${specs.fuel_tons}t` : '-'],
+      ],
+    },
+    {
+      section: 'Power',
+      values: [
+        ['Plant', specs.power_plant ?? '-'],
+        ['Tech Level', specs.tech_level ? `TL${specs.tech_level}` : '-'],
+      ],
+    },
+    {
+      section: 'Bridge',
+      values: [
+        ['Bridge', specs.bridge_tons ? `${specs.bridge_tons}t` : '-'],
+        ['Hull Config', specs.hull_config ?? '-'],
+      ],
+    },
+    {
+      section: 'Protection',
+      values: [
+        ['Armour', specs.armour_rating ?? '-'],
+        ['Hull HP', specs.hull_rating ? `${specs.hull_rating} HP` : '-'],
+      ],
+    },
+    {
+      section: 'Weapons',
+      values: [
+        ['Turrets', specs.turrets ?? '-'],
+      ],
+    },
+    {
+      section: 'Crew',
+      values: [
+        ['Crew', specs.crew_notes || 'Not recorded'],
+        ['Staterooms', specs.staterooms ?? '-'],
+      ],
+    },
+    {
+      section: 'Berths & Cargo',
+      values: [
+        ['Low Berths', specs.low_berths ?? 0],
+        ['Cargo', specs.cargo_tons ? `${specs.cargo_tons}t` : '-'],
+      ],
+    },
   ];
 }
 
 function ShipRecordPanel({
   ship, specs, editable, identityForm, specsForm, onIdentityChange, onSpecsChange,
-  onCanonicalChange, onSchematicTypeChange, onUploadImage, onSave, onReset,
+  onCanonicalChange, onSchematicTypeChange, onUploadImage,
 }: ShipRecordPanelProps) {
   const hasSpecs = hasSpecValues(specs);
   const identityRows = [
@@ -296,12 +337,6 @@ function ShipRecordPanel({
             {editable ? 'Editing fleet identity and technical traits' : hasSpecs ? 'Fleet identity and traits' : 'No specs recorded yet'}
           </div>
         </div>
-        {editable && (
-          <div className="flex gap-2 flex-shrink-0">
-            <button type="button" onClick={onReset} className="btn-steel text-xs py-1 px-2">RESET</button>
-            <button type="button" onClick={onSave} className="btn-amber text-xs py-1 px-2">SAVE SHIP RECORD</button>
-          </div>
-        )}
       </div>
       {editable ? (
         <div className="grid grid-cols-2 gap-2 p-3 text-xs">
@@ -427,7 +462,7 @@ function ShipRecordPanel({
           </div>
         </div>
       ) : (
-        <div className="p-3 text-xs text-body/55 font-mono">Click the ship row cog to edit this record.</div>
+        <div className="p-3 text-xs text-body/55 font-mono">Click the ship-name cog to edit this record.</div>
       )}
     </div>
   );
@@ -649,18 +684,22 @@ function ShipAmmoPanel({
   );
 }
 
-function ShipManifestPanel({ specs, editable, specsForm, onSpecsChange }: ShipManifestPanelProps) {
+function ShipManifestPanel({ specs, editable, specsForm, onSpecsChange, onStartEditWithSpecs }: ShipManifestPanelProps) {
   const activeSpecs = editable ? normalizeShipSpecs(specsForm) : normalizeShipSpecs(specs);
   const systems = normalizeShipSystemEntries(activeSpecs.systems);
   const software = normalizeShipSoftwareEntries(activeSpecs.software);
   const manifestRows = fleetManifestRows(activeSpecs);
 
   function updateSystems(nextSystems: ShipSystemEntry[]) {
-    onSpecsChange({ ...activeSpecs, systems: nextSystems });
+    const nextSpecs = { ...activeSpecs, systems: nextSystems };
+    if (editable) onSpecsChange(nextSpecs);
+    else onStartEditWithSpecs(nextSpecs);
   }
 
   function updateSoftware(nextSoftware: ShipSoftwareEntry[]) {
-    onSpecsChange({ ...activeSpecs, software: nextSoftware });
+    const nextSpecs = { ...activeSpecs, software: nextSoftware };
+    if (editable) onSpecsChange(nextSpecs);
+    else onStartEditWithSpecs(nextSpecs);
   }
 
   function addSystem() {
@@ -692,34 +731,33 @@ function ShipManifestPanel({ specs, editable, specsForm, onSpecsChange }: ShipMa
             Core capabilities, installed systems, and software loadout
           </div>
         </div>
-        {editable && (
-          <div className="flex gap-2">
-            <button type="button" onClick={addSystem} className="btn-steel text-xs py-1 px-2 inline-flex items-center gap-1">
-              <Plus size={10} /> ADD SYSTEM
-            </button>
-            <button type="button" onClick={addSoftware} className="btn-steel text-xs py-1 px-2 inline-flex items-center gap-1">
-              <Plus size={10} /> ADD SOFTWARE
-            </button>
-          </div>
-        )}
       </div>
 
       <div className="p-3 space-y-3">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
           {manifestRows.map(row => (
             <div key={row.section} className="border border-steel/30 bg-void/45 px-3 py-2 text-xs min-w-0">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-amber font-mono tracking-wider">{row.section}</div>
-                <div className="text-cyan-trav font-mono text-right">{row.metric}</div>
+              <div className="text-amber font-mono tracking-wider mb-2">{row.section}</div>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                {row.values.map(([label, value]) => (
+                  <div key={String(label)} className="min-w-0">
+                    <div className="text-[9px] text-body/45 font-mono tracking-wider">{String(label).toUpperCase()}</div>
+                    <div className="text-cyan-trav font-mono truncate">{value}</div>
+                  </div>
+                ))}
               </div>
-              <div className="text-body/70 min-w-0 break-words mt-1 leading-5">{row.detail}</div>
             </div>
           ))}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           <div className="border border-steel/30 bg-void/35">
-            <div className="border-b border-steel/25 px-3 py-2 label text-cyan-trav/80">ADDITIONAL SYSTEMS</div>
+            <div className="border-b border-steel/25 px-3 py-2 flex items-center justify-between gap-2">
+              <div className="label text-cyan-trav/80">ADDITIONAL SYSTEMS</div>
+              <button type="button" onClick={addSystem} className="btn-steel text-xs py-1 px-2 inline-flex items-center gap-1">
+                <Plus size={10} /> ADD SYSTEM
+              </button>
+            </div>
             {editable ? (
               <div className="p-3 space-y-2">
                 <datalist id="ship-system-presets">
@@ -727,35 +765,47 @@ function ShipManifestPanel({ specs, editable, specsForm, onSpecsChange }: ShipMa
                 </datalist>
                 {systems.length > 0 ? systems.map((entry, index) => (
                   <div key={entry.id} className="grid grid-cols-[minmax(0,1fr)_7.5rem_1.5rem] gap-2">
-                    <input
-                      aria-label={`System name ${index + 1}`}
-                      className="input py-1 text-xs"
-                      list="ship-system-presets"
-                      value={entry.name}
-                      onChange={e => updateSystems(systems.map(system => system.id === entry.id ? { ...system, name: e.target.value } : system))}
-                    />
-                    <NumberStepper
-                      ariaLabel={`System quantity ${index + 1}`}
-                      inputClassName="input py-1 text-xs"
-                      min={1}
-                      value={entry.quantity ?? 1}
-                      onChange={value => updateSystems(systems.map(system => system.id === entry.id ? { ...system, quantity: Math.max(1, parseInt(value || '1', 10)) } : system))}
-                    />
-                    <button
-                      type="button"
-                      aria-label={`Remove system ${entry.name || index + 1}`}
-                      onClick={() => updateSystems(systems.filter(system => system.id !== entry.id))}
-                      className="border border-steel/50 text-body/60 hover:border-alert hover:text-alert flex items-center justify-center"
-                    >
-                      <Trash2 size={10} />
-                    </button>
-                    <input
-                      aria-label={`System notes ${index + 1}`}
-                      className="input py-1 text-xs col-span-3"
-                      placeholder="Notes..."
-                      value={entry.notes ?? ''}
-                      onChange={e => updateSystems(systems.map(system => system.id === entry.id ? { ...system, notes: e.target.value || null } : system))}
-                    />
+                    <label className="block space-y-0.5">
+                      <span className="text-[9px] text-body/45 font-mono tracking-wider">NAME</span>
+                      <input
+                        aria-label={`System name ${index + 1}`}
+                        className="input py-1 text-xs"
+                        list="ship-system-presets"
+                        value={entry.name}
+                        onChange={e => updateSystems(systems.map(system => system.id === entry.id ? { ...system, name: e.target.value } : system))}
+                      />
+                    </label>
+                    <label className="block space-y-0.5">
+                      <span className="text-[9px] text-body/45 font-mono tracking-wider">QTY</span>
+                      <NumberStepper
+                        ariaLabel={`System quantity ${index + 1}`}
+                        inputClassName="input py-1 text-xs"
+                        min={1}
+                        value={entry.quantity ?? 1}
+                        onChange={value => updateSystems(systems.map(system => system.id === entry.id ? { ...system, quantity: Math.max(1, parseInt(value || '1', 10)) } : system))}
+                      />
+                    </label>
+                    <label className="block space-y-0.5">
+                      <span className="text-[9px] text-body/45 font-mono tracking-wider">REMOVE</span>
+                      <button
+                        type="button"
+                        aria-label={`Remove system ${entry.name || index + 1}`}
+                        onClick={() => updateSystems(systems.filter(system => system.id !== entry.id))}
+                        className="h-[30px] w-full border border-steel/50 text-body/60 hover:border-alert hover:text-alert flex items-center justify-center"
+                      >
+                        <Trash2 size={10} />
+                      </button>
+                    </label>
+                    <label className="block space-y-0.5 col-span-3">
+                      <span className="text-[9px] text-body/45 font-mono tracking-wider">NOTES</span>
+                      <input
+                        aria-label={`System notes ${index + 1}`}
+                        className="input py-1 text-xs"
+                        placeholder="Notes..."
+                        value={entry.notes ?? ''}
+                        onChange={e => updateSystems(systems.map(system => system.id === entry.id ? { ...system, notes: e.target.value || null } : system))}
+                      />
+                    </label>
                   </div>
                 )) : (
                   <div className="text-xs text-body/55 font-mono border border-dashed border-steel/30 p-3">No additional systems recorded.</div>
@@ -779,7 +829,12 @@ function ShipManifestPanel({ specs, editable, specsForm, onSpecsChange }: ShipMa
           </div>
 
           <div className="border border-steel/30 bg-void/35">
-            <div className="border-b border-steel/25 px-3 py-2 label text-cyan-trav/80">SOFTWARE</div>
+            <div className="border-b border-steel/25 px-3 py-2 flex items-center justify-between gap-2">
+              <div className="label text-cyan-trav/80">SOFTWARE</div>
+              <button type="button" onClick={addSoftware} className="btn-steel text-xs py-1 px-2 inline-flex items-center gap-1">
+                <Plus size={10} /> ADD SOFTWARE
+              </button>
+            </div>
             {editable ? (
               <div className="p-3 space-y-2">
                 <datalist id="ship-software-presets">
@@ -787,35 +842,47 @@ function ShipManifestPanel({ specs, editable, specsForm, onSpecsChange }: ShipMa
                 </datalist>
                 {software.length > 0 ? software.map((entry, index) => (
                   <div key={entry.id} className="grid grid-cols-[minmax(0,1fr)_7.5rem_1.5rem] gap-2">
-                    <input
-                      aria-label={`Software name ${index + 1}`}
-                      className="input py-1 text-xs"
-                      list="ship-software-presets"
-                      value={entry.name}
-                      onChange={e => updateSoftware(software.map(program => program.id === entry.id ? { ...program, name: e.target.value } : program))}
-                    />
-                    <NumberStepper
-                      ariaLabel={`Software rating ${index + 1}`}
-                      inputClassName="input py-1 text-xs"
-                      min={0}
-                      value={entry.rating ?? ''}
-                      onChange={value => updateSoftware(software.map(program => program.id === entry.id ? { ...program, rating: value === '' ? null : Math.max(0, parseInt(value, 10)) } : program))}
-                    />
-                    <button
-                      type="button"
-                      aria-label={`Remove software ${entry.name || index + 1}`}
-                      onClick={() => updateSoftware(software.filter(program => program.id !== entry.id))}
-                      className="border border-steel/50 text-body/60 hover:border-alert hover:text-alert flex items-center justify-center"
-                    >
-                      <Trash2 size={10} />
-                    </button>
-                    <input
-                      aria-label={`Software notes ${index + 1}`}
-                      className="input py-1 text-xs col-span-3"
-                      placeholder="Notes..."
-                      value={entry.notes ?? ''}
-                      onChange={e => updateSoftware(software.map(program => program.id === entry.id ? { ...program, notes: e.target.value || null } : program))}
-                    />
+                    <label className="block space-y-0.5">
+                      <span className="text-[9px] text-body/45 font-mono tracking-wider">NAME</span>
+                      <input
+                        aria-label={`Software name ${index + 1}`}
+                        className="input py-1 text-xs"
+                        list="ship-software-presets"
+                        value={entry.name}
+                        onChange={e => updateSoftware(software.map(program => program.id === entry.id ? { ...program, name: e.target.value } : program))}
+                      />
+                    </label>
+                    <label className="block space-y-0.5">
+                      <span className="text-[9px] text-body/45 font-mono tracking-wider">RATING</span>
+                      <NumberStepper
+                        ariaLabel={`Software rating ${index + 1}`}
+                        inputClassName="input py-1 text-xs"
+                        min={0}
+                        value={entry.rating ?? ''}
+                        onChange={value => updateSoftware(software.map(program => program.id === entry.id ? { ...program, rating: value === '' ? null : Math.max(0, parseInt(value, 10)) } : program))}
+                      />
+                    </label>
+                    <label className="block space-y-0.5">
+                      <span className="text-[9px] text-body/45 font-mono tracking-wider">REMOVE</span>
+                      <button
+                        type="button"
+                        aria-label={`Remove software ${entry.name || index + 1}`}
+                        onClick={() => updateSoftware(software.filter(program => program.id !== entry.id))}
+                        className="h-[30px] w-full border border-steel/50 text-body/60 hover:border-alert hover:text-alert flex items-center justify-center"
+                      >
+                        <Trash2 size={10} />
+                      </button>
+                    </label>
+                    <label className="block space-y-0.5 col-span-3">
+                      <span className="text-[9px] text-body/45 font-mono tracking-wider">NOTES</span>
+                      <input
+                        aria-label={`Software notes ${index + 1}`}
+                        className="input py-1 text-xs"
+                        placeholder="Notes..."
+                        value={entry.notes ?? ''}
+                        onChange={e => updateSoftware(software.map(program => program.id === entry.id ? { ...program, notes: e.target.value || null } : program))}
+                      />
+                    </label>
                   </div>
                 )) : (
                   <div className="text-xs text-body/55 font-mono border border-dashed border-steel/30 p-3">No software recorded.</div>
@@ -847,18 +914,14 @@ export default function ShipViewer() {
   const { client } = useSupabase();
   const [ships, setShips] = useState<Ship[]>([]);
   const [selected, setSelected] = useState<Ship | null>(null);
-  const [annotating, setAnnotating] = useState(false);
-  const [newLabel, setNewLabel] = useState('');
-  const [pendingPos, setPendingPos] = useState<{ x: number; y: number } | null>(null);
-  const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [specsForm, setSpecsForm] = useState<ShipSpecs>({});
   const [damageForm, setDamageForm] = useState<ShipDamageTrackers>(normalizeShipDamage(null));
   const [damageInput, setDamageInput] = useState('');
   const [ammoForm, setAmmoForm] = useState<ShipAmmoTracker[]>([]);
   const [identityForm, setIdentityForm] = useState<ShipIdentityForm>(identityFormFromShip(null));
+  const [notesForm, setNotesForm] = useState('');
   const [editingRecord, setEditingRecord] = useState(false);
-  const schematicRef = useRef<HTMLDivElement>(null);
   const replaceImageRef = useRef<HTMLInputElement>(null);
   const ammoFormRef = useRef<ShipAmmoTracker[]>([]);
   const selectedShipId = selected?.id ?? null;
@@ -898,21 +961,16 @@ export default function ShipViewer() {
 
   function selectShip(ship: Ship) {
     setSelected(ship);
-    setAnnotating(false);
-    setPendingPos(null);
-    setSelectedAnnotationId(null);
     setEditingRecord(false);
     setDamageInput('');
   }
 
   function startEditShip(ship: Ship) {
     setSelected(ship);
-    setAnnotating(false);
-    setPendingPos(null);
-    setSelectedAnnotationId(null);
     setEditingRecord(true);
     setIdentityForm(identityFormFromShip(ship));
     setSpecsForm(effectiveShipSpecs(ship));
+    setNotesForm(ship.notes ?? '');
     setDamageForm(normalizeShipDamage(ship.damage));
     setDamageInput('');
   }
@@ -921,6 +979,7 @@ export default function ShipViewer() {
     if (!editingRecord) {
       setIdentityForm(identityFormFromShip(selected));
       setSpecsForm(effectiveShipSpecs(selected));
+      setNotesForm(selected?.notes ?? '');
     }
   }, [selected, editingRecord]);
 
@@ -949,58 +1008,6 @@ export default function ShipViewer() {
       setShips(previousShips);
       setSelected(previousSelected);
       setErrorMessage(`Ship could not be deleted: ${error.message}`);
-    }
-  }
-
-  function handleSchematicClick(e: React.MouseEvent) {
-    if (!editingRecord || !annotating || !schematicRef.current) return;
-    const rect = schematicRef.current.getBoundingClientRect();
-    setPendingPos(annotationPosition(e.clientX, e.clientY, rect));
-    setSelectedAnnotationId(null);
-  }
-
-  async function saveAnnotation() {
-    if (!editingRecord || !client || !selected || !pendingPos || !newLabel.trim()) return;
-    const annotation: Annotation = { id: uuid(), x: pendingPos.x, y: pendingPos.y, label: newLabel.trim() };
-    const updated = [...(selected.annotations || []), annotation];
-    const updatedShip = { ...selected, annotations: updated };
-    updateShipInState(updatedShip);
-    setPendingPos(null);
-    setNewLabel('');
-
-    const { error } = await client.from('ships').update({ annotations: updated }).eq('id', selected.id);
-    if (error) {
-      setErrorMessage(`Annotation could not be saved: ${error.message}`);
-      loadShips();
-    }
-  }
-
-  async function removeAnnotation(annotationId: string) {
-    if (!editingRecord || !client || !selected) return;
-    const updated = removeAnnotationById(selected.annotations || [], annotationId);
-    const updatedShip = { ...selected, annotations: updated };
-    updateShipInState(updatedShip);
-    setSelectedAnnotationId(null);
-
-    const { error } = await client.from('ships').update({ annotations: updated }).eq('id', selected.id);
-    if (error) {
-      setErrorMessage(`Annotation could not be removed: ${error.message}`);
-      loadShips();
-    }
-  }
-
-  function updateSelectedNotes(notes: string) {
-    if (!editingRecord || !selected) return;
-    updateShipInState({ ...selected, notes });
-  }
-
-  async function saveNotes() {
-    if (!editingRecord || !client || !selected) return;
-    const notes = selected.notes?.trim() ? selected.notes : null;
-    const { error } = await client.from('ships').update({ notes }).eq('id', selected.id);
-    if (error) {
-      setErrorMessage(`Ship notes could not be saved: ${error.message}`);
-      loadShips();
     }
   }
 
@@ -1038,6 +1045,23 @@ export default function ShipViewer() {
     if (def?.defaultSpecs) setSpecsForm({ ...def.defaultSpecs });
   }
 
+  function startEditWithSpecs(nextSpecs: ShipSpecs) {
+    if (!selected) return;
+    setEditingRecord(true);
+    setIdentityForm(identityFormFromShip(selected));
+    setSpecsForm(normalizeShipSpecs(nextSpecs));
+    setNotesForm(selected.notes ?? '');
+  }
+
+  function cancelEditShip() {
+    if (!selected) return;
+    setIdentityForm(identityFormFromShip(selected));
+    setSpecsForm(effectiveShipSpecs(selected));
+    setNotesForm(selected.notes ?? '');
+    setEditingRecord(false);
+    setErrorMessage(null);
+  }
+
   async function saveShipRecord() {
     if (!editingRecord || !client || !selected) return;
     const name = identityForm.name.trim();
@@ -1057,6 +1081,7 @@ export default function ShipViewer() {
       canonical_id: schematicType === 'canonical' ? identityForm.canonical_id || null : null,
       image_url: schematicType === 'custom' ? identityForm.image_url.trim() || null : null,
       specs,
+      notes: notesForm.trim() ? notesForm : null,
     };
 
     updateShipInState({ ...selected, ...payload });
@@ -1068,6 +1093,7 @@ export default function ShipViewer() {
     }
 
     setErrorMessage(null);
+    setEditingRecord(false);
   }
 
   async function persistDamage(nextDamage: ShipDamageTrackers) {
@@ -1200,55 +1226,6 @@ export default function ShipViewer() {
     setErrorMessage(null);
   }
 
-  function renderAnnotations() {
-    return (selected?.annotations || []).map(ann => {
-      const isSelected = selectedAnnotationId === ann.id;
-
-      return (
-        <div
-          key={ann.id}
-          className="absolute group z-10"
-          style={{ left: `${ann.x}%`, top: `${ann.y}%`, transform: 'translate(-50%, -50%)' }}
-        >
-          <button
-            type="button"
-            aria-label={`Annotation ${ann.label}`}
-            title={ann.label}
-            onClick={e => {
-              e.stopPropagation();
-              setSelectedAnnotationId(current => current === ann.id ? null : ann.id);
-            }}
-            className={`block h-3 w-3 rounded-full border border-void shadow shadow-black/40 transition-colors ${
-              isSelected ? 'bg-cyan-trav ring-2 ring-cyan-trav/40' : 'bg-amber hover:bg-amber-bright'
-            }`}
-          />
-          <div
-            className={`absolute left-1/2 top-full mt-2 -translate-x-1/2 whitespace-nowrap border bg-void/95 px-2 py-1 text-xs font-mono shadow-lg transition-opacity ${
-              isSelected
-                ? 'border-cyan-trav text-cyan-trav opacity-100'
-                : 'border-amber/70 text-amber opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
-            }`}
-          >
-            <span>{ann.label}</span>
-            {editingRecord && isSelected && (
-              <button
-                type="button"
-                aria-label={`Delete annotation ${ann.label}`}
-                onClick={e => {
-                  e.stopPropagation();
-                  removeAnnotation(ann.id);
-                }}
-                className="ml-2 align-middle text-alert/80 hover:text-alert"
-              >
-                <X size={9} />
-              </button>
-            )}
-          </div>
-        </div>
-      );
-    });
-  }
-
   const selectedSpecs = effectiveShipSpecs(selected);
   const selectedDamage = normalizeShipDamage(selected?.damage);
   const selectedAmmo = normalizeShipAmmo(selected?.ammo);
@@ -1287,15 +1264,6 @@ export default function ShipViewer() {
                   </div>
                 </button>
                 <button
-                  type="button"
-                  onClick={() => startEditShip(ship)}
-                  className="text-body/45 hover:text-amber focus:text-amber transition-all pl-3"
-                  aria-label={`Edit ${ship.name} ship`}
-                  title="Edit ship"
-                >
-                  <Settings size={12} />
-                </button>
-                <button
                   onClick={() => deleteShip(ship.id)}
                   className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-alert/60 hover:text-alert transition-all pl-3"
                   aria-label={`Delete ${ship.name}`}
@@ -1331,7 +1299,20 @@ export default function ShipViewer() {
                 <div className="text-[10px] text-cyan-trav tracking-[0.25em] font-mono">
                   FLEET SHIP <span className={editingRecord ? 'text-amber' : 'text-body/45'}>{editingRecord ? 'EDITING' : 'LOCKED'}</span>
                 </div>
-                <div className="text-bright font-display text-xl tracking-wide truncate">{selected.name}</div>
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="text-bright font-display text-xl tracking-wide truncate">{selected.name}</div>
+                  {!editingRecord && (
+                    <button
+                      type="button"
+                      onClick={() => startEditShip(selected)}
+                      className="h-7 w-7 flex-shrink-0 border border-steel/50 text-body/60 hover:border-amber hover:text-amber flex items-center justify-center transition-colors"
+                      aria-label={`Edit ${selected.name} ship`}
+                      title="Edit ship"
+                    >
+                      <Settings size={13} />
+                    </button>
+                  )}
+                </div>
                 <div className="text-xs text-body/60 font-mono mt-0.5">
                   {selected.ship_class ?? selectedCanonical?.ship_class ?? (selected.schematic_type === 'canonical' ? 'Canonical' : 'Custom')}
                   {' · '}{selected.tonnage ?? '?'}t
@@ -1341,18 +1322,14 @@ export default function ShipViewer() {
               </div>
               <div className="flex gap-2 flex-shrink-0 flex-wrap">
                 {editingRecord && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingRecord(false);
-                      setAnnotating(false);
-                      setPendingPos(null);
-                      setSelectedAnnotationId(null);
-                    }}
-                    className="btn-amber text-xs flex items-center gap-1"
-                  >
-                    DONE
-                  </button>
+                  <>
+                    <button type="button" onClick={saveShipRecord} className="btn-amber text-xs flex items-center gap-1">
+                      SAVE
+                    </button>
+                    <button type="button" onClick={cancelEditShip} className="btn-steel text-xs flex items-center gap-1">
+                      CANCEL
+                    </button>
+                  </>
                 )}
                 {editingRecord && selected.schematic_type === 'custom' && (
                   <>
@@ -1365,39 +1342,8 @@ export default function ShipViewer() {
                     </button>
                   </>
                 )}
-                {editingRecord && (
-                  <button
-                    onClick={() => { setAnnotating(v => !v); setPendingPos(null); setSelectedAnnotationId(null); }}
-                    className={`btn text-xs flex items-center gap-1 ${annotating ? 'btn-amber' : 'btn-steel'}`}
-                  >
-                    <Tag size={11} />
-                    {annotating ? 'STOP LABELLING' : 'LABEL'}
-                  </button>
-                )}
               </div>
             </div>
-
-            {editingRecord && annotating && !pendingPos && (
-              <div className="bg-amber/10 border-b border-amber/30 px-4 py-2 text-xs text-amber">
-                Click anywhere on the schematic to add a label.
-              </div>
-            )}
-
-            {/* Pending annotation form */}
-            {editingRecord && pendingPos && (
-              <div className="bg-panel border-b border-steel px-4 py-2 flex items-center gap-3">
-                <input
-                  autoFocus
-                  className="input text-xs py-1 flex-1"
-                  placeholder="Label text..."
-                  value={newLabel}
-                  onChange={e => setNewLabel(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') saveAnnotation(); if (e.key === 'Escape') setPendingPos(null); }}
-                />
-                <button onClick={saveAnnotation} className="btn-amber text-xs">SAVE</button>
-                <button onClick={() => setPendingPos(null)} className="btn-steel text-xs">CANCEL</button>
-              </div>
-            )}
 
             {/* Ship record + schematic */}
             <div className="flex-1 overflow-auto p-4">
@@ -1445,40 +1391,31 @@ export default function ShipViewer() {
                   <section className="border border-cyan-trav/25 bg-panel/30 min-h-[24rem] flex flex-col">
                     <div className="border-b border-cyan-trav/20 px-3 py-2 flex items-center justify-between gap-3">
                       <div>
-                        <div className="label text-cyan-trav">ANNOTATABLE SCHEMATIC</div>
+                        <div className="label text-cyan-trav">SCHEMATIC</div>
                         <div className="text-[10px] text-body/45 font-mono">
                           {selected.schematic_type === 'canonical'
                             ? `${selected.ship_class ?? selectedCanonical?.ship_class ?? 'Canonical'} · ${(selectedCanonical?.name ?? selected.canonical_id ?? 'Unassigned').toUpperCase()}`
                             : 'CUSTOM SHIP RECORD'}
                         </div>
                       </div>
-                      <div className="text-[10px] text-body/45 font-mono">
-                        {(selected.annotations ?? []).length} label{(selected.annotations ?? []).length === 1 ? '' : 's'}
-                      </div>
                     </div>
 
                     <div className="flex-1 min-h-80 overflow-auto p-4 flex items-start justify-center">
                       {selected.schematic_type === 'canonical' && selectedCanonical ? (
                         <div
-                          ref={schematicRef}
-                          className={`relative w-full max-w-5xl border border-steel bg-void ${editingRecord && annotating ? 'cursor-crosshair' : ''}`}
-                          onClick={handleSchematicClick}
+                          className="relative w-full max-w-5xl border border-steel bg-void"
                         >
                           <selectedCanonical.Component />
-                          {renderAnnotations()}
                         </div>
                       ) : selected.image_url ? (
                         <div
-                          ref={schematicRef}
-                          className={`relative inline-block max-w-full border border-steel bg-void ${editingRecord && annotating ? 'cursor-crosshair' : ''}`}
-                          onClick={handleSchematicClick}
+                          className="relative inline-block max-w-full border border-steel bg-void"
                         >
                           <img
                             src={selected.image_url}
                             alt={selected.name}
                             className="block max-w-full"
                           />
-                          {renderAnnotations()}
                         </div>
                       ) : (
                         <div className="flex items-center justify-center h-72 w-full text-body/65 text-sm border border-steel bg-void">
@@ -1493,6 +1430,7 @@ export default function ShipViewer() {
                     editable={editingRecord}
                     specsForm={specsForm}
                     onSpecsChange={setSpecsForm}
+                    onStartEditWithSpecs={startEditWithSpecs}
                   />
                   <section className="border border-steel/50 bg-panel/45">
                     <div className="border-b border-steel/40 px-3 py-2 label">SHIP NOTES</div>
@@ -1502,9 +1440,8 @@ export default function ShipViewer() {
                           id="ship-notes"
                           aria-label="Ship Notes"
                           className="input min-h-36 resize-y"
-                          value={selected.notes ?? ''}
-                          onChange={e => updateSelectedNotes(e.target.value)}
-                          onBlur={saveNotes}
+                          value={notesForm}
+                          onChange={e => setNotesForm(e.target.value)}
                         />
                       </div>
                     ) : (
@@ -1527,11 +1464,6 @@ export default function ShipViewer() {
                     onCanonicalChange={handleCanonicalChange}
                     onSchematicTypeChange={handleSchematicTypeChange}
                     onUploadImage={() => replaceImageRef.current?.click()}
-                    onSave={saveShipRecord}
-                    onReset={() => {
-                      setIdentityForm(identityFormFromShip(selected));
-                      setSpecsForm(effectiveShipSpecs(selected));
-                    }}
                   />
                   <ShipAmmoPanel
                     ammo={ammoForm}

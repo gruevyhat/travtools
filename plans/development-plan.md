@@ -40,6 +40,8 @@ Travtools is an unofficial fan tool for a private campaign. It is not affiliated
 | 11 | Full Trade Mini-Game | Complete passenger, freight, and speculative-trade workflow | Implemented |
 | 12 | Ammunition Tracking | Persistent weapon ammo and magazine tracking | Complete |
 | 13 | Quick Character Generator | Fast NPC generation from Core Rules quick-character tables | Shipped as NPC route |
+| 14 | Fleet Ship Editing & Ammo Repair | Fleet editing UX, systems/software editing, manifest labels, and ship ammo persistence | Implemented |
+| 15 | Trade Route Automation & Fleet Travel | Fleet ship selection and catalog-driven trade route distances | Backlog |
 
 ---
 
@@ -1140,6 +1142,101 @@ Questions to answer:
 - Were the archetype and quirk tables evocative enough, or did they need manual overrides?
 - Is the Experience Level a good proxy for combat capability in the tracker?
 - Should the modal offer a Career field so the generated NPC shows up correctly in the tracker's archetype picker?
+
+---
+
+## Milestone 14 — Fleet Ship Editing & Ammo Repair
+
+**Goal:** The Fleet ship view is easier to edit at the table, supports adding Software and Additional Systems from the visible Systems Manifest, removes unused schematic labeling, and persists ship ammunition against the live Supabase schema.
+
+### Status: Implemented
+
+### Background
+
+The Fleet view currently hides edit mode behind a cog in the ship list, which makes systems/software editing hard to discover. Schematic image labels are not useful and should be retired from the interface. The Systems Manifest has several unlabeled values, and the ship ammo UI is blocked in production by a live Supabase schema-cache error: `Could not find the 'ammo' column of 'ships' in the schema cache`.
+
+### Editing UX
+
+- [x] Move the edit cog from each ship-list row to the selected ship header beside the main ship name; use `aria-label="Edit {ship.name} ship"`.
+- [x] Remove row-level edit cogs from the sidebar; keep row click for selection and the existing delete affordance.
+- [x] Replace the current edit-mode `DONE` button with explicit `SAVE` and `CANCEL` header actions. `SAVE` persists identity, specs, systems, software, and notes; `CANCEL` restores from the saved selected ship and exits edit mode.
+- [x] Update empty/no-spec copy that says "Click the ship row cog..." to point users to the ship-name edit cog.
+
+### Schematic Labels
+
+- [x] Remove schematic/image labeling from the UI: `LABEL` / `STOP LABELLING`, pending label form, annotation click handling, rendered label chips, label count, and "ANNOTATABLE SCHEMATIC" wording.
+- [x] Rename the schematic panel to `SCHEMATIC` or `DECK PLAN`.
+- [x] Leave `ships.annotations` and the `Ship.annotations` type in place for backward compatibility; do not delete stored annotation data or run a destructive migration.
+- [x] Remove unused annotation helper tests and remove annotation create/delete steps from the Playwright smoke script.
+
+### Systems Manifest
+
+- [x] Make Software and Additional Systems add actions discoverable in their own section headers, with visible `+` buttons for `ADDITIONAL SYSTEMS` and `SOFTWARE`.
+- [x] If the ship is locked, clicking a systems/software `+` starts edit mode and inserts the first editable row; if already editing, it appends another row.
+- [x] Keep systems and software stored under `ShipSpecs.systems` and `ShipSpecs.software`; no schema change is needed for these lists.
+- [x] Preserve preset datalists from `OPTIONAL_SYSTEMS` and `SOFTWARE`.
+- [x] Add compact visible labels to editable rows: `Name`, `Qty` or `Rating`, `Notes`, and remove action.
+- [x] Replace unlabeled manifest `detail` / `metric` cards with visible key/value labels such as `Jump`, `Thrust`, `Fuel`, `Power`, `Tech Level`, `Hull HP`, `Armour`, `Cargo`, and `Low Berths`.
+
+### Ammo Repair
+
+- [x] Keep client writes as `client.from('ships').update({ ammo })`; the UI model is already correct.
+- [x] Apply a targeted live Supabase repair before verifying ammo in production:
+  ```sql
+  alter table public.ships add column if not exists ammo jsonb not null default '[]'::jsonb;
+  select pg_notify('pgrst', 'reload schema');
+  ```
+- [x] Keep `supabase/schema.sql` idempotent for fresh setup; do not require rerunning the full schema against production just to fix this column.
+
+### Tests
+
+- [x] Component: ship list no longer exposes row edit cogs.
+- [x] Component: selected ship header exposes the edit cog and enters edit mode.
+- [x] Component: schematic label controls and annotation chips are absent.
+- [x] Component: locked Additional Systems and Software `+` buttons enter edit mode and create editable rows.
+- [x] Component: saving a new system/software entry persists via `ships.update({ specs: ... })`; cancel exits edit mode without persisting local spec edits.
+- [x] Component: Systems Manifest cards render visible labels for all values.
+- [x] Component: ammo add/edit still calls `ships.update({ ammo: [...] })`.
+- [x] E2E smoke: update Fleet flow to use the main ship-name edit cog, remove annotation checks, keep system/software save checks, and keep ammo decrement coverage after the live schema repair.
+
+---
+
+## Milestone 15 — Trade Route Automation & Fleet Travel
+
+**Goal:** The Trade mini-game can select a ship from the Fleet manifest and use Trojan Reach catalog hexes to automate direct route parsecs, travel timing, and jump feasibility warnings.
+
+### Status: Backlog
+
+### Background
+
+The Trojan Reach catalog already stores four-digit sector hexes for worlds. The Trade Session and Passengers & Freight workflows currently ask for parsecs manually, while Fleet ships already store J-drive data in their specs or canonical defaults. This milestone connects those existing data sources without adding pathfinding or new schema.
+
+### Behaviour
+
+- [ ] Load Fleet ships in `TradeLedger` alongside roster characters for `TRADE SESSION` and `PASSENGERS & FREIGHT`, with realtime refresh from the `ships` table.
+- [ ] Add a `FLEET SHIP` selector in Trade Session below `MY BROKER`; selector lists Fleet manifest ships, disables cleanly when the fleet is empty, and preserves manual override like the broker selector.
+- [ ] Add the same selected-ship control to Passengers & Freight so passenger, freight, and mail calculations use the same route context.
+- [ ] Preserve catalog hexes on `WorldProfile`; catalog-selected source/destination worlds should carry their hex into trade state.
+- [ ] Add a compact Hex field for manual world profiles so non-catalog worlds can still participate in route automation.
+- [ ] Compute direct sector-hex distance between source and destination; auto-fill parsecs when both hexes are known. Drinax `2223` to Cordan `2821` should resolve to 6 parsecs.
+- [ ] Reset rolled transit dice when the automated route distance changes.
+- [ ] Resolve canonical Fleet specs before reading `j_drive`, so built-in canonical ships report their default jump rating even when `ships.specs` is sparse.
+- [ ] Show selected ship name/class, J-drive, and a warning when direct route distance exceeds the selected ship's J-drive. Do not pathfind intermediate stops in this milestone.
+
+### Implementation Notes
+
+- [ ] Shared ship helpers should live in `src/lib/ships.ts` so `ShipViewer` and Trade do not duplicate canonical spec normalization.
+- [ ] Route helpers should live in `src/lib/trade.ts`: `parseWorldHex(hex)` and `worldHexDistance(sourceHex, destinationHex)`.
+- [ ] No Supabase schema change is needed; the milestone reads existing `ships` and catalog data.
+
+### Tests
+
+- [ ] Unit: `parseWorldHex()` validates four-digit catalog hexes and rejects invalid input.
+- [ ] Unit: `worldHexDistance()` computes Traveller sector hex distance, including Drinax `2223` to Cordan `2821` = 6.
+- [ ] Component: Trade Session Fleet selector lists ships from Fleet manifest and resolves canonical default J-drive.
+- [ ] Component: Trade Session route display auto-fills parsecs from catalog hexes and warns when selected ship cannot cover the direct jump.
+- [ ] Component: Passengers & Freight uses automated route parsecs for passenger, freight, and mail calculations.
+- [ ] Component: empty Fleet renders a disabled "No fleet ships" selector state.
 
 ---
 

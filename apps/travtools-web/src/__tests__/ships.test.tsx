@@ -1,11 +1,10 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import React from 'react';
 import ShipViewer from '../components/ships/ShipViewer';
 import ShipBuilder from '../components/ships/ShipBuilder';
 import { CANONICAL_SHIPS } from '../components/ships/canonicalShips';
 import { computeShipSummary, defaultDesign } from '../lib/shipBuilder';
-import { annotationPosition, removeAnnotationById } from '../lib/ships';
 import type { Ship, ShipDesign } from '../types';
 import * as SupabaseContext from '../lib/supabaseContext';
 
@@ -79,20 +78,21 @@ afterEach(() => {
 });
 
 describe('ship helpers', () => {
-  it('calculates annotation position as a percentage of the schematic rect', () => {
-    expect(annotationPosition(150, 90, { left: 50, top: 40, width: 200, height: 100 })).toEqual({ x: 50, y: 50 });
-  });
+  it('sorts fleet ships by name through the viewer load path', async () => {
+    vi.spyOn(SupabaseContext, 'useSupabase').mockReturnValue({
+      client: makeShipClient([
+        { ...scoutShip, id: 'ship-b', name: 'Zulu' },
+        { ...scoutShip, id: 'ship-a', name: 'Alpha' },
+      ]) as never,
+      isConfigured: true,
+      configure: vi.fn(),
+      reset: vi.fn(),
+    });
 
-  it('clamps annotation positions to schematic bounds', () => {
-    expect(annotationPosition(500, -20, { left: 50, top: 40, width: 200, height: 100 })).toEqual({ x: 100, y: 0 });
-  });
-
-  it('removes annotations by id', () => {
-    const annotations = [
-      { id: 'a', x: 10, y: 20, label: 'A' },
-      { id: 'b', x: 30, y: 40, label: 'B' },
-    ];
-    expect(removeAnnotationById(annotations, 'a')).toEqual([{ id: 'b', x: 30, y: 40, label: 'B' }]);
+    const { container } = render(<ShipViewer />);
+    await screen.findAllByText('Alpha');
+    const sidebarText = within(container.querySelector('aside') as HTMLElement).getAllByRole('button').map(button => button.textContent ?? '').join(' ');
+    expect(sidebarText.indexOf('Alpha')).toBeLessThan(sidebarText.indexOf('Zulu'));
   });
 });
 
@@ -122,6 +122,99 @@ describe('ShipViewer', () => {
 
     expect((await screen.findAllByText('Scout/Courier')).length).toBeGreaterThan(0);
     expect(screen.getByLabelText('Type-S Scout/Courier deck plan')).toBeTruthy();
+  });
+
+  it('moves edit to the selected ship header and removes schematic labels', async () => {
+    const shipWithAnnotation: Ship = {
+      ...scoutShip,
+      annotations: [{ id: 'ann-1', x: 50, y: 50, label: 'Bridge Watch' }],
+    };
+    vi.spyOn(SupabaseContext, 'useSupabase').mockReturnValue({
+      client: makeShipClient([shipWithAnnotation]) as never,
+      isConfigured: true,
+      configure: vi.fn(),
+      reset: vi.fn(),
+    });
+
+    const { container } = render(<ShipViewer />);
+
+    await screen.findByLabelText('Type-S Scout/Courier deck plan');
+    const sidebar = within(container.querySelector('aside') as HTMLElement);
+    expect(sidebar.queryByRole('button', { name: 'Edit Scout/Courier ship' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'LABEL' })).toBeNull();
+    expect(screen.queryByLabelText('Annotation Bridge Watch')).toBeNull();
+    expect(screen.getAllByText('SCHEMATIC').length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Scout/Courier ship' }));
+    expect(await screen.findByRole('textbox', { name: 'Ship name' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'SAVE' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'CANCEL' })).toBeTruthy();
+  });
+
+  it('labels systems manifest values', async () => {
+    vi.spyOn(SupabaseContext, 'useSupabase').mockReturnValue({
+      client: makeShipClient() as never,
+      isConfigured: true,
+      configure: vi.fn(),
+      reset: vi.fn(),
+    });
+
+    render(<ShipViewer />);
+
+    await screen.findByLabelText('Type-S Scout/Courier deck plan');
+    expect(screen.getByText('JUMP')).toBeTruthy();
+    expect(screen.getByText('THRUST')).toBeTruthy();
+    expect(screen.getByText('HULL HP')).toBeTruthy();
+  });
+
+  it('starts editing from locked system and software add buttons and saves specs', async () => {
+    const client = makeShipClient();
+    vi.spyOn(SupabaseContext, 'useSupabase').mockReturnValue({
+      client: client as never,
+      isConfigured: true,
+      configure: vi.fn(),
+      reset: vi.fn(),
+    });
+
+    render(<ShipViewer />);
+
+    await screen.findByLabelText('Type-S Scout/Courier deck plan');
+    fireEvent.click(screen.getByRole('button', { name: 'ADD SYSTEM' }));
+    await screen.findByLabelText('System name 1');
+    fireEvent.change(screen.getByLabelText('System name 1'), { target: { value: 'Fuel Processors' } });
+    fireEvent.change(screen.getByLabelText('System quantity 1'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'ADD SOFTWARE' }));
+    fireEvent.change(await screen.findByLabelText('Software name 1'), { target: { value: 'Fire Control' } });
+    fireEvent.change(screen.getByLabelText('Software rating 1'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'SAVE' }));
+
+    await waitFor(() => expect(client.update).toHaveBeenLastCalledWith(expect.objectContaining({
+      specs: expect.objectContaining({
+        systems: [expect.objectContaining({ name: 'Fuel Processors', quantity: 2 })],
+        software: [expect.objectContaining({ name: 'Fire Control', rating: 2 })],
+      }),
+    })));
+  });
+
+  it('cancels local ship record edits without persisting', async () => {
+    const client = makeShipClient();
+    vi.spyOn(SupabaseContext, 'useSupabase').mockReturnValue({
+      client: client as never,
+      isConfigured: true,
+      configure: vi.fn(),
+      reset: vi.fn(),
+    });
+
+    render(<ShipViewer />);
+
+    await screen.findByLabelText('Type-S Scout/Courier deck plan');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Scout/Courier ship' }));
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Ship name' }), { target: { value: 'Unsaved Scout' } });
+    fireEvent.click(screen.getByRole('button', { name: 'CANCEL' }));
+
+    expect(client.update).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Ship name' })).toBeNull());
+    expect(screen.queryByText('Unsaved Scout')).toBeNull();
   });
 
   it('shows ammo before damage and persists ammo edits', async () => {

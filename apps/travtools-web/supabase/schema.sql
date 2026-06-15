@@ -147,6 +147,9 @@ alter table trade_deals add column if not exists purchase_pct integer;
 alter table trade_deals add column if not exists sale_pct integer;
 alter table trade_deals add column if not exists trade_code text;
 
+-- Refresh PostgREST's schema cache after additive column repairs such as ships.ammo.
+select pg_notify('pgrst', 'reload schema');
+
 -- ============================================================
 -- Row Level Security
 -- For a trusted group (no auth), allow anon read/write.

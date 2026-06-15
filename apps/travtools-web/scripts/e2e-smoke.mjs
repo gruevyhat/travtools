@@ -459,13 +459,13 @@ async function checkShipInteractions(browser, baseUrl) {
     throw new Error('Fleet exposed the Add ship control after returning from Shipyard');
   }
   if (await page.getByRole('textbox', { name: 'Ship name' }).count() !== 0) {
-    throw new Error('Fleet ship name editor was visible before clicking the row cog');
+    throw new Error('Fleet ship name editor was visible before clicking the ship-name cog');
   }
-  if (await page.getByRole('button', { name: 'SAVE SHIP RECORD' }).count() !== 0) {
-    throw new Error('Fleet ship record was editable before clicking the row cog');
+  if (await page.getByRole('button', { name: 'SAVE', exact: true }).count() !== 0) {
+    throw new Error('Fleet ship record was editable before clicking the ship-name cog');
   }
   if (await page.getByRole('button', { name: 'LABEL' }).count() !== 0) {
-    throw new Error('Fleet annotation controls were visible before clicking the row cog');
+    throw new Error('Fleet annotation controls are still visible');
   }
   if (await page.getByRole('button', { name: 'TRACK DAMAGE' }).count() !== 0) {
     throw new Error('Fleet ship damage trackers are still collapsible');
@@ -504,22 +504,10 @@ async function checkShipInteractions(browser, baseUrl) {
   await page.getByRole('button', { name: 'ADD SOFTWARE' }).click();
   await replaceByTyping(page.getByLabel('Software name 1'), 'Fire Control');
   await replaceByTyping(page.getByLabel('Software rating 1', { exact: true }), '2');
-  await page.getByRole('button', { name: 'SAVE SHIP RECORD' }).click();
+  await page.getByLabel('Ship Notes').fill('Crew cabins assigned.');
+  await page.getByRole('button', { name: 'SAVE', exact: true }).click();
   await page.locator('aside').getByText('Smoke Scout', { exact: true }).waitFor({ state: 'visible', timeout: 5_000 });
   await page.getByText('Type-SX', { exact: false }).first().waitFor({ state: 'visible', timeout: 5_000 });
-
-  await page.getByRole('button', { name: 'LABEL' }).click();
-  await page.getByLabel('Type-S Scout/Courier deck plan').click({ position: { x: 200, y: 120 } });
-  await page.getByPlaceholder('Label text...').type('Bridge Watch');
-  await page.getByRole('button', { name: 'SAVE', exact: true }).click();
-  await page.getByLabel('Annotation Bridge Watch').waitFor({ state: 'visible', timeout: 5_000 });
-  await page.getByLabel('Annotation Bridge Watch').click();
-  await page.getByLabel('Delete annotation Bridge Watch').click();
-  await page.getByLabel('Annotation Bridge Watch').waitFor({ state: 'hidden', timeout: 5_000 });
-
-  await page.getByLabel('Ship Notes').fill('Crew cabins assigned.');
-  await page.getByLabel('Ship Notes').blur();
-  await page.getByRole('button', { name: 'DONE' }).click();
   await page.getByText('Fuel Processors', { exact: true }).waitFor({ state: 'visible', timeout: 5_000 });
   await page.getByText('x2', { exact: true }).waitFor({ state: 'visible', timeout: 5_000 });
   await page.getByText('Fire Control/2', { exact: true }).waitFor({ state: 'visible', timeout: 5_000 });
