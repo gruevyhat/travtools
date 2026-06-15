@@ -668,12 +668,13 @@ async function checkFormTyping(browser, baseUrl) {
   await tradeRow.getByPlaceholder('Sell price').press('Enter');
   await tradeRow.getByText('+Cr 500').waitFor({ state: 'visible', timeout: 5_000 });
   await page.getByRole('button', { name: 'TRADE SESSION' }).click();
-  await replaceByTyping(page.getByLabel('Source World Name'), 'Mora');
-  await replaceByTyping(page.getByLabel('Source Population'), '9');
-  await page.getByRole('button', { name: /2 SUPPLIER/ }).click();
+  await page.getByText('TROJAN REACH WORLDS').waitFor({ state: 'visible', timeout: 5_000 });
+  await replaceByTyping(page.getByLabel('Trojan Reach World Catalog Search'), 'Torpol');
+  await page.getByRole('button', { name: 'Select Torpol for source' }).waitFor({ state: 'visible', timeout: 5_000 });
+  await page.getByLabel('Trojan Reach World Catalog Search').fill('');
   await page.getByRole('button', { name: /ROLL SUPPLIER/ }).click();
   await page.getByText(/Smoke Traveller Prime · Broker\/INT/).waitFor({ state: 'visible', timeout: 5_000 });
-  await page.getByRole('button', { name: /3 LOTS/ }).click();
+  await page.getByRole('button', { name: 'NEXT', exact: true }).click();
   await page.getByRole('button', { name: /ROLL LOTS/ }).click();
   await page.locator('tr', { hasText: 'Common Electronics' }).waitFor({ state: 'visible', timeout: 5_000 });
 
@@ -681,7 +682,7 @@ async function checkFormTyping(browser, baseUrl) {
   await page.getByRole('button', { name: 'ADD ITEM' }).click();
   await replaceByTyping(page.getByLabel('Item Name'), 'Advanced Medkit');
   await page.getByLabel('Owner Type').selectOption('other');
-  await replaceByTyping(page.getByLabel('Owner'), 'Captain Reyes');
+  await replaceByTyping(page.getByRole('textbox', { name: 'Owner' }), 'Captain Reyes');
   await replaceByTyping(page.getByLabel('Location'), 'Ship Locker');
   await page.getByRole('button', { name: 'SAVE' }).click();
   await page.getByText('Advanced Medkit').waitFor({ state: 'visible', timeout: 5_000 });
