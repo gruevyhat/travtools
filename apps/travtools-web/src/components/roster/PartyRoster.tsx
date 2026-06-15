@@ -8,6 +8,7 @@ import {
   CharacterAugment,
   CharacterContact,
   LifepathTerm,
+  NpcRecord,
   PersonalEquipmentItem,
   Weapon,
 } from '../../types';
@@ -19,6 +20,7 @@ import { downloadCsv } from '../../lib/csv';
 import { rosterFromCsv, rosterToCsv, type RosterCsvCharacter } from '../../lib/rosterCsv';
 import { CORE_EQUIPMENT } from '../../data/equipment';
 import { fmtDM, DIFFICULTIES, RollMode } from '../../lib/dice';
+import { contactFromNpc, contactLabel, emptyCharacterContact, hasContactValue, normalizeContact } from '../../lib/contacts';
 import {
   spendWeaponAmmo,
   weaponAmmoState,
@@ -960,9 +962,10 @@ const PHYS_FIELDS = [
 ];
 
 function CharDetailContent({
-  char, onRollSave, onStatAdjust, indentTopRows = false,
+  char, npcs = [], onRollSave, onStatAdjust, indentTopRows = false,
 }: {
   char: Character;
+  npcs?: NpcRecord[];
   onRollSave: (charName: string, result: { d1: number; d2: number; charDM: number; skillLevel: number; bonusDM: number; total: number }, checkLabel: string, difficulty: number) => void;
   onStatAdjust: (id: string, patch: Partial<Character>) => void;
   indentTopRows?: boolean;
@@ -1647,22 +1650,27 @@ function CharDetailContent({
           </DetailSection>
         )}
 
-        {contacts.some(c => hasValue(c.name) || hasValue(c.type) || hasValue(c.description) || hasValue(c.link)) && (
+        {contacts.some(hasContactValue) && (
           <DetailSection title="CONTACTS" className="order-8">
             <div className="space-y-1">
               {contacts
-                .filter(c => hasValue(c.name) || hasValue(c.type) || hasValue(c.description) || hasValue(c.link))
-                .map((contact, i) => (
-                  <div key={`${contact.name ?? contact.type ?? i}-${i}`} className="text-xs font-mono border border-steel/35 px-2 py-1">
-                    <div className="flex flex-wrap gap-x-2 gap-y-1">
-                      {contact.name && <span className="text-bright">{contact.name}</span>}
-                      {contact.type && <span className="text-amber">{contact.type}</span>}
-                      {contact.gender_species && <span className="text-body/70">{contact.gender_species}</span>}
-                      {contact.alive !== null && <span className={contact.alive ? 'text-safe' : 'text-alert'}>{contact.alive ? 'ALIVE' : 'DEAD'}</span>}
+                .filter(hasContactValue)
+                .map((contact, i) => {
+                  const linkedNpc = contact.npc_id ? npcs.find(npc => npc.id === contact.npc_id) ?? null : null;
+                  return (
+                    <div key={`${contact.id ?? contact.name ?? contact.type ?? i}-${i}`} className="text-xs font-mono border border-steel/35 px-2 py-1">
+                      <div className="flex flex-wrap gap-x-2 gap-y-1">
+                        {contact.name && <span className="text-bright">{contact.name}</span>}
+                        {contact.type && <span className="text-amber">{contact.type}</span>}
+                        {contact.gender_species && <span className="text-body/70">{contact.gender_species}</span>}
+                        {contact.alive !== null && contact.alive !== undefined && <span className={contact.alive ? 'text-safe' : 'text-alert'}>{contact.alive ? 'ALIVE' : 'DEAD'}</span>}
+                        {linkedNpc && <span className="text-cyan-trav/80">NPC {linkedNpc.name}</span>}
+                      </div>
+                      {contact.link && <div className="text-body/55 mt-0.5">{contact.link}</div>}
+                      {contact.description && <div className="text-body/60 mt-0.5">{contact.description}</div>}
                     </div>
-                    {contact.description && <div className="text-body/60 mt-0.5">{contact.description}</div>}
-                  </div>
-                ))}
+                  );
+                })}
             </div>
           </DetailSection>
         )}
@@ -1866,9 +1874,10 @@ function CharDetailContent({
 // ─── Mobile Card (accordion) ──────────────────────────────────────────────────
 
 function CharCard({
-  char, onEdit, onDelete, onRollSave, onStatAdjust, onPortraitUpload, uploadingPortrait,
+  char, npcs, onEdit, onDelete, onRollSave, onStatAdjust, onPortraitUpload, uploadingPortrait,
 }: {
   char: Character;
+  npcs: NpcRecord[];
   onEdit: () => void;
   onDelete: () => void;
   onRollSave: (charName: string, result: { d1: number; d2: number; charDM: number; skillLevel: number; bonusDM: number; total: number }, checkLabel: string, difficulty: number) => void;
@@ -1923,6 +1932,7 @@ function CharCard({
         <div className="border-t border-steel px-4 py-3">
           <CharDetailContent
             char={char}
+            npcs={npcs}
             onRollSave={onRollSave}
             onStatAdjust={onStatAdjust}
           />
@@ -1970,6 +1980,7 @@ function CharSidebarRow({
 export default function PartyRoster() {
   const { client } = useSupabase();
   const [chars, setChars] = useState<Character[]>([]);
+  const [npcs, setNpcs] = useState<NpcRecord[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<CharForm>(EMPTY);
   const [editing, setEditing] = useState<string | null>(null);
@@ -1996,15 +2007,23 @@ export default function PartyRoster() {
     if (data) setChars(data as Character[]);
   }, [client]);
 
+  const loadNpcs = useCallback(async () => {
+    if (!client) return;
+    const { data } = await client.from('npcs').select('*').order('name');
+    if (data) setNpcs(data as NpcRecord[]);
+  }, [client]);
+
   useEffect(() => {
     loadChars();
+    loadNpcs();
     if (!client) return;
     const channel = client
       .channel('roster-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'characters' }, loadChars)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'npcs' }, loadNpcs)
       .subscribe();
     return () => { client.removeChannel(channel); };
-  }, [client, loadChars]);
+  }, [client, loadChars, loadNpcs]);
 
   // Clear stale selectedId after first successful char load
   useEffect(() => {
@@ -2013,6 +2032,37 @@ export default function PartyRoster() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chars]);
+
+  async function syncNpcLinksForCharacter(characterId: string, contacts: CharacterContact[], previousContacts: CharacterContact[] = []) {
+    if (!client) return;
+    const linkedContacts = contacts.filter(contact => contact.npc_id);
+    const linkedNpcIds = new Set(linkedContacts.map(contact => contact.npc_id));
+    const unlinkedContacts = previousContacts.filter(contact => contact.npc_id && !linkedNpcIds.has(contact.npc_id));
+    if (linkedContacts.length === 0 && unlinkedContacts.length === 0) return;
+
+    const results = await Promise.all([
+      ...linkedContacts.map(contact => {
+        const patch: Record<string, unknown> = {
+          gender_species: contact.gender_species,
+          type: contact.type,
+          description: contact.description,
+          link: contact.link,
+          alive: contact.alive,
+          contact_character_id: characterId,
+          contact_id: contact.id ?? null,
+        };
+        if (contact.name) patch.name = contact.name;
+        return client.from('npcs').update(patch).eq('id', contact.npc_id);
+      }),
+      ...unlinkedContacts.map(contact =>
+        client.from('npcs').update({ contact_character_id: null, contact_id: null }).eq('id', contact.npc_id)
+      ),
+    ]);
+
+    const failed = results.find(result => result.error);
+    if (failed?.error) throw failed.error;
+    await loadNpcs();
+  }
 
   async function saveChar(e: React.FormEvent) {
     e.preventDefault();
@@ -2027,7 +2077,7 @@ export default function PartyRoster() {
       armour: form.armour.filter(item => hasValue(item.name) || hasValue(item.protection) || hasValue(item.radiation)),
       personal_equipment: form.personal_equipment.filter(item => hasValue(item.name) || hasValue(item.notes)),
       augments: form.augments.filter(item => hasValue(item.name) || hasValue(item.notes)),
-      contacts: form.contacts.filter(item => hasValue(item.name) || hasValue(item.type) || hasValue(item.description) || hasValue(item.link)),
+      contacts: form.contacts.map(normalizeContact).filter(hasContactValue),
       lifepath: form.lifepath.filter(item => hasValue(item.term) || hasValue(item.career) || hasValue(item.assignment) || hasValue(item.notes)),
     };
     if (editing) {
@@ -2055,6 +2105,13 @@ export default function PartyRoster() {
       if (data) {
         setChars(prev => sortCharacters(prev.map(c => c.id === editingId ? data as Character : c)));
       }
+      try {
+        await syncNpcLinksForCharacter(editingId, payload.contacts, previous?.contacts ?? []);
+      } catch (syncError) {
+        setRosterError(syncError instanceof Error
+          ? `Character saved, but NPC link sync failed: ${syncError.message}`
+          : 'Character saved, but NPC link sync failed.');
+      }
       return;
     } else {
       const { data, error } = await client.from('characters').insert(payload).select().single();
@@ -2066,6 +2123,13 @@ export default function PartyRoster() {
         const inserted = data as Character;
         setChars(prev => sortCharacters([...prev, inserted]));
         selectChar(inserted.id);
+        try {
+          await syncNpcLinksForCharacter(inserted.id, payload.contacts);
+        } catch (syncError) {
+          setRosterError(syncError instanceof Error
+            ? `Character saved, but NPC link sync failed: ${syncError.message}`
+            : 'Character saved, but NPC link sync failed.');
+        }
       }
     }
     setForm(EMPTY); setSkillsRaw(''); setTalentsRaw(''); setShowForm(false);
@@ -2366,12 +2430,24 @@ export default function PartyRoster() {
   function addContact() {
     setForm(prev => ({
       ...prev,
-      contacts: [...prev.contacts, { name: null, gender_species: null, type: null, description: null, link: null, alive: null }],
+      contacts: [...prev.contacts, emptyCharacterContact()],
     }));
   }
 
   function removeContact(index: number) {
     setForm(prev => ({ ...prev, contacts: prev.contacts.filter((_, i) => i !== index) }));
+  }
+
+  function updateContactNpc(index: number, npcId: string) {
+    setForm(prev => ({
+      ...prev,
+      contacts: prev.contacts.map((item, i) => {
+        if (i !== index) return item;
+        if (!npcId) return { ...item, npc_id: null };
+        const npc = npcs.find(record => record.id === npcId);
+        return npc ? contactFromNpc(npc, item) : { ...item, npc_id: npcId };
+      }),
+    }));
   }
 
   function updateLifepath(index: number, patch: Partial<LifepathTerm>) {
@@ -2956,7 +3032,7 @@ export default function PartyRoster() {
         <div className="mt-2 space-y-2">
           {form.contacts.map((contact, i) => (
             <div key={i} className="border border-steel/35 p-2 space-y-2">
-              <div className="grid grid-cols-2 md:grid-cols-[1fr_1fr_1fr_7rem_auto] gap-2 items-end">
+              <div className="grid grid-cols-2 md:grid-cols-[1fr_1fr_1fr_7rem_1fr_auto] gap-2 items-end">
                 <Field name="Name">
                   <input className="input" value={contact.name ?? ''}
                     onChange={e => updateContact(i, { name: e.target.value || null })} />
@@ -2975,6 +3051,18 @@ export default function PartyRoster() {
                     <option value="">—</option>
                     <option value="true">Yes</option>
                     <option value="false">No</option>
+                  </select>
+                </Field>
+                <Field name="Associated NPC">
+                  <select
+                    className="select"
+                    value={contact.npc_id ?? ''}
+                    onChange={e => updateContactNpc(i, e.target.value)}
+                  >
+                    <option value="">—</option>
+                    {npcs.map(npc => (
+                      <option key={npc.id} value={npc.id}>{contactLabel(npc, npc.name)}</option>
+                    ))}
                   </select>
                 </Field>
                 <button type="button" onClick={() => removeContact(i)} className="btn-steel text-alert hover:border-alert">
@@ -3193,6 +3281,7 @@ export default function PartyRoster() {
         <div className="space-y-3">
           {activeChars.map(char => (
             <CharCard key={char.id} char={char}
+              npcs={npcs}
               onEdit={() => startEdit(char)}
               onDelete={() => deleteChar(char.id)}
               onRollSave={saveRoll}
@@ -3214,6 +3303,7 @@ export default function PartyRoster() {
           <div className="label text-alert">DECEASED TRAVELLERS</div>
           {deceasedChars.length > 0 ? deceasedChars.map(char => (
             <CharCard key={char.id} char={char}
+              npcs={npcs}
               onEdit={() => startEdit(char)}
               onDelete={() => deleteChar(char.id)}
               onRollSave={saveRoll}
@@ -3333,6 +3423,7 @@ export default function PartyRoster() {
                 <CharDetailContent
                   key={selectedChar.id}
                   char={selectedChar}
+                  npcs={npcs}
                   onRollSave={saveRoll}
                   onStatAdjust={handleStatAdjust}
                   indentTopRows

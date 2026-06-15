@@ -217,6 +217,13 @@ create table if not exists npcs (
   id uuid default gen_random_uuid() primary key,
   name text not null,
   race text not null default 'Human',
+  gender_species text,
+  type text,
+  description text,
+  link text,
+  alive boolean,
+  contact_character_id uuid references characters(id) on delete set null,
+  contact_id text,
   archetype text,
   quirk text,
   experience_level text,
@@ -227,6 +234,13 @@ create table if not exists npcs (
   created_at timestamptz not null default now()
 );
 
+alter table npcs add column if not exists gender_species text;
+alter table npcs add column if not exists type text;
+alter table npcs add column if not exists description text;
+alter table npcs add column if not exists link text;
+alter table npcs add column if not exists alive boolean;
+alter table npcs add column if not exists contact_character_id uuid references characters(id) on delete set null;
+alter table npcs add column if not exists contact_id text;
 alter table npcs enable row level security;
 create policy "anon_all_npcs" on npcs for all to anon using (true) with check (true);
 

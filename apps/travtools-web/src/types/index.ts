@@ -217,12 +217,39 @@ export interface CharacterFinances {
 }
 
 export interface CharacterContact {
+  id?: string | null;
+  npc_id?: string | null;
   name: string | null;
   gender_species: string | null;
   type: string | null;
   description: string | null;
   link: string | null;
   alive: boolean | null;
+}
+
+export interface NpcRecord {
+  id: string;
+  name: string;
+  race: string;
+  gender_species: string | null;
+  type: string | null;
+  description: string | null;
+  link: string | null;
+  alive: boolean | null;
+  contact_character_id?: string | null;
+  contact_id?: string | null;
+  archetype: string | null;
+  quirk: string | null;
+  experience_level: string | null;
+  str: number | null;
+  dex: number | null;
+  end_stat: number | null;
+  int_stat: number | null;
+  edu: number | null;
+  soc: number | null;
+  skills: Skill[];
+  notes: string | null;
+  created_at: string;
 }
 
 export interface CharacterBackground {
