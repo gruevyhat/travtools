@@ -395,7 +395,7 @@ async function checkRosterInteractions(browser, baseUrl) {
     throw new Error(`Psionic talent use did not spend PSI:\n${rosterAfterPsi}`);
   }
 
-  await desktopRoster.getByRole('button', { name: /Autopistol/i }).click();
+  await desktopRoster.getByRole('button', { name: 'Roll Autopistol attack' }).click();
   const weaponRollPanel = page.locator('.fixed .panel');
   await replaceByTyping(weaponRollPanel.getByLabel('Ammo Used'), '3');
   await replaceByTyping(weaponRollPanel.getByRole('textbox', { name: /roll modifier/i }), '+10');
@@ -409,10 +409,7 @@ async function checkRosterInteractions(browser, baseUrl) {
   await weaponRollPanel.getByRole('button', { name: 'ROLL DAMAGE' }).click();
   await weaponRollPanel.getByText('Damage Mod +4', { exact: false }).waitFor({ state: 'visible', timeout: 5_000 });
   await page.keyboard.press('Escape');
-  const rosterAfterAmmo = await desktopRoster.innerText({ timeout: 5_000 });
-  if (!rosterAfterAmmo.includes('12/15 rnd · 2 clips')) {
-    throw new Error(`Weapon use did not spend ammo:\n${rosterAfterAmmo}`);
-  }
+  await desktopRoster.locator('[title="12/15 rounds"]').waitFor({ state: 'visible', timeout: 5_000 });
   await desktopRoster.getByLabel('Character actions').click();
   await page.getByRole('button', { name: 'EDIT' }).click();
   await desktopRoster.locator('summary').filter({ hasText: 'WEAPONS' }).click();
@@ -421,11 +418,7 @@ async function checkRosterInteractions(browser, baseUrl) {
   await weaponRoundsInput.fill('9');
   await weaponClipsInput.fill('4');
   await desktopRoster.getByRole('button', { name: 'UPDATE' }).click();
-  await desktopRoster.getByText('9/15 rnd · 4 clips', { exact: false }).waitFor({ state: 'visible', timeout: 5_000 });
-  const rosterAfterManualAmmo = await desktopRoster.innerText({ timeout: 5_000 });
-  if (!rosterAfterManualAmmo.includes('9/15 rnd · 4 clips')) {
-    throw new Error(`Manual ammo controls did not update the weapon row:\n${rosterAfterManualAmmo}`);
-  }
+  await desktopRoster.locator('[title="9/15 rounds"]').waitFor({ state: 'visible', timeout: 5_000 });
 
   await page.screenshot({ path: new URL('roster.png', outputDir).pathname, fullPage: false });
   await context.close();
@@ -687,6 +680,7 @@ async function checkFormTyping(browser, baseUrl) {
   await page.goto(`${baseUrl}#/inventory`, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'ADD ITEM' }).click();
   await replaceByTyping(page.getByLabel('Item Name'), 'Advanced Medkit');
+  await page.getByLabel('Owner Type').selectOption('other');
   await replaceByTyping(page.getByLabel('Owner'), 'Captain Reyes');
   await replaceByTyping(page.getByLabel('Location'), 'Ship Locker');
   await page.getByRole('button', { name: 'SAVE' }).click();

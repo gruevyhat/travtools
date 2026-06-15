@@ -1,14 +1,23 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Download, Minus, Plus, Search, Trash2, Upload, X } from 'lucide-react';
 import { useSupabase } from '../../lib/supabaseContext';
 import { InventoryItem } from '../../types';
 import { csvRow, downloadCsv, parseCsvRows } from '../../lib/csv';
 import {
   categoryChipClass,
+  characterOwnerOptions,
+  classifyInventoryOwner,
   filterInventoryItems,
   inventoryTotals,
+  inventoryListItems,
   INVENTORY_CATEGORIES,
+  InventoryCharacter,
+  InventoryOwnerType,
+  OTHER_OWNER_LABEL,
+  ownerTypeLabel,
+  PARTY_OWNER_LABEL,
   sortItems,
+  sortedInventoryOwners,
 } from '../../lib/inventory';
 import {
   CORE_EQUIPMENT,
@@ -29,7 +38,7 @@ const EMPTY: ItemForm = {
   quantity: 1,
   weight_kg: null,
   value_cr: null,
-  owner: null,
+  owner: PARTY_OWNER_LABEL,
   location: null,
   notes: null,
 };
@@ -46,8 +55,12 @@ function Field({ name, children }: { name: string; children: React.ReactNode }) 
 export default function InventoryManager() {
   const { client } = useSupabase();
   const [items, setItems] = useState<InventoryItem[]>([]);
+  const [characters, setCharacters] = useState<InventoryCharacter[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<ItemForm>(EMPTY);
+  const [ownerType, setOwnerType] = useState<InventoryOwnerType>('party');
+  const [ownerCharacterId, setOwnerCharacterId] = useState('');
+  const [otherOwner, setOtherOwner] = useState('');
   const [editing, setEditing] = useState<string | null>(null);
   const [filterOwner, setFilterOwner] = useState('');
   const [filterCat, setFilterCat] = useState('');
@@ -68,6 +81,19 @@ export default function InventoryManager() {
     if (data) setItems(data as InventoryItem[]);
   }, [client]);
 
+  const loadCharacters = useCallback(async () => {
+    if (!client) return;
+    const { data, error } = await client
+      .from('characters')
+      .select('id,name,player,created_at,weapons,armour,personal_equipment,augments')
+      .order('name');
+    if (error) {
+      setErrorMessage('Roster equipment could not be loaded.');
+      return;
+    }
+    if (data) setCharacters(data as InventoryCharacter[]);
+  }, [client]);
+
   useEffect(() => {
     loadItems();
     if (!client) return;
@@ -78,27 +104,89 @@ export default function InventoryManager() {
     return () => { client.removeChannel(channel); };
   }, [client, loadItems]);
 
+  useEffect(() => {
+    loadCharacters();
+    if (!client) return;
+    const channel = client
+      .channel('inventory-roster-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'characters' }, loadCharacters)
+      .subscribe();
+    return () => { client.removeChannel(channel); };
+  }, [client, loadCharacters]);
+
+  const ownerOptions = useMemo(() => characterOwnerOptions(characters), [characters]);
+
+  useEffect(() => {
+    if (ownerType === 'character' && !ownerCharacterId && ownerOptions.length > 0) {
+      setOwnerCharacterId(ownerOptions[0].id);
+    }
+  }, [ownerCharacterId, ownerOptions, ownerType]);
+
+  function resetOwnerControls() {
+    setOwnerType('party');
+    setOwnerCharacterId('');
+    setOtherOwner('');
+  }
+
+  function setOwnerControlsFromOwner(owner: string | null) {
+    const ownerClass = classifyInventoryOwner(owner, characters);
+    if (ownerClass === 'character' && owner) {
+      const character = ownerOptions.find(option => option.label.toLowerCase() === owner.trim().toLowerCase());
+      setOwnerType('character');
+      setOwnerCharacterId(character?.id ?? '');
+      setOtherOwner('');
+      return;
+    }
+    if (ownerClass === 'other' && owner) {
+      setOwnerType('other');
+      setOwnerCharacterId('');
+      setOtherOwner(owner);
+      return;
+    }
+    resetOwnerControls();
+  }
+
+  function formOwnerValue(): string | null {
+    if (ownerType === 'party') return PARTY_OWNER_LABEL;
+    if (ownerType === 'character') {
+      return ownerOptions.find(option => option.id === ownerCharacterId)?.label ?? null;
+    }
+    return otherOwner.trim() || OTHER_OWNER_LABEL;
+  }
+
+  function formPayload(): ItemForm | null {
+    const owner = formOwnerValue();
+    if (!owner) {
+      setErrorMessage('Choose a roster character for this item owner.');
+      return null;
+    }
+    return { ...form, owner };
+  }
+
   async function saveItem(e: React.FormEvent) {
     e.preventDefault();
     if (!client) return;
     setErrorMessage(null);
+    const payload = formPayload();
+    if (!payload) return;
     if (editing) {
       const editingId = editing;
       const previous = items.find(i => i.id === editingId);
       const optimistic = {
         ...(previous ?? { id: editingId, created_at: new Date().toISOString() }),
-        ...form,
+        ...payload,
       } as InventoryItem;
 
       setItems(prev => sortItems(prev.map(i => i.id === editingId ? optimistic : i)));
       setEditing(null);
       setForm(EMPTY);
+      resetOwnerControls();
       setShowForm(false);
       setShowEquipmentReference(false);
 
-      const { data, error } = await client.from('inventory_items').update(form).eq('id', editingId).select().single();
+      const { data, error } = await client.from('inventory_items').update(payload).eq('id', editingId).select().single();
       if (error) {
-        setErrorMessage(`Could not update ${form.name}.`);
+        setErrorMessage(`Could not update ${payload.name}.`);
         if (previous) setItems(prev => sortItems(prev.map(i => i.id === editingId ? previous : i)));
         loadItems();
         return;
@@ -106,14 +194,15 @@ export default function InventoryManager() {
       if (data) setItems(prev => sortItems(prev.map(i => i.id === editingId ? data as InventoryItem : i)));
       return;
     } else {
-      const { data, error } = await client.from('inventory_items').insert(form).select().single();
+      const { data, error } = await client.from('inventory_items').insert(payload).select().single();
       if (error) {
-        setErrorMessage(`Could not add ${form.name}.`);
+        setErrorMessage(`Could not add ${payload.name}.`);
         return;
       }
       if (data) setItems(prev => sortItems([data as InventoryItem, ...prev]));
     }
     setForm(EMPTY);
+    resetOwnerControls();
     setShowForm(false);
     setShowEquipmentReference(false);
   }
@@ -177,6 +266,7 @@ export default function InventoryManager() {
       weight_kg: item.weight_kg, value_cr: item.value_cr, owner: item.owner,
       location: item.location, notes: item.notes,
     });
+    setOwnerControlsFromOwner(item.owner);
     setEditing(item.id);
     setShowEquipmentReference(false);
     setShowForm(true);
@@ -189,16 +279,18 @@ export default function InventoryManager() {
       category: item.inventoryCategory,
       weight_kg: item.massKg,
       value_cr: item.costCr,
+      owner: PARTY_OWNER_LABEL,
       notes: equipmentInventoryNotes(item),
     });
+    resetOwnerControls();
     setEditing(null);
     setShowEquipmentReference(true);
     setShowForm(true);
   }
 
   function exportCsv() {
-    const header = csvRow(['Name', 'Category', 'Quantity', 'Weight (kg)', 'Value (Cr)', 'Owner', 'Location', 'Notes']);
-    const rows = visible.map(i => csvRow([i.name, i.category, i.quantity, i.weight_kg, i.value_cr, i.owner, i.location, i.notes]));
+    const header = csvRow(['Name', 'Category', 'Quantity', 'Weight (kg)', 'Value (Cr)', 'Owner', 'Location', 'Source', 'Notes']);
+    const rows = visible.map(i => csvRow([i.name, i.category, i.quantity, i.weight_kg, i.value_cr, i.owner, i.location, i.source_label, i.notes]));
     downloadCsv('travtools-inventory.csv', [header, ...rows].join('\n'));
   }
 
@@ -234,11 +326,12 @@ export default function InventoryManager() {
     if (error) setErrorMessage(`CSV import failed: ${error.message}`);
   }
 
-  const owners = [...new Set(items.map(i => i.owner).filter(Boolean))] as string[];
-
-  const visible = filterInventoryItems(items, { owner: filterOwner, category: filterCat });
+  const allItems = inventoryListItems(items, characters);
+  const owners = sortedInventoryOwners(allItems, characters);
+  const visible = filterInventoryItems(allItems, { owner: filterOwner, category: filterCat });
+  const editableVisible = visible.filter(item => !item.readOnly);
   const { totalWeight, totalValue } = inventoryTotals(visible);
-  const allVisibleSelected = visible.length > 0 && visible.every(item => selectedIds.includes(item.id));
+  const allVisibleSelected = editableVisible.length > 0 && editableVisible.every(item => selectedIds.includes(item.id));
 
   function toggleSelected(id: string) {
     setSelectedIds(prev => prev.includes(id) ? prev.filter(existing => existing !== id) : [...prev, id]);
@@ -246,9 +339,9 @@ export default function InventoryManager() {
 
   function toggleAllVisible() {
     if (allVisibleSelected) {
-      setSelectedIds(prev => prev.filter(id => !visible.some(item => item.id === id)));
+      setSelectedIds(prev => prev.filter(id => !editableVisible.some(item => item.id === id)));
     } else {
-      setSelectedIds(prev => [...new Set([...prev, ...visible.map(item => item.id)])]);
+      setSelectedIds(prev => [...new Set([...prev, ...editableVisible.map(item => item.id)])]);
     }
   }
 
@@ -294,6 +387,7 @@ export default function InventoryManager() {
         <button
           onClick={() => {
             setForm(EMPTY);
+            resetOwnerControls();
             setEditing(null);
             setShowForm(v => {
               const next = !v;
@@ -403,8 +497,41 @@ export default function InventoryManager() {
             <Field name="Value (Cr each)">
               <NumberStepper ariaLabel="Value credits each" step="0.01" value={form.value_cr ?? ''} onChange={value => setForm({ ...form, value_cr: value ? parseFloat(value) : null })} />
             </Field>
+            <Field name="Owner Type">
+              <select
+                className="select"
+                value={ownerType}
+                onChange={e => {
+                  const next = e.target.value as InventoryOwnerType;
+                  setOwnerType(next);
+                  setOwnerCharacterId(next === 'character' ? ownerOptions[0]?.id ?? '' : '');
+                  setOtherOwner('');
+                }}
+              >
+                <option value="party">Party</option>
+                <option value="character" disabled={ownerOptions.length === 0}>Character</option>
+                <option value="other">Other</option>
+              </select>
+            </Field>
             <Field name="Owner">
-              <input className="input" value={form.owner ?? ''} onChange={e => setForm({ ...form, owner: e.target.value || null })} />
+              {ownerType === 'party' ? (
+                <input className="input" value={PARTY_OWNER_LABEL} readOnly />
+              ) : ownerType === 'character' ? (
+                <select
+                  className="select"
+                  value={ownerCharacterId}
+                  onChange={e => setOwnerCharacterId(e.target.value)}
+                >
+                  {ownerOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+                </select>
+              ) : (
+                <input
+                  className="input"
+                  value={otherOwner}
+                  placeholder={OTHER_OWNER_LABEL}
+                  onChange={e => setOtherOwner(e.target.value)}
+                />
+              )}
             </Field>
             <Field name="Location">
               <input className="input" value={form.location ?? ''} onChange={e => setForm({ ...form, location: e.target.value || null })} />
@@ -457,6 +584,7 @@ export default function InventoryManager() {
               <th className="table-header text-right">Value (Cr)</th>
               <th className="table-header">Owner</th>
               <th className="table-header">Location</th>
+              <th className="table-header">Source</th>
               <th className="table-header"></th>
             </tr>
           </thead>
@@ -467,9 +595,10 @@ export default function InventoryManager() {
                   <input
                     type="checkbox"
                     aria-label={`Select ${item.name}`}
-                    checked={selectedIds.includes(item.id)}
+                    checked={!item.readOnly && selectedIds.includes(item.id)}
+                    disabled={item.readOnly}
                     onChange={() => toggleSelected(item.id)}
-                    className="accent-amber"
+                    className="accent-amber disabled:opacity-20 disabled:cursor-not-allowed"
                   />
                 </td>
                 <td className="table-cell font-bold text-bright">
@@ -482,28 +611,32 @@ export default function InventoryManager() {
                   )}
                 </td>
                 <td className="table-cell">
-                  <div className="flex items-center justify-end gap-1 select-none">
-                    <button
-                      type="button"
-                      aria-label={`Decrease ${item.name} quantity`}
-                      disabled={item.quantity <= 0}
-                      onMouseDown={e => e.preventDefault()}
-                      onClick={() => adjustQuantity(item, -1)}
-                      className="w-5 h-5 select-none border border-steel/60 text-body/70 hover:border-amber hover:text-amber disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center"
-                    >
-                      <Minus size={9} />
-                    </button>
-                    <span className="w-8 text-center font-mono text-amber">{item.quantity}</span>
-                    <button
-                      type="button"
-                      aria-label={`Increase ${item.name} quantity`}
-                      onMouseDown={e => e.preventDefault()}
-                      onClick={() => adjustQuantity(item, 1)}
-                      className="w-5 h-5 select-none border border-steel/60 text-body/70 hover:border-safe hover:text-safe flex items-center justify-center"
-                    >
-                      <Plus size={9} />
-                    </button>
-                  </div>
+                  {item.readOnly ? (
+                    <div className="text-right font-mono text-amber">{item.quantity}</div>
+                  ) : (
+                    <div className="flex items-center justify-end gap-1 select-none">
+                      <button
+                        type="button"
+                        aria-label={`Decrease ${item.name} quantity`}
+                        disabled={item.quantity <= 0}
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => adjustQuantity(item, -1)}
+                        className="w-5 h-5 select-none border border-steel/60 text-body/70 hover:border-amber hover:text-amber disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center"
+                      >
+                        <Minus size={9} />
+                      </button>
+                      <span className="w-8 text-center font-mono text-amber">{item.quantity}</span>
+                      <button
+                        type="button"
+                        aria-label={`Increase ${item.name} quantity`}
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => adjustQuantity(item, 1)}
+                        className="w-5 h-5 select-none border border-steel/60 text-body/70 hover:border-safe hover:text-safe flex items-center justify-center"
+                      >
+                        <Plus size={9} />
+                      </button>
+                    </div>
+                  )}
                 </td>
                 <td className="table-cell text-right">
                   {item.weight_kg !== null ? (item.weight_kg * item.quantity).toFixed(1) : '—'}
@@ -511,21 +644,39 @@ export default function InventoryManager() {
                 <td className="table-cell text-right">
                   {item.value_cr !== null ? (item.value_cr * item.quantity).toLocaleString() : '—'}
                 </td>
-                <td className="table-cell text-cyan-trav">{item.owner ?? '—'}</td>
+                <td className="table-cell">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-cyan-trav">{item.owner ?? '—'}</span>
+                    <span className="text-[9px] font-mono text-body/50">{ownerTypeLabel(item.owner_type)}</span>
+                  </div>
+                </td>
                 <td className="table-cell text-body/70">{item.location ?? '—'}</td>
                 <td className="table-cell">
-                  <div className="flex gap-1 justify-end">
-                    <button onClick={() => startEdit(item)} className="btn-steel text-xs px-2 py-0.5">EDIT</button>
-                    <button onClick={() => deleteItem(item.id)} className="text-alert/50 hover:text-alert transition-colors">
-                      <X size={13} />
-                    </button>
-                  </div>
+                  <span className={`text-[10px] border px-1.5 py-0.5 font-mono ${
+                    item.source === 'roster'
+                      ? 'border-cyan-dim text-cyan-trav bg-cyan-dim/10'
+                      : 'border-steel/70 text-body/70 bg-steel/10'
+                  }`}>
+                    {item.source_label}
+                  </span>
+                </td>
+                <td className="table-cell">
+                  {item.readOnly ? (
+                    <div className="text-right text-[10px] text-body/45 font-mono">ROSTER</div>
+                  ) : (
+                    <div className="flex gap-1 justify-end">
+                      <button onClick={() => startEdit(item)} className="btn-steel text-xs px-2 py-0.5">EDIT</button>
+                      <button onClick={() => deleteItem(item.id)} className="text-alert/50 hover:text-alert transition-colors">
+                        <X size={13} />
+                      </button>
+                    </div>
+                  )}
                 </td>
               </tr>
             ))}
             {visible.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-body/65 text-sm">
+                <td colSpan={10} className="px-4 py-8 text-center text-body/65 text-sm">
                   No items found.
                 </td>
               </tr>
