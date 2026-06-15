@@ -1,0 +1,84 @@
+[
+  {
+    "id": "272996cc-149e-4ea4-b7e2-f7f3aec5f13d",
+    "name": "Harrier",
+    "design": {
+      "name": "Harrier",
+      "notes": "",
+      "mounts": [
+        {
+          "id": "vjbdlll2y3q",
+          "weapons": [
+            "missile_rack"
+          ],
+          "mount_type": "single"
+        },
+        {
+          "id": "k61g0boqbjg",
+          "weapons": [
+            "particle_barbette"
+          ],
+          "mount_type": "single"
+        }
+      ],
+      "j_drive": 2,
+      "m_drive": 6,
+      "pp_type": "tl15",
+      "sensors": "advanced",
+      "tonnage": 200,
+      "pp_power": 260,
+      "low_berths": 8,
+      "staterooms": 8,
+      "tech_level": 15,
+      "armour_type": "bonded_superdense",
+      "bridge_type": "standard",
+      "hull_config": "streamlined",
+      "computer_bis": false,
+      "armour_points": 4,
+      "pp_fuel_weeks": 4,
+      "computer_model": 20,
+      "high_staterooms": 0,
+      "common_area_tons": 8,
+      "optional_systems": [
+        {
+          "id": "aosczdsjri9",
+          "type": "fuel_processor",
+          "quantity": 40
+        }
+      ],
+      "luxury_staterooms": 0,
+      "software_intellect": false,
+      "software_fire_control": 2,
+      "software_jump_control": 2
+    },
+    "summary": {
+      "hullHP": 80,
+      "usedTons": 195,
+      "warnings": [
+        "A Single Turret has 3 weapon slots used but only supports 1.",
+        "Power deficit of 4 — increase power plant output or remove systems."
+      ],
+      "cargoTons": 5,
+      "crewMedic": 1,
+      "crewPilot": 1,
+      "powerUsed": 264,
+      "totalTons": 200,
+      "crewGunner": 2,
+      "firmpoints": 0,
+      "hardpoints": 2,
+      "ppFuelTons": 2,
+      "crewSteward": 1,
+      "crewEngineer": 1,
+      "jumpFuelTons": 40,
+      "powerBalance": -4,
+      "totalCostMCr": 120.19000000000001,
+      "crewAstrogator": 1,
+      "powerGenerated": 260,
+      "constructionDays": 121,
+      "maintenanceCrPerMonth": 10016
+    },
+    "diagram_url": "https://plytyqsbolucfnnsdyqw.supabase.co/storage/v1/object/public/ship-schematics/designs/272996cc-149e-4ea4-b7e2-f7f3aec5f13d/diagram.jpg",
+    "created_at": "2026-06-14T01:08:05.168251+00:00",
+    "updated_at": "2026-06-14T01:58:19.608+00:00"
+  }
+]
